@@ -1,0 +1,314 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const { parseItem } = require('../src/core/parser');
+const { compare, score } = require('../src/core/scorer');
+const { Store, DEFAULT_WEIGHTS } = require('../src/core/store');
+
+const HELMET_NEW = `Item Class: Helmets
+Rarity: Rare
+Doom Visage
+Expert Visored Helm
+--------
+Quality: +20% (augmented)
+Armour: 312 (augmented)
+--------
+Requirements:
+Level: 65
+Str: 101
+--------
+Sockets: S
+--------
+Item Level: 79
+--------
++12% to Cold Resistance (rune)
+--------
++89 to maximum Life
++32% to Fire Resistance
++11% to all Elemental Resistances
++14 to Strength
+12% reduced Attribute Requirements`;
+
+const HELMET_OLD = `Item Class: Helmets\r
+Rarity: Rare\r
+Grim Crown\r
+Visored Helm\r
+--------\r
+Armour: 180\r
+--------\r
+Item Level: 50\r
+--------\r
++55 to maximum Life\r
++20% to Fire Resistance\r
++18% to Lightning Resistance`;
+
+const ADVANCED_RING = `Item Class: Rings
+Rarity: Rare
+Storm Loop
+Sapphire Ring
+--------
+Requirements:
+Level: 40
+--------
+Item Level: 75
+--------
+{ Implicit Modifier }
++24(20-30)% to Cold Resistance (implicit)
+--------
+{ Prefix Modifier "Hale" (Tier: 4) — Life }
++62(55-69) to maximum Life
+{ Suffix Modifier "of the Squall" (Tier: 3) — Elemental, Lightning, Resistance }
++30(26-30)% to Lightning Resistance
+{ Suffix Modifier "of the Fox" — Attribute }
++12(9-15) to Strength and Dexterity`;
+
+const WEAPON_2H = `Item Class: Two Hand Maces
+Rarity: Rare
+Brute Knell
+Forge Maul
+--------
+Physical Damage: 100-160 (augmented)
+Fire Damage: 20-40 (augmented)
+Critical Hit Chance: 5.00%
+Attacks per Second: 1.10
+--------
+Item Level: 70
+--------
+120% increased Physical Damage
+Adds 20 to 40 Fire Damage
++40 to Strength`;
+
+test('parses header, slot and properties', () => {
+  const it = parseItem(HELMET_NEW);
+  assert.equal(it.itemClass, 'Helmets');
+  assert.equal(it.slot, 'Helmet');
+  assert.equal(it.name, 'Doom Visage');
+  assert.equal(it.baseType, 'Expert Visored Helm');
+  assert.equal(it.itemLevel, 79);
+  assert.equal(it.requiredLevel, 65);
+  assert.equal(it.stats['[Base] Armour'], 312);
+  assert.equal(it.stats['# to maximum Life'], 89);
+});
+
+test('expands all-res and sums rune + explicit', () => {
+  const it = parseItem(HELMET_NEW);
+  assert.equal(it.stats['#% to Fire Resistance'], 43);
+  assert.equal(it.stats['#% to Cold Resistance'], 23);
+  assert.equal(it.stats['#% to Lightning Resistance'], 11);
+  assert.equal(it.stats['#% to all Elemental Resistances'], undefined);
+  assert.equal(it.stats['#% increased Attribute Requirements'], -12);
+});
+
+test('handles CRLF and advanced (Ctrl+Alt+C) text', () => {
+  assert.equal(parseItem(HELMET_OLD).stats['# to maximum Life'], 55);
+  const ring = parseItem(ADVANCED_RING);
+  assert.equal(ring.slot, 'Ring');
+  assert.equal(ring.stats['# to maximum Life'], 62);
+  assert.equal(ring.stats['#% to Cold Resistance'], 24);
+  assert.equal(ring.stats['#% to Lightning Resistance'], 30);
+  assert.equal(ring.stats['# to Strength'], 12);
+  assert.equal(ring.stats['# to Dexterity'], 12);
+});
+
+test('weapon DPS and two-handed detection', () => {
+  const w = parseItem(WEAPON_2H);
+  assert.equal(w.slot, 'Weapon');
+  assert.equal(w.twoHanded, true);
+  assert.equal(w.stats['[Weapon] Physical DPS'], 143);
+  assert.equal(w.stats['[Weapon] Elemental DPS'], 33);
+  assert.equal(w.stats['[Weapon] Total DPS'], 176);
+  assert.equal(w.stats['Adds # to # Fire Damage'], 30);
+});
+
+test('non-items and unsupported items', () => {
+  assert.equal(parseItem('hello'), null);
+  const cur = parseItem('Item Class: Stackable Currency\nRarity: Currency\nDivine Orb\n--------\nStack Size: 1/20');
+  assert.equal(compare(cur, {}, DEFAULT_WEIGHTS).ok, false);
+  const flask = parseItem('Item Class: Life Flasks\nRarity: Magic\nFlask\n--------\nItem Level: 10');
+  assert.equal(flask.slot, 'Life Flask');
+  const jewel = parseItem('Item Class: Jewels\nRarity: Rare\nA\nSapphire\n--------\nMinions deal 10% increased Damage');
+  const r = compare(jewel, { 'Jewel 1': parseItem('Item Class: Jewels\nRarity: Rare\nB\nSapphire\n--------\nMinions deal 5% increased Damage') }, DEFAULT_WEIGHTS);
+  assert.equal(r.targetSlot, 'Jewel 2'); // empty jewel slot first
+});
+
+test('compare helmet: upgrade', () => {
+  const eq = { Helmet: parseItem(HELMET_OLD) };
+  const r = compare(parseItem(HELMET_NEW), eq, DEFAULT_WEIGHTS);
+  assert.equal(r.ok, true);
+  assert.equal(r.verdict, 'upgrade');
+  assert.ok(r.delta > 0);
+  const life = r.rows.find((x) => x.key === '# to maximum Life');
+  assert.equal(life.diff, 34);
+  // reverse is a downgrade
+  const back = compare(parseItem(HELMET_OLD), { Helmet: parseItem(HELMET_NEW) }, DEFAULT_WEIGHTS);
+  assert.equal(back.verdict, 'downgrade');
+});
+
+test('ring replaces the weaker ring / fills empty ring', () => {
+  const ring = parseItem(ADVANCED_RING);
+  const weak = parseItem('Item Class: Rings\nRarity: Magic\nWeak Ring\n--------\n+10 to maximum Life');
+  const strong = parseItem('Item Class: Rings\nRarity: Rare\nStrong\nRing\n--------\n+200 to maximum Life');
+  const r = compare(ring, { 'Ring 1': strong, 'Ring 2': weak }, DEFAULT_WEIGHTS);
+  assert.equal(r.targetSlot, 'Ring 2');
+  assert.equal(r.verdict, 'upgrade');
+  const r2 = compare(ring, { 'Ring 1': strong }, DEFAULT_WEIGHTS);
+  assert.equal(r2.targetSlot, 'Ring 2');
+  assert.equal(r2.verdict, 'new');
+});
+
+test('two-hander compared against weapon + offhand', () => {
+  const oneH = parseItem('Item Class: One Hand Maces\nRarity: Rare\nA\nB\n--------\nPhysical Damage: 10-20\nAttacks per Second: 1.50\n--------\n+30 to maximum Life');
+  const shield = parseItem('Item Class: Shields\nRarity: Rare\nS\nT\n--------\nArmour: 200\n--------\n+50 to maximum Life');
+  const r = compare(parseItem(WEAPON_2H), { Weapon: oneH, Offhand: shield }, DEFAULT_WEIGHTS);
+  assert.deepEqual(r.replacing, ['A', 'S']);
+  const life = r.rows.find((x) => x.key === '# to maximum Life');
+  assert.equal(life.oldValue, 80);
+  assert.ok(r.notes.some((n) => /Two-handed/.test(n)));
+});
+
+test('store persists and round-trips', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'poe2uc-'));
+  const s = new Store(dir);
+  s.setWeight('# to maximum Life', 2);
+  s.setWeight('#% to Chaos Resistance', 0);
+  s.setEquipped('Helmet', parseItem(HELMET_OLD));
+  const s2 = new Store(dir);
+  assert.equal(s2.weights['# to maximum Life'], 2);
+  assert.equal(s2.weights['#% to Chaos Resistance'], undefined);
+  assert.equal(s2.equipped.Helmet.name, 'Grim Crown');
+  assert.equal(score(s2.equipped.Helmet, { '# to maximum Life': 2 }), 110);
+});
+
+test('advanced-copy quirks: unscalable note, runic ward, fractured line', () => {
+  const it = parseItem(`Item Class: Boots
+Rarity: Rare
+Oblivion Trail
+Sorcerer Boots
+--------
+Energy Shield: 414 (augmented)
+Runic Ward: 217 (augmented)
+--------
++60(48-60) to maximum Energy Shield
+35% increased Movement Speed
+60% increased effect of Socketed Augment Items — Unscalable Value
+Fractured Item`);
+  assert.equal(it.stats['#% increased effect of Socketed Augment Items'], 60);
+  assert.equal(it.stats['[Base] Runic Ward'], 217);
+  assert.equal(it.stats['# to maximum Energy Shield'], 60);
+  assert.equal(Object.keys(it.stats).some((k) => /Fractured/.test(k)), false);
+});
+
+test('copied item that is already equipped is flagged', () => {
+  const h = parseItem(HELMET_OLD);
+  const r = compare(parseItem(HELMET_OLD), { Helmet: h }, DEFAULT_WEIGHTS);
+  assert.equal(r.isEquipped, true);
+  assert.equal(r.verdict, 'equipped');
+  const r2 = compare(parseItem(HELMET_NEW), { Helmet: h }, DEFAULT_WEIGHTS);
+  assert.equal(r2.isEquipped, false);
+});
+
+test('suggested weights favour stats your gear stacks', () => {
+  const { suggestWeights } = require('../src/core/autoweights');
+  const eq = {
+    Helmet: parseItem('Item Class: Helmets\nRarity: Rare\nA\nB\n--------\nEnergy Shield: 400\n--------\n+2 to Level of all Minion Skills\n+30 to Intelligence\n+10% to Fire Resistance (rune)'),
+    Gloves: parseItem('Item Class: Gloves\nRarity: Rare\nC\nD\n--------\nEnergy Shield: 200\n--------\n+30 to Intelligence\n+40 to maximum Life'),
+  };
+  const s = suggestWeights(eq);
+  const get = (k) => (s.find((x) => x.key === k) || {}).weight;
+  assert.equal(get('# to Intelligence'), 1.5);       // 2 slots: 45 pts / 30
+  assert.equal(get('# to maximum Life'), 0.75);      // 1 slot: 30 / 40
+  assert.equal(get('# to Level of all Minion Skills'), 15);
+  assert.equal(get('[Base] Energy Shield'), 0.13);   // 40 / 300 avg
+  assert.equal(get('#% increased Energy Shield'), undefined);
+  assert.equal(get('#% to Fire Resistance'), undefined); // rune only -> skipped
+  const ig = suggestWeights(eq, (k) => k === '# to maximum Life');
+  assert.equal(ig.find((x) => x.key === '# to maximum Life'), undefined);
+});
+
+test('gear score rates items for the Djinn Disciple build', () => {
+  const { gearScore } = require('../src/core/gearscore');
+  const helm = parseItem(`Item Class: Helmets
+Rarity: Rare
+Great Crown
+Ancestral Tiara
+--------
+Energy Shield: 520
+--------
++3 to Level of all Minion Skills
++42% to Cold Resistance
++40% to Fire Resistance
++90 to maximum Life
++30% to Chaos Resistance
+80% increased Energy Shield`);
+  const g = gearScore(helm);
+  assert.ok(g.score >= 85, `great helm should be S, got ${g.score}`);
+  assert.equal(g.grade, 'S');
+  assert.deepEqual(g.wasted, []); // local ES% is part of the base, not wasted
+  const junk = parseItem(`Item Class: Helmets
+Rarity: Rare
+Bad Hat
+Ancestral Tiara
+--------
+Energy Shield: 150
+--------
+Adds 1 to 4 Physical Damage to Attacks
++10 to Strength
+12% increased Stun Threshold`);
+  const j = gearScore(junk);
+  assert.ok(j.score < 30, `junk helm should be low, got ${j.score}`);
+  assert.ok(j.missing.includes('Minion skill levels'));
+  assert.equal(j.wasted.length, 2);
+  // if you ignore resistances, a helm whose mods are mostly resistances is worth less to you
+  const noRes = gearScore(helm, { ignore: (k) => /Resistance/.test(k) });
+  assert.ok(noRes.score < g.score && noRes.score > 60, String(noRes.score));
+  const boots = parseItem('Item Class: Boots\nRarity: Rare\nX\nY\n--------\nEnergy Shield: 100\n--------\n+30 to maximum Life');
+  const b = gearScore(boots);
+  assert.equal(b.missing[0], 'Movement speed');
+  assert.equal(gearScore(parseItem('Item Class: Belts\nRarity: Unique\nMageblood\nHeavy Belt\n--------\n+50 to maximum Life')).unique, true);
+});
+
+test('character profiles keep gear, weights and build apart', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'poe2uc-prof-'));
+  const s = new Store(dir);
+  s.setEquipped('Helmet', parseItem(HELMET_OLD));
+  s.setWeight('# to maximum Life', 5);
+  s.setSetting('build', 'djinn-varashta');
+  assert.equal(s.listProfiles().length, 1);
+  const alt = s.createProfile('Alt witch');
+  assert.equal(Object.keys(s.equipped).length, 0);
+  assert.equal(s.weights['# to maximum Life'], 1); // defaults for a new character
+  s.setEquipped('Gloves', parseItem(HELMET_OLD.replace('Helmets', 'Gloves')));
+  s.switchProfile('main');
+  assert.ok(s.equipped.Helmet && !s.equipped.Gloves);
+  assert.equal(s.weights['# to maximum Life'], 5);
+  const s2 = new Store(dir); // persisted
+  assert.equal(s2.listProfiles().length, 2);
+  s2.switchProfile(alt);
+  assert.ok(s2.equipped.Gloves && !s2.equipped.Helmet);
+  assert.equal(s2.deleteProfile(alt), true);
+  assert.ok(s2.equipped.Helmet);
+});
+
+test('advanced copy: open prefixes / suffixes for crafting', () => {
+  const it = parseItem(`Item Class: Gloves
+Rarity: Rare
+Doom Vise
+Sorcerer Gloves
+--------
+Energy Shield: 280
+--------
+{ Prefix Modifier "Hale" (Tier: 3) — Life }
++33(33-41) to maximum Life
+{ Prefix Modifier "Shining" (Tier: 2) — Defences, Energy Shield }
+75(68-79)% increased Energy Shield
++20(18-22) to maximum Energy Shield
+{ Suffix Modifier "of the Squall" (Tier: 3) — Elemental, Lightning, Resistance }
++39(36-40)% to Lightning Resistance`);
+  assert.deepEqual(it.affixes, { known: true, prefixes: 2, suffixes: 1, openPrefix: 1, openSuffix: 2 });
+  assert.equal(it.stats['# to maximum Energy Shield'], 20); // hybrid lines still read
+  assert.equal(parseItem(HELMET_OLD).affixes.known, false);
+});

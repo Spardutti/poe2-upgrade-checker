@@ -1,0 +1,57 @@
+{
+  "name": "poe2-upgrade-checker",
+  "version": "0.4.0",
+  "description": "Path of Exile 2 overlay: Ctrl+C an item to see if it's an upgrade, and search the trade site for better gear.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/core.test.js test/trade.test.js test/rates.test.js test/listing.test.js test/pob.test.js test/stash.test.js test/ledger.test.js",
+    "dist": "npx electron-builder@25.1.8 --win nsis portable --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.4.11"
+  },
+  "build": {
+    "appId": "local.poe2.upgradechecker",
+    "productName": "PoE2 Upgrade Checker",
+    "files": [
+      "src/**",
+      "assets/**",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "portable": {
+      "artifactName": "PoE2-Upgrade-Checker-Portable-${version}.exe"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "PoE2-Upgrade-Checker-Setup-${version}.exe",
+      "shortcutName": "PoE2 Upgrade Checker"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ets-public",
+        "repo": "poe2-upgrade-checker",
+        "releaseType": "release"
+      }
+    ],
+    "asarUnpack": [
+      "src/stash/**"
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "6.3.9"
+  }
+}

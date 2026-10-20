@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
+  <title>Trade results</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="results">
+  <header class="res-head">
+    <div class="res-title" id="title">Trade results</div>
+    <div class="dim" id="sub"></div>
+    <div class="note" id="note"></div>
+    <div class="price-banner hidden" id="priceBanner"></div>
+    <div class="toolbar">
+      <label>Sort <select id="sort">
+        <option value="upgrade">Best upgrade</option>
+        <option value="gear">Best gear score</option>
+        <option value="value">Best value (upgrade per divine)</option>
+        <option value="price">Cheapest</option>
+        <option value="site">Trade site order</option>
+      </select></label>
+      <label><input type="checkbox" id="onlyUp"> Upgrades only</label>
+      <span class="grow"></span>
+      <button id="save" title="Save this search so you can re-run it later">☆ Save search</button>
+      <button id="site" class="primary">Open on trade site</button>
+      <span class="dim small" title="Esc hides this window; Ctrl+Shift+D (Options) brings it back">Esc hides · Ctrl+Shift+D reopens</span>
+    </div>
+  </header>
+  <main id="list"></main>
+  <div class="row center"><button id="more">Load 10 more</button><span id="moreMsg" class="note"></span></div>
+  <script src="results.js"></script>
+</body>
+</html>

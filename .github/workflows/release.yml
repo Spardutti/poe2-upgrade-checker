@@ -1,0 +1,26 @@
+name: Release
+
+# Builds the Windows installer and publishes it as a GitHub release.
+# Run it from the Actions tab ("Run workflow"), or push a tag like v0.3.1.
+# The version comes from package.json, so bump that first.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - run: npx electron-builder@25.1.8 --win nsis portable --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

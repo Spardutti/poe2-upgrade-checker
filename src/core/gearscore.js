@@ -1,0 +1,235 @@
+'use strict';
+
+// Gear score: rates an item 0-100 for how useful it is to YOUR build, by slot.
+// Each build profile lists the stats it wants, how important each is (0-10)
+// and what counts as an excellent roll ("cap"). An item scores
+//   sum(importance x roll quality) / (the best an item in that slot could get)
+// so a perfect item for your build is ~100, and stats your build doesn't use
+// add nothing (they're listed as "wasted").
+
+const { statSources } = require('./trade');
+
+// imp / cap can be a number or { Slot: n, default: n }.
+const pick = (v, slot) => (v && typeof v === 'object' ? (v[slot] != null ? v[slot] : (v.default != null ? v.default : 0)) : v || 0);
+
+const RES = (el) => ({ test: new RegExp(`^#% to ${el} Resistance$`), label: `${el} res`, key: `#% to ${el} Resistance`, res: el, imp: { Weapon: 0, Jewel: 0, default: 4 }, cap: 45 });
+
+const BUILDS = {
+  'djinn-varashta': {
+    name: 'Disciple of Varashta – Djinn summoner (ES)',
+    summary: 'Minion skill levels and Spirit first, then ally/minion damage, Energy Shield, resistances; movement speed on boots.',
+    // imp is per slot; 0 (default) means the stat can't roll there, so it
+    // doesn't count towards that slot's "perfect item".
+    stats: [
+      { test: /^# to Level of all Minion Skills$/, label: 'Minion skill levels', key: '# to Level of all Minion Skills', imp: { Weapon: 10, Offhand: 10, Amulet: 10, Helmet: 9, default: 0 }, cap: { Weapon: 4, Offhand: 3, Amulet: 3, default: 2 } },
+      { test: /^\[Base\] Spirit$/, label: 'Spirit (base)', imp: { Weapon: 8, default: 0 }, cap: 160 },
+      { test: /^# to Spirit$/, label: 'Spirit', key: '# to Spirit', imp: { 'Body Armour': 8, Amulet: 8, Weapon: 7, default: 0 }, cap: 60 },
+      { test: /^Allies in your Presence deal #% increased Damage$/, label: 'Ally damage', key: 'Allies in your Presence deal #% increased Damage', imp: { Weapon: 8, default: 0 }, cap: 90 },
+      { test: /^Allies in your Presence Gain #% of Damage as Extra/, label: 'Ally extra damage', imp: { Weapon: 6, default: 0 }, cap: 15 },
+      { test: /^Minions deal #% increased Damage/, label: 'Minion damage', key: 'Minions deal #% increased Damage', imp: { Ring: 7, Weapon: 6, Offhand: 6, Jewel: 7, default: 0 }, cap: { Ring: 25, Jewel: 15, default: 45 } },
+      { test: /^(Allies in your Presence|Minions) have #% increased Critical (Hit Chance|Damage Bonus)$/, label: 'Minion crit', imp: { Weapon: 5, Ring: 5, Jewel: 5, default: 0 }, cap: { Jewel: 20, default: 40 } },
+      { test: /^(Allies in your Presence|Minions|You and Allies in your Presence) have #% increased (Attack Speed|Cast Speed|Attack and Cast Speed)$/, label: 'Minion speed', imp: { Weapon: 5, Ring: 4, Amulet: 4, Jewel: 5, default: 0 }, cap: { Jewel: 8, default: 20 } },
+      { test: /^(Allies in your Presence|Minions) have #% to all Elemental Resistances$/, label: 'Minion res', imp: { Weapon: 2, default: 0 }, cap: 16 },
+      { test: /^Minions have #% increased maximum Life$|^Minions gain #% of their maximum Life as Extra maximum Energy Shield$/, label: 'Minion defence', imp: { Weapon: 2, Offhand: 2, Jewel: 2, default: 0 }, cap: { Jewel: 10, default: 30 } },
+      { test: /^#% increased Spirit Reservation Efficiency of Skills$/, label: 'Spirit efficiency', imp: { Amulet: 5, default: 0 }, cap: 15 },
+      { test: /^\[Base\] Energy Shield$/, label: 'Energy Shield', imp: { 'Body Armour': 10, Helmet: 9, Gloves: 8, Boots: 7, Offhand: 7, default: 0 }, cap: { 'Body Armour': 1000, Helmet: 550, Gloves: 350, Boots: 400, Offhand: 350, default: 1 } },
+      { test: /^\[Base\] Armour$/, label: 'Armour', imp: { 'Body Armour': 2, default: 0 }, cap: 800 },
+      // flat ES on armour is local (already in [Base]); on jewellery it's global
+      { test: /^# to maximum Energy Shield$/, label: 'Energy Shield', key: '# to maximum Energy Shield', imp: { Amulet: 6, Ring: 5, Belt: 4, default: 0 }, cap: 60 },
+      { test: /^#% increased maximum Energy Shield$/, label: '% Energy Shield', key: '#% increased maximum Energy Shield', imp: { Amulet: 7, Jewel: 7, default: 0 }, cap: { Jewel: 12, default: 25 } },
+      { test: /^Gain #% of maximum (Life|Mana) as Extra maximum Energy Shield$/, label: 'Extra ES', imp: { 'Body Armour': 5, default: 0 }, cap: 15 },
+      { test: /^# to maximum Life$/, label: 'Life', key: '# to maximum Life', imp: { Weapon: 0, Jewel: 0, default: 4 }, cap: 100 },
+      { test: /^# to maximum Mana$/, label: 'Mana', key: '# to maximum Mana', imp: { Jewel: 0, default: 3 }, cap: 150 },
+      RES('Fire'), RES('Cold'), RES('Lightning'),
+      { test: /^#% to Chaos Resistance$/, label: 'Chaos res', key: '#% to Chaos Resistance', res: 'Chaos', imp: { Weapon: 0, Jewel: 0, default: 4 }, cap: 30 },
+      { test: /^# to Intelligence$/, label: 'Intelligence', key: '# to Intelligence', imp: { Jewel: 1, default: 3 }, cap: { Jewel: 12, default: 35 } },
+      { test: /^# to (Strength|Dexterity)$/, label: 'Str/Dex', imp: { Jewel: 0, default: 1.5 }, cap: 35 },
+      { test: /^#% increased Movement Speed$/, label: 'Movement speed', key: '#% increased Movement Speed', imp: { Boots: 10, default: 0 }, cap: 35 },
+      { test: /^#% increased Cast Speed$/, label: 'Cast speed', key: '#% increased Cast Speed', imp: { Ring: 3, Amulet: 3, Offhand: 3, Jewel: 2, default: 0 }, cap: { Jewel: 6, default: 25 } },
+      { test: /^#% increased Energy Shield Recharge Rate$|^#% faster start of Energy Shield Recharge$/, label: 'ES recharge', imp: { Offhand: 2, 'Body Armour': 2, Helmet: 2, Belt: 2, Amulet: 2, Jewel: 3, default: 0 }, cap: { Jewel: 25, default: 40 } },
+      { test: /^#% increased Mana Regeneration Rate$/, label: 'Mana regen', imp: { Ring: 1.5, Amulet: 1.5, Offhand: 1.5, default: 0 }, cap: 40 },
+      { test: /^# Life Regeneration per second$/, label: 'Life regen', imp: { Jewel: 0, default: 1 }, cap: 15 },
+      { test: /^#% increased Rarity of Items found$/, label: 'Rarity', imp: { Ring: 1.5, Amulet: 1.5, Helmet: 1.5, Gloves: 1.5, Boots: 1.5, default: 0 }, cap: 30 },
+    ],
+  },
+};
+
+const LOCAL_DEFENCE = /^#% increased (Armour|Evasion Rating|Evasion|Energy Shield|Armour and Evasion|Armour and Energy Shield|Evasion and Energy Shield|Armour, Evasion and Energy Shield)$|^# to (maximum Energy Shield|Armour|Evasion Rating)$/;
+// Two general-purpose profiles for other characters.
+const ES = { test: /^\[Base\] Energy Shield$/, label: 'Energy Shield', imp: { 'Body Armour': 10, Helmet: 9, Gloves: 8, Boots: 7, Offhand: 7, default: 0 }, cap: { 'Body Armour': 1000, Helmet: 550, Gloves: 350, Boots: 400, Offhand: 350, default: 1 } };
+const AR = { test: /^\[Base\] (Armour|Evasion Rating)$/, label: 'Armour / Evasion', imp: { 'Body Armour': 10, Helmet: 8, Gloves: 7, Boots: 6, Offhand: 7, default: 0 }, cap: { 'Body Armour': 1200, Helmet: 600, Gloves: 400, Boots: 450, Offhand: 450, default: 1 } };
+const COMMON = (lifeImp) => [
+  { test: /^# to maximum Life$/, label: 'Life', key: '# to maximum Life', imp: { Weapon: 0, Jewel: 0, default: lifeImp }, cap: 100 },
+  { test: /^#% to Fire Resistance$/, label: 'Fire res', key: '#% to Fire Resistance', res: 'Fire', imp: { Weapon: 0, Jewel: 0, default: 5 }, cap: 45 },
+  { test: /^#% to Cold Resistance$/, label: 'Cold res', key: '#% to Cold Resistance', res: 'Cold', imp: { Weapon: 0, Jewel: 0, default: 5 }, cap: 45 },
+  { test: /^#% to Lightning Resistance$/, label: 'Lightning res', key: '#% to Lightning Resistance', res: 'Lightning', imp: { Weapon: 0, Jewel: 0, default: 5 }, cap: 45 },
+  { test: /^#% to Chaos Resistance$/, label: 'Chaos res', key: '#% to Chaos Resistance', res: 'Chaos', imp: { Weapon: 0, Jewel: 0, default: 3 }, cap: 30 },
+  { test: /^#% increased Movement Speed$/, label: 'Movement speed', key: '#% increased Movement Speed', imp: { Boots: 10, default: 0 }, cap: 35 },
+  { test: /^# to (Strength|Dexterity|Intelligence)$/, label: 'Attributes', imp: { Jewel: 0, default: 2 }, cap: 35 },
+  { test: /^#% increased Rarity of Items found$/, label: 'Rarity', imp: { Ring: 1.5, Amulet: 1.5, Helmet: 1.5, Gloves: 1.5, Boots: 1.5, default: 0 }, cap: 30 },
+];
+BUILDS['es-caster'] = {
+  name: 'Energy Shield spellcaster (generic)',
+  summary: 'Spell skill levels, spell/elemental damage, cast speed and crit on weapons; Energy Shield and resistances on armour.',
+  stats: [
+    { test: /^# to Level of all (Spell|Fire Spell|Cold Spell|Lightning Spell|Chaos Spell) Skills$/, label: 'Spell skill levels', key: '# to Level of all Spell Skills', imp: { Weapon: 10, Offhand: 9, Amulet: 9, default: 0 }, cap: { Weapon: 5, default: 3 } },
+    { test: /^#% increased (Spell|Fire|Cold|Lightning|Chaos|Elemental) Damage$/, label: 'Spell damage', key: '#% increased Spell Damage', imp: { Weapon: 9, Offhand: 8, Amulet: 5, Ring: 4, Jewel: 7, default: 0 }, cap: { Jewel: 15, Ring: 30, default: 100 } },
+    { test: /^#% increased Cast Speed$/, label: 'Cast speed', key: '#% increased Cast Speed', imp: { Weapon: 7, Ring: 5, Amulet: 5, Jewel: 4, default: 0 }, cap: { Jewel: 6, default: 25 } },
+    { test: /^#% increased Critical (Hit Chance|Damage Bonus)( for Spells)?$/, label: 'Crit', imp: { Weapon: 6, Offhand: 5, Amulet: 4, Jewel: 4, Helmet: 3, default: 0 }, cap: { Jewel: 15, default: 60 } },
+    ES,
+    { test: /^#% increased maximum Energy Shield$/, label: '% Energy Shield', key: '#% increased maximum Energy Shield', imp: { Amulet: 7, Jewel: 7, default: 0 }, cap: { Jewel: 12, default: 25 } },
+    { test: /^# to maximum Energy Shield$/, label: 'Energy Shield', key: '# to maximum Energy Shield', imp: { Amulet: 6, Ring: 5, Belt: 4, default: 0 }, cap: 60 },
+    { test: /^# to maximum Mana$/, label: 'Mana', key: '# to maximum Mana', imp: { Jewel: 0, default: 3 }, cap: 150 },
+    { test: /^# to Spirit$/, label: 'Spirit', key: '# to Spirit', imp: { 'Body Armour': 5, Amulet: 5, default: 0 }, cap: 60 },
+    ...COMMON(3),
+  ],
+};
+BUILDS['life-res'] = {
+  name: 'Life & resistances (any build)',
+  summary: 'A safe all-rounder: life, resistances, Armour/Evasion and movement speed. Weapons: damage per second.',
+  stats: [
+    { test: /^\[Weapon\] Total DPS$/, label: 'Weapon DPS', imp: { Weapon: 10, default: 0 }, cap: 400 },
+    AR, ES,
+    ...COMMON(7),
+    { test: /^#% increased (Attack|Cast) Speed$/, label: 'Speed', imp: { Weapon: 4, Ring: 3, Amulet: 3, Gloves: 3, default: 0 }, cap: 20 },
+  ],
+};
+
+const ARMOUR_SLOTS = ['Helmet', 'Body Armour', 'Gloves', 'Boots', 'Offhand'];
+const { groupOf } = require('./slots');
+const slotName = (s) => groupOf(s);
+
+function grade(score) {
+  if (score >= 85) return 'S';
+  if (score >= 70) return 'A';
+  if (score >= 55) return 'B';
+  if (score >= 40) return 'C';
+  return 'D';
+}
+
+// opts: { build: id, ignore(key) -> bool }
+function gearScore(item, opts) {
+  opts = opts || {};
+  const build = BUILDS[opts.build || 'djinn-varashta'];
+  if (!build || !item || !item.slot) return null;
+  const slot = slotName(item.slot);
+  if (['Charm', 'Life Flask', 'Mana Flask'].includes(slot)) {
+    return { score: null, grade: '–', unrated: 'type', slot, build: opts.build || 'djinn-varashta', buildName: build.name, contributions: [], wasted: [], missing: [] };
+  }
+  if (item.unidentified) {
+    return { score: null, grade: '–', unrated: 'unidentified', slot, build: opts.build || 'djinn-varashta', buildName: build.name, contributions: [], wasted: [], missing: [] };
+  }
+  if (/unique/i.test(item.rarity || '')) {
+    return { score: null, grade: '–', unique: true, slot, build: opts.build || 'djinn-varashta', buildName: build.name, contributions: [], wasted: [], missing: [] };
+  }
+  const ignore = opts.ignore || (() => false);
+  const entries = build.stats.filter((e) => pick(e.imp, slot) * ((opts.tweaks && opts.tweaks[e.label] != null) ? Number(opts.tweaks[e.label]) : 1) > 0);
+
+  // What a perfect item for this slot would score: its best K stats at full rolls.
+  const K = slot === 'Jewel' ? 4 : ARMOUR_SLOTS.includes(slot) || slot === 'Weapon' ? 7 : 6;
+  // resistance caps: how much of each resistance you still need from this slot
+  const need = opts.resNeed || null;
+  const resNotes = [];
+  const tweak = (e) => { const t = opts.tweaks && opts.tweaks[e.label]; return t == null ? 1 : Number(t); };
+  const impOf = (e) => pick(e.imp, slot) * tweak(e);
+  const usable = entries.filter((e) => {
+    // an entry is out of the ideal if every key it covers is ignored
+    const sample = { 'Fire res': '#% to Fire Resistance', 'Cold res': '#% to Cold Resistance', 'Lightning res': '#% to Lightning Resistance', 'Chaos res': '#% to Chaos Resistance', Life: '# to maximum Life', Mana: '# to maximum Mana', Intelligence: '# to Intelligence' }[e.label];
+    if (sample && ignore(sample)) return false;
+    // capped resistances don't count towards a perfect item either
+    if (e.res && need && need[e.res] != null && need[e.res] < pick(e.cap, slot) * 0.25) return false;
+    return true;
+  });
+  const ideal = usable.map((e) => impOf(e)).sort((a, b) => b - a).slice(0, K).reduce((a, b) => a + b, 0) || 1;
+
+  const st = item.stats || {};
+  const hasBaseDef = st['[Base] Armour'] || st['[Base] Evasion Rating'] || st['[Base] Energy Shield'];
+  const contributions = [];
+  const wasted = [];
+  const used = new Set();
+  for (const x of statSources(item)) {
+    if (!(x.value > 0)) continue;
+    if (ignore(x.key)) continue;
+    const e = usable.find((en) => en.test.test(x.key));
+    if (!e) {
+      const capped = entries.find((en) => en.res && en.test.test(x.key) && !usable.includes(en));
+      if (capped) {
+        if (!(need && need[capped.res] != null)) continue; // ignored, not capped
+        const note = need[capped.res] > 0 ? `${capped.res} res: you only need ${Math.round(need[capped.res])} more to cap, so it barely counts.` : `${capped.res} res: you're already capped – it doesn't count.`;
+        if (!resNotes.includes(note)) resNotes.push(note);
+        continue;
+      }
+      // local defence / spirit mods already show up in the [Base] number
+      const inBase = (hasBaseDef && LOCAL_DEFENCE.test(x.key)) || (st['[Base] Spirit'] && x.key === '#% increased Spirit');
+      if ((x.source === 'mod' || x.source === 'implicit') && !inBase) wasted.push(x.key);
+      continue;
+    }
+    const imp = impOf(e);
+    const cap = pick(e.cap, slot) || 1;
+    let value = x.value;
+    if (e.res && need && need[e.res] != null && value > need[e.res]) {
+      resNotes.push(need[e.res] > 0 ? `${e.res} res: you only need ${Math.round(need[e.res])} more to cap – the rest doesn't count.` : `${e.res} res: you're already capped – it doesn't count.`);
+      value = need[e.res];
+    }
+    const quality = Math.min(value / cap, 1.15);
+    const factor = x.source === 'socket' ? 0.5 : 1; // rune bonuses can be swapped
+    const points = imp * quality * factor;
+    used.add(e);
+    contributions.push({ key: x.key, label: e.label, value: x.value, quality: Math.round(quality * 100), points: Math.round(points * 10) / 10, source: x.source });
+  }
+  contributions.sort((a, b) => b.points - a.points);
+  const total = contributions.reduce((a, c) => a + c.points, 0);
+  const score = Math.max(0, Math.min(100, Math.round((100 * total) / ideal)));
+  const missing = usable
+    .filter((e) => !used.has(e))
+    .sort((a, b) => impOf(b) - impOf(a))
+    .slice(0, 3)
+    .filter((e) => impOf(e) >= 5)
+    .map((e) => e.label);
+  return { score, grade: grade(score), slot, build: opts.build || 'djinn-varashta', buildName: build.name, contributions, wasted, missing, resNote: resNotes.join(' ') || null };
+}
+
+// Is this stat something the build wants on this slot? (used to colour the
+// popup's change list and pick the "top changes")
+function usefulness(slotIn, key, opts) {
+  const build = BUILDS[(opts && opts.build) || 'djinn-varashta'];
+  if (!build) return 0;
+  const slot = slotName(slotIn);
+  const e = build.stats.find((en) => en.test.test(key));
+  if (!e) return 0;
+  const imp = pick(e.imp, slot);
+  const cap = pick(e.cap, slot) || 1;
+  return imp > 0 ? imp / cap : 0; // points per unit of the stat
+}
+
+// The most important searchable stats for a slot (for "craftable bases").
+function topStats(slotIn, n, opts) {
+  const build = BUILDS[(opts && opts.build) || 'djinn-varashta'];
+  if (!build) return [];
+  const slot = slotName(slotIn);
+  const tw = (opts && opts.tweaks) || {};
+  return build.stats
+    .filter((e) => e.key && !e.res)
+    .map((e) => ({ key: e.key, label: e.label, imp: pick(e.imp, slot) * (tw[e.label] != null ? Number(tw[e.label]) : 1), cap: pick(e.cap, slot) }))
+    .filter((e) => e.imp >= 4)
+    .sort((a, b) => b.imp - a.imp)
+    .slice(0, n || 2);
+}
+
+// For the gear score editor: each stat line of a build, with where it counts.
+function buildStats(id) {
+  const b = BUILDS[id || 'djinn-varashta'];
+  if (!b) return [];
+  const seen = new Set();
+  return b.stats.filter((e) => { if (seen.has(e.label)) return false; seen.add(e.label); return true; }).map((e) => {
+    const where = typeof e.imp === 'object' ? Object.entries(e.imp).filter(([k, v]) => k !== 'default' && v > 0).map(([k, v]) => `${k} ${v}`) : [];
+    const def = typeof e.imp === 'object' ? e.imp.default || 0 : e.imp;
+    return { label: e.label, where: def > 0 ? `everywhere ${def}${where.length ? ', ' + where.join(', ') : ''}` : where.join(', ') };
+  });
+}
+
+function buildList() {
+  return Object.entries(BUILDS).map(([id, b]) => ({ id, name: b.name, summary: b.summary }));
+}
+
+module.exports = { gearScore, grade, buildList, buildStats, usefulness, topStats, BUILDS, slotName };
