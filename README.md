@@ -1,20 +1,77 @@
-# PoE2 Upgrade Checker
+<p align="center"><img src="docs/banner.svg" alt="PoE2 Upgrade Checker" width="100%"></p>
 
-A small Windows overlay for Path of Exile 2:
+<p align="center">
+  <a href="https://github.com/ets-public/poe2-upgrade-checker/releases/latest"><img alt="Download" src="https://img.shields.io/github/v/release/ets-public/poe2-upgrade-checker?label=download&color=d6a85a&style=for-the-badge"></a>
+  <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%2F%2011-5b4a35?style=for-the-badge">
+  <img alt="Free" src="https://img.shields.io/badge/price-free-6fcf63?style=for-the-badge">
+</p>
 
-- **Upgrade check:** hover an item in game and press **Ctrl+D**. The app presses Ctrl+C for you, one keystroke per press. Pressing Ctrl+C yourself also works. A popup shows whether it beats what you have equipped in that slot, scored with your own stat weights, along with the change in every stat.
-- **Find upgrades:** one click searches the official trade site for gear with your item's stats at your values or higher, and loosens the search step by step if nothing is listed. You can also search by your stat weights, or build a custom search: keep the stats you want, drop the ones you don't, and add new ones.
+**PoE2 Upgrade Checker** is a small overlay that sits in your system tray while you play Path of Exile 2. It answers three questions in game:
 
-It doesn't read game memory. Its only input to the game is one Ctrl+C each time you press the hotkey. It reads the item text the game puts on the clipboard and calls the public trade site.
+| | |
+|---|---|
+| **Is this an upgrade?** Hover an item and press **Ctrl+D**. A popup gives it a gear score for your build and compares it with what you're wearing in that slot, stat by stat. | <img src="docs/popup.svg" alt="Upgrade popup" width="380"> |
+| **Where's a better one?** One click searches the official trade site for gear with your item's stats or better, within your budget. If nothing turns up, it loosens the search for you. Results open in the app, scored against your gear, with a ready-made whisper. | |
+| **What's my stash worth?** Open a currency, essence, rune or other specialty tab and press **Ctrl+Shift+S**. The app reads the tab from your screen and prices it with poe.ninja. It tracks your net worth, profit per hour and every change between scans. | <img src="docs/stash.svg" alt="Stash value" width="380"> |
 
-## Run it
+<sub>The pictures are illustrations of the app's popup and Stash value tab.</sub>
 
-- **Recommended:** download `PoE2-Upgrade-Checker-Setup-x.y.z.exe` from the [Releases page](https://github.com/ets-public/poe2-upgrade-checker/releases/latest) and run it. It installs for your Windows user only, so no admin is needed, and **updates itself**. It checks on start and every 6 hours, downloads quietly, and installs when you quit, or straight away with *Restart to update* in the tray or under Options → Updates.
-- **Portable:** `PoE2-Upgrade-Checker-Portable-x.y.z.exe` from the same page needs no install, but doesn't auto-update.
-- **From source:** install **Node.js LTS** and double-click `start.bat`.
-- In PoE2, set Options → Graphics → **Windowed Fullscreen**, otherwise the popup can't draw over the game.
+## Download
 
-The app sits in the system tray. Click the icon to open Settings.
+1. Get **`PoE2-Upgrade-Checker-Setup-x.y.z.exe`** from the [latest release](https://github.com/ets-public/poe2-upgrade-checker/releases/latest) and run it. It installs for your Windows user only, so no admin rights are needed, and **updates itself**.
+   - Prefer no install? Use the **Portable** .exe from the same page. It doesn't auto-update.
+   - Windows may warn about an unrecognised app because the installer isn't code-signed. Click *More info → Run anyway*.
+2. In PoE2, go to **Options → Graphics** and set **Windowed Fullscreen**, so the overlay can draw over the game.
+3. Hover an item and press **Ctrl+D**. The first-run guide walks you through saving your gear (or importing it from Path of Building).
+
+## Features
+
+- **Gear score for your build:**
+  - Built in: the *Disciple of Varashta – Djinn summoner (ES)* build, plus an ES spellcaster and a Life + res build.
+  - Tune how much each stat matters with the gear score editor.
+  - Resistance caps are understood: extra fire res when you're capped scores nothing.
+- **Upgrade popup:** UPGRADE / SIDEGRADE / DOWNGRADE, the change in every stat, open prefixes and suffixes for crafting, and *What's it worth?*
+- **Trade search:**
+  - *Same stats or better*, *by my weights*, *craftable bases*, or a custom search built from any of the trade site's ~3,600 stats.
+  - Price range in divines (or exalts, using poe.ninja's live rate), ignored and excluded stats, and saved searches with **new-listing alerts**.
+- **Your gear:**
+  - Every slot, including weapon swap, jewels, flasks and charms.
+  - Import from Path of Building (pobb.in links or codes).
+  - Several characters, each with their own gear and build.
+- **Stash value:**
+  - **Tabs read from your screen:** currency, essence, runes, soul cores, omens, delirium, breach, expedition, abyss, fragments and idols, at any resolution.
+  - **Everything else:** your trade listings and items you add from the popup.
+  - **Tracking:** net worth chart, session profit per hour, 24 h change and a feed of what changed.
+- **Built for playing:**
+  - Compact popup.
+  - Pin it to the cursor or a screen edge.
+  - Text size and colour-blind options.
+  - Starts with Windows.
+
+## Fair play and privacy
+
+- **Nothing touches the game:**
+  - It never reads game memory and never injects anything.
+  - Its only input to the game is **one Ctrl+C per hotkey press**, the same as copying an item yourself.
+  - The stash reader looks at one screenshot of your screen, only when you press the scan hotkey.
+- **Where data goes:**
+  - It talks to the official trade site (pathofexile.com) and poe.ninja, nothing else.
+  - Your gear, settings and stash history stay on your PC, in `%APPDATA%\poe2-upgrade-checker`.
+- **Signing in is optional** and only used for *Travel to hideout*. You sign in on pathofexile.com's own login page, and the app only keeps the resulting login cookie, on your PC.
+- **Not affiliated:** this is a fan-made tool, not affiliated with or endorsed by Grinding Gear Games.
+
+## Why the stash reader works from the screen
+
+Path of Exile 2 doesn't have a stash API yet: GGG's developer docs list the account stash endpoints as *PoE1 only*. So instead of asking for your session cookie (which GGG advises against), the app reads specialty tabs from a screenshot:
+
+1. It works out which tab is open from the layout of its cells.
+2. It reads each stack count with digit templates that adapt to your screen.
+3. A count it can't read safely is marked *unreadable* and keeps its last value. It never guesses.
+4. Hover a stack and press **Ctrl+C**, and the exact stack size from the game corrects it.
+
+---
+
+# Guide
 
 ## First-time setup
 
@@ -38,7 +95,7 @@ The **setup guide** opens on first run. You can reopen it from **My gear → Set
 
 ## Finding upgrades
 
-- **Find upgrades for your <slot>** (in the popup, or on the Equipped gear tab) searches for **the same stats or better** than your *equipped* item. Every mod becomes a filter with your value as the minimum, and one may be missing if the item has 4 or more.
+- **Find upgrades for your <slot>** (in the popup, or on the My gear tab) searches for **the same stats or better** than your *equipped* item. Every mod becomes a filter with your value as the minimum, and one may be missing if the item has 4 or more.
   - If nothing is listed, it loosens the search automatically, to 90%, then 80%, then 65% of your values with more stats allowed missing. It tells you which level found listings.
   - Rune and enchant bonuses are left out, because you can socket your own. Base Armour/Evasion/ES/Spirit are worked out without the rune bonus, then set to 90%.
   - Uniques are searched by name.
@@ -55,7 +112,7 @@ The **setup guide** opens on first run. You can reopen it from **My gear → Set
   - **Ignore** leaves them out of the popup's score and change list, and out of every search.
   - **Exclude listings with it** also hides trade listings that have them.
   - You can ignore any single stat too: type it in, or click **⊘** next to it in the popup.
-- **Stat database:** the **Browse stats…** buttons (Custom search, Ignored stats, Stat weights) open a searchable list of every stat the PoE2 trade site knows, about 3,600 of them.
+- **Stat database:** the **Browse stats…** buttons (Custom search, Ignored stats, Build & weights) open a searchable list of every stat the PoE2 trade site knows, about 3,600 of them.
   - Filter by kind: totals across all sources, explicit, implicit, rune, desecrated and so on.
   - Filter to **Seen on <item type>**: the stats that have appeared on that kind of item you've copied. The list grows as you copy more items.
   - From the list you can add a stat to a custom search (with a minimum), ignore or exclude it, or give it a weight.
@@ -81,7 +138,7 @@ Each slot is scored only on stats that can roll there. A perfect item for that s
 
 - **Popup:** shows the item's score next to yours, e.g. "45 C · Gear score · yours 56 (-11)". Click **why?** for the stats that scored, how good each roll is, what's missing, and which mods are useless to you.
 - **Results window:** every listing shows its gear score, and you can sort by **Best gear score**.
-- **Equipped gear tab:** shows each slot's score, your **overall gear score**, and **Upgrade first:** your three weakest slots. Click one to search for an upgrade.
+- **My gear tab:** shows each slot's score, your **overall gear score**, and **Upgrade first:** your three weakest slots. Click one to search for an upgrade.
 - Stats you've set to ignore don't count. Uniques and unidentified items aren't rated.
 - **Resistance caps:** resistance only counts up to your cap. If you're already capped on fire, fire res on a new item scores nothing, and **why?** says so.
 - **Jewels, weapon swap:** jewels (6 slots), Weapon 2 and Offhand 2 are tracked and scored too. Open *Weapon swap, flasks, charms & jewels* under the slot list on My gear. The overall score uses main gear only.
@@ -143,7 +200,7 @@ Searches show their listings in a **results window** (always on top, on the righ
 - **Alerts:** tick **Alert** on a saved search and choose how often to check (Find upgrade tab). New listings give a Windows notification, e.g. "3 new listings: … Cheapest new: 220 ex · gear score 47 C". Click it to see them. Checks are spaced out to respect the trade site's rate limits.
 - **Results window:** Esc hides it, and **Ctrl+Shift+D** (changeable in Options) shows it again. It remembers its size and position.
 - **Sign in (optional, experimental):** Options → Account opens the pathofexile.com login inside the app. Once signed in, Instant Buyout listings get a **Travel to hideout** button. This uses an unofficial endpoint, so if it fails, use *Buy on trade site* instead.
-- **Suggest from my gear** (Stat weights tab) builds weights from your equipped items. Each stat's typical roll is worth about 30 points, more if several items have it. It skips uniques, rune bonuses and local defence mods that [Base] already covers. Use the suggestions as they are or only add missing ones; there's an Undo.
+- **Suggest from my gear** (Build & weights tab) builds weights from your equipped items. Each stat's typical roll is worth about 30 points, more if several items have it. It skips uniques, rune bonuses and local defence mods that [Base] already covers. Use the suggestions as they are or only add missing ones; there's an Undo.
 - **Options → Results & startup**: start with Windows (quietly in the tray), and choose whether this window opens on start.
 
 ## Hotkey & troubleshooting
@@ -167,3 +224,9 @@ Searches show their listings in a **results window** (always on top, on the righ
 - `src/stash/assets/` holds the tab layouts, frame crops and digit templates from [poe2-stash-tracker](https://github.com/turlockmike/poe2-stash-tracker) (MIT, see `LICENSE-poe2-stash-tracker`).
 - `build-exe.bat` (or `npm run dist`) builds the installer and the portable .exe locally, without publishing.
 - **Releasing a new version:** bump `version` in `package.json`, then double-click `release.bat`. You need [Git for Windows](https://git-scm.com/download/win) installed once. The script pushes to GitHub and tags the version. GitHub Actions then builds on Windows, runs the tests and publishes the release, and installed copies pick it up within a few hours. You can also start a build from **Actions → Release → Run workflow**.
+
+## Credits
+
+- Stash tab layouts, frame crops and digit templates: [poe2-stash-tracker](https://github.com/turlockmike/poe2-stash-tracker) (MIT).
+- Prices: [poe.ninja](https://poe.ninja). Trade data: the official [Path of Exile trade site](https://www.pathofexile.com/trade2).
+- Path of Exile is a trademark of Grinding Gear Games. This project isn't affiliated with or endorsed by them.
