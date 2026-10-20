@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1e1813"/><stop offset="1" stop-color="#0f0c0a"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f0c97a"/><stop offset="1" stop-color="#c8963f"/></linearGradient>
+  </defs>
+  <rect width="960" height="300" rx="14" fill="url(#bg)"/>
+  <rect x="1" y="1" width="958" height="298" rx="14" fill="none" stroke="#5b4a35"/>
+  <text x="48" y="92" font-size="44" font-weight="700" fill="url(#gold)">PoE2 Upgrade Checker</text>
+  <text x="50" y="128" font-size="18" fill="#e6dccb">Is it an upgrade? Where's a better one? What's my stash worth?</text>
+  <text x="50" y="154" font-size="15" fill="#9a8c78">A free Windows overlay for Path of Exile 2. No memory reading, one keypress per check.</text>
+  <g font-size="14">
+    <g transform="translate(48,190)">
+      <rect width="270" height="78" rx="8" fill="#15110e" stroke="#5b4a35"/>
+      <text x="16" y="28" font-weight="600" fill="#d6a85a">Upgrade check</text>
+      <text x="16" y="50" fill="#e6dccb">Hover an item, press Ctrl+D:</text>
+      <text x="16" y="68" fill="#9a8c78">a gear score for your build</text>
+    </g>
+    <g transform="translate(345,190)">
+      <rect width="270" height="78" rx="8" fill="#15110e" stroke="#5b4a35"/>
+      <text x="16" y="28" font-weight="600" fill="#d6a85a">Find upgrades</text>
+      <text x="16" y="50" fill="#e6dccb">One click searches the trade site,</text>
+      <text x="16" y="68" fill="#9a8c78">within your budget, scored for you</text>
+    </g>
+    <g transform="translate(642,190)">
+      <rect width="270" height="78" rx="8" fill="#15110e" stroke="#5b4a35"/>
+      <text x="16" y="28" font-weight="600" fill="#d6a85a">Stash value</text>
+      <text x="16" y="50" fill="#e6dccb">Net worth in divines, profit/hour</text>
+      <text x="16" y="68" fill="#9a8c78">and history, from your own screen</text>
+    </g>
+  </g>
+</svg>

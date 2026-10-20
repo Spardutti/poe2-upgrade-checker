@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="262" viewBox="0 0 540 262" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <rect x="1" y="1" width="538" height="260" rx="8" fill="#15110e" stroke="#5b4a35"/>
+  <text x="18" y="46" font-size="30" font-weight="700" fill="#d6a85a">412.6 div</text>
+  <text x="20" y="66" font-size="12" fill="#9a8c78">≈ 123,780 ex · prices: poe.ninja · just now</text>
+  <g transform="translate(300,16)"><rect width="104" height="56" rx="6" fill="#1e1813" stroke="#5b4a35"/><text x="10" y="18" font-size="11" fill="#9a8c78">This session</text><text x="10" y="38" font-size="16" font-weight="600" fill="#6fcf63">+18.4 div</text><text x="10" y="51" font-size="10" fill="#9a8c78">+6.1 div / hour</text></g>
+  <g transform="translate(414,16)"><rect width="108" height="56" rx="6" fill="#1e1813" stroke="#5b4a35"/><text x="10" y="18" font-size="11" fill="#9a8c78">Last 24 hours</text><text x="10" y="38" font-size="16" font-weight="600" fill="#6fcf63">+31.0 div</text></g>
+  <rect x="18" y="84" width="504" height="96" rx="6" fill="#1e1813" stroke="#5b4a35"/>
+  <line x1="26" x2="514" y1="108" y2="108" stroke="#3a2f24"/><line x1="26" x2="514" y1="132" y2="132" stroke="#3a2f24"/><line x1="26" x2="514" y1="156" y2="156" stroke="#3a2f24"/>
+  <path d="M26,164 H90 V158 H150 V150 H205 V152 H260 V138 H320 V131 H372 V122 H430 V112 H480 V100 H514 V172 H26 Z" fill="rgba(214,168,90,.14)"/>
+  <path d="M26,164 H90 V158 H150 V150 H205 V152 H260 V138 H320 V131 H372 V122 H430 V112 H480 V100 H514" fill="none" stroke="#d6a85a" stroke-width="2"/>
+  <circle cx="514" cy="100" r="3.5" fill="#d6a85a"/>
+  <text x="18" y="204" font-weight="600" fill="#d6a85a">Stash tabs</text>
+  <text x="18" y="226" fill="#e6dccb">Currency</text><text x="200" y="226" font-weight="600" fill="#e6dccb">288.0 div</text><rect x="290" y="218" width="80" height="6" rx="3" fill="#2c241c"/><rect x="290" y="218" width="56" height="6" rx="3" fill="#d6a85a"/><text x="380" y="226" fill="#9a8c78">just now</text>
+  <text x="18" y="248" fill="#e6dccb">Runes</text><text x="200" y="248" font-weight="600" fill="#e6dccb">74.2 div</text><rect x="290" y="240" width="80" height="6" rx="3" fill="#2c241c"/><rect x="290" y="240" width="15" height="6" rx="3" fill="#d6a85a"/><text x="380" y="248" fill="#e0645a">2 days ago – rescan</text>
+</svg>

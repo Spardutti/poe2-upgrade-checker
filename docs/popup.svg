@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="244" viewBox="0 0 400 244" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <rect x="1" y="1" width="398" height="242" rx="8" fill="#15110e" stroke="#5b4a35"/>
+  <rect x="356" y="10" width="30" height="24" rx="4" fill="#2c241c" stroke="#5b4a35"/><text x="371" y="27" text-anchor="middle" font-size="16" fill="#e6dccb">×</text>
+  <text x="16" y="30" font-size="16" font-weight="600" fill="#ffff77">Storm Clutches</text>
+  <text x="16" y="48" font-size="12" fill="#9a8c78">Sorcerer Gloves · Gloves · ilvl 81</text>
+  <rect x="16" y="60" width="96" height="22" rx="3" fill="#6fcf63"/><text x="64" y="76" text-anchor="middle" font-weight="700" fill="#0d1a0b">UPGRADE</text>
+  <text x="122" y="78" font-size="17" font-weight="600" fill="#6fcf63">+14 gear score</text>
+  <text x="266" y="77" font-size="12" fill="#9a8c78">vs Doom Vise</text>
+  <rect x="16" y="92" width="44" height="20" rx="3" fill="#d6c25a"/><text x="38" y="107" text-anchor="middle" font-weight="700" fill="#1a1406">70 A</text>
+  <text x="68" y="107" fill="#e6dccb">gear score · yours 56</text>
+  <text x="206" y="107" fill="#9a8c78" text-decoration="underline">why?</text>
+  <text x="16" y="134" fill="#6fcf63">+66 to maximum Life</text><text x="168" y="134" fill="#6fcf63">+38 [Base] Energy Shield</text>
+  <text x="16" y="154" fill="#6fcf63">+2 to Level of all Minion Skills</text><text x="236" y="154" fill="#e0645a">−12% Cold Resistance</text>
+  <rect x="16" y="170" width="166" height="30" rx="4" fill="#3a2d1a" stroke="#d6a85a"/><text x="99" y="190" text-anchor="middle" fill="#f3e3c2">Find upgrades ≤ 60 div</text>
+  <rect x="190" y="170" width="122" height="30" rx="4" fill="#2c241c" stroke="#d6a85a"/><text x="251" y="190" text-anchor="middle" fill="#f3e3c2">What's it worth?</text>
+  <text x="16" y="226" fill="#9a8c78" text-decoration="underline">More ▾</text>
+</svg>
