@@ -7,6 +7,8 @@
   <img alt="Free" src="https://img.shields.io/badge/price-free-7a6545?labelColor=0a0c10&style=for-the-badge">
 </p>
 
+<p align="center"><b><a href="https://poe2upgrade.com">poe2upgrade.com</a></b></p>
+
 **PoE2 Upgrade Checker** is a small overlay that sits in your system tray while you play Path of Exile 2. It answers two questions in game:
 
 | | |
