@@ -43,7 +43,7 @@ const WEAPON_CLASSES = [
   [/sceptre/i, 'Sceptres'], [/wand/i, 'Wands'], [/quarterstaff|warstaff/i, 'Quarterstaves'], [/staff/i, 'Staves'],
   [/crossbow/i, 'Crossbows'], [/bow/i, 'Bows'], [/spear/i, 'Spears'], [/flail/i, 'Flails'], [/dagger/i, 'Daggers'],
   [/claw/i, 'Claws'], [/talisman/i, 'Talismans'], [/focus/i, 'Foci'], [/buckler/i, 'Bucklers'], [/quiver/i, 'Quivers'],
-  [/shield/i, 'Shields'], [/maul|great|hammer/i, 'Two Hand Maces'], [/mace|club/i, 'One Hand Maces'], [/axe/i, 'One Hand Axes'], [/sword/i, 'One Hand Swords'],
+  [/shield|targe/i, 'Shields'], [/maul|great/i, 'Two Hand Maces'], [/mace|club/i, 'One Hand Maces'], [/axe/i, 'One Hand Axes'], [/sword/i, 'One Hand Swords'],
 ];
 
 function itemClassFor(slot, base) {
@@ -79,14 +79,27 @@ function convertItem(raw, slot) {
     if (/^Corrupted$/i.test(l)) { corrupted = true; continue; }
     if (META.test(l) && /:/.test(l)) continue;
     // mod line: strip PoB's {tags} and keep the ones that matter
-    let tag = '';
-    const text = l.replace(/\{([^}]*)\}/g, (all, inner) => {
+    let tag = ''; let range = 0.5;
+    let text = l.replace(/\{([^}]*)\}/g, (all, inner) => {
       const k = inner.split(':')[0].trim().toLowerCase();
+      if (k === 'range') { const r = Number(inner.split(':')[1]); if (Number.isFinite(r)) range = r; }
       if (TAGS[k] && !tag) tag = TAGS[k];
       return '';
     }).trim();
     if (!text) continue;
-    if (implicitCount > 0) { implicits.push(`${text} (implicit)`); implicitCount--; continue; }
+    // PoB keeps a roll range plus where in it the item rolled: (30-40) at range 0.5 -> 35
+    text = text.replace(/\((-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)\)/g, (all, a, b) => {
+      const lo = Number(a); const hi = Number(b);
+      const v = lo + (hi - lo) * range;
+      return String(Number.isInteger(lo) && Number.isInteger(hi) ? Math.round(v) : Math.round(v * 100) / 100);
+    });
+    // PoB counts runes and enchants among its "Implicits: N" lines (they come first)
+    if (implicitCount > 0) {
+      implicitCount--;
+      if (tag === 'rune' || tag === 'enchant') { implicits.push(`${text} (${tag})`); continue; }
+      implicits.push(`${text} (implicit)`);
+      continue;
+    }
     mods.push(tag && tag !== 'implicit' ? `${text} (${tag})` : text);
   }
   const itemClass = itemClassFor(slot, base);
@@ -120,8 +133,14 @@ function parsePob(xml) {
     if (ours) slots[ours] = items[itemId];
   }
   // jewels socketed in the passive tree
+  // (only the active passive tree: PoB keeps alternate trees with their own jewels)
+  let treeXml = xml;
+  const treeTag = (xml.match(/<Tree\b[^>]*>/) || [''])[0];
+  const activeSpec = Number(attr(treeTag, 'activeSpec')) || 1;
+  const specs = [...xml.matchAll(/<Spec\b[^>]*>[\s\S]*?<\/Spec>/g)].map((x) => x[0]);
+  if (specs.length) treeXml = specs[activeSpec - 1] || specs[0];
   let j = 1;
-  for (const m of xml.matchAll(/<Socket\b[^>]*>/g)) {
+  for (const m of treeXml.matchAll(/<Socket\b[^>]*>/g)) {
     const itemId = attr(m[0], 'itemId');
     if (itemId && itemId !== '0' && items[itemId] && j <= 6) slots[`Jewel ${j++}`] = items[itemId];
   }

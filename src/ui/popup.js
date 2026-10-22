@@ -7,8 +7,7 @@ const report = () => window.api.resize(Math.ceil(root.getBoundingClientRect().he
 
 window.api.onResult((r) => {
   try {
-    if (r && r.kind === 'stash') window.renderStashToast(root, r, { closable: true });
-    else window.renderComparison(root, r, { closable: true, onResize: report });
+    window.renderComparison(root, r, { closable: true, onResize: report });
   } catch (err) {
     root.innerHTML = '<div class="card"><div class="note"></div></div>';
     root.querySelector('.note').textContent = 'Popup error: ' + err.message;

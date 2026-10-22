@@ -2,247 +2,261 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; img-src 'self' data:">
   <title>PoE2 Upgrade Checker</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <div class="wrap">
-    <h1>PoE2 Upgrade Checker</h1>
-    <div class="sub" id="hotkeyLine">Hover an item in game and press <b>Ctrl+D</b>. A popup shows whether it beats what you have equipped. This window can be closed; the app keeps running in the system tray.</div>
+<body class="app">
+  <aside class="side">
+    <div class="brand"><img src="../../assets/icon.png" alt=""><span>PoE2 Upgrade<br>Checker</span></div>
+    <label class="side-char"><span>Character</span><select id="profileSel"></select></label>
+    <nav class="tabs side-nav" aria-label="Pages">
+      <button data-tab="gear" class="active"><i>⚔</i>My gear</button>
+      <button data-tab="char"><i>☰</i>Character</button>
+      <button data-tab="find"><i>⌕</i>Find upgrades</button>
+      <button data-tab="build"><i>✦</i>Build &amp; stats</button>
+      <button data-tab="test"><i>✎</i>Check an item</button>
+      <button data-tab="options"><i>⚙</i>Settings</button>
+    </nav>
+    <div class="side-foot" id="hotkeyLine">Hover an item in game and press <b>F2</b>.</div>
+  </aside>
 
-    <div class="tabs">
-      <button data-tab="gear" class="active">My gear</button>
-      <button data-tab="stash">Stash value</button>
-      <button data-tab="find">Find upgrade</button>
-      <button data-tab="search">Search settings</button>
-      <button data-tab="build">Build &amp; weights</button>
-      <button data-tab="test">Test an item</button>
-      <button data-tab="options">Options</button>
-    </div>
-
+  <main class="main">
     <section class="tab active" id="tab-gear">
-      <div class="toolbar profilebar">
-        <label>Character <select id="profileSel"></select></label>
-        <button id="profileNew" title="A separate set of gear, build, weights and ignored stats">+ New character</button>
-        <button id="profileRename">Rename</button>
-        <button id="profileDelete">Delete</button>
-        <span class="grow"></span>
-        <button id="wizardBtn">Setup guide</button>
-      </div>
-      <div id="setupBox" class="setup"></div>
-      <div id="gearSummary" class="gear-summary"></div>
-      <table class="list" id="slots"></table>
-
-      <h3>Import from Path of Building</h3>
-      <div class="help">Paste a PoB2 export code or a <b>pobb.in</b> link to load all your equipped gear at once (and your resistances). Your current gear for this character is replaced.</div>
-      <div class="row">
-        <input id="pobInput" class="grow" placeholder="https://pobb.in/abc123  or  eNrtXd…">
-        <button id="pobImport" class="primary">Import</button>
-      </div>
-      <div class="note" id="pobMsg"></div>
-
-      <h3>Your resistances (for resistance caps)</h3>
-      <div class="help">From your character sheet. Once you're capped (75%), more resistance on an item stops counting in the gear score. Leave empty to ignore caps.</div>
-      <div class="row resrow">
-        <label>Fire <input type="number" id="resFire" class="num"></label>
-        <label>Cold <input type="number" id="resCold" class="num"></label>
-        <label>Lightning <input type="number" id="resLightning" class="num"></label>
-        <label>Chaos <input type="number" id="resChaos" class="num"></label>
-        <label>Cap <input type="number" id="resCap" class="num" placeholder="75"></label>
-        <span class="note" id="resMsg"></span>
+      <header class="page-head">
+        <div><h2>My gear</h2><div class="sub">What you're wearing, scored for your build (<button class="link gs-help">what's the gear score?</button>). Click a slot's <b>Find upgrades</b> to search for something better.</div></div>
+        <div class="page-actions">
+          <button id="profileNew" title="A separate set of gear, build, weights and ignored stats">+ New character</button>
+          <button id="profileRename">Rename</button>
+          <button id="profileDelete">Delete</button>
+          <button id="wizardBtn">Setup guide</button>
+        </div>
+      </header>
+      <div class="grid g-2">
+        <div class="col">
+          <div class="card-p">
+          <div id="setupBox" class="setup"></div>
+          <div id="gearSummary" class="gear-summary"></div>
+          <table class="list" id="slots"></table>
+          </div>
+        </div>
+        <div class="col side-col">
+          <div class="card-p">
+            <h3>Your build in Path of Building</h3>
+          <div class="help">Paste your PoB2 export code (Import/Export Build → Generate) or a <b>pobb.in</b> link. The app then judges every item with <b>Path of Building's own calculations</b>: what it does to your minion DPS, effective HP, resistances and Spirit. Make sure PoB's gear, tree, skills and Configuration match how you really play. Items you copy in game (F2) replace PoB's, so it always uses what you're wearing.</div>
+          <div class="row">
+            <input id="pobInput" class="grow" placeholder="https://pobb.in/abc123  or  eNrtXd…">
+            <button id="pobImport" class="primary">Import</button>
+          </div>
+          <div class="note" id="pobMsg"></div>
+          <div id="pobStatus" class="pob-status"></div>
+          <div class="row" id="pobControls">
+            <label><input type="checkbox" id="pobUse"> Judge items with Path of Building</label>
+            <label title="How much damage counts against survivability when the app weighs an item">Damage <input type="range" id="pobBalance" min="0" max="100" step="10"> Survivability</label>
+          </div>
+          </div>
+          <div class="card-p">
+            <h3>Priorities</h3>
+          <div class="row prio">
+            <label title="While a resistance is under the cap, items that fill it score much higher and Find upgrades looks for it first"><input type="checkbox" id="prRes"> Cap my resistances first</label>
+            <label title="Count chaos resistance as one to cap too"><input type="checkbox" id="prChaos"> including chaos</label>
+            <label title="An item that costs more than 5% of your damage (e.g. it doesn't have your minion damage mods) is LOSES DAMAGE, however much resistance or life it adds"><input type="checkbox" id="prDmg"> Never lose damage <span class="dim small">(needs PoB)</span></label>
+            <label title="An item that leaves you without enough Spirit for your minions and auras is never an upgrade"><input type="checkbox" id="prSpirit"> Never run short of Spirit <span class="dim small">(needs PoB)</span></label>
+            <label title="An item that leaves you without the Strength / Dexterity / Intelligence your gear and gems need is never an upgrade"><input type="checkbox" id="prAttrs"> Keep attribute requirements met <span class="dim small">(needs PoB)</span></label>
+          </div>
+          <div class="dim small" id="prNote"></div>
+          </div>
+          <div class="card-p">
+            <h3>Your resistances</h3>
+          <div class="help">The <b>uncapped</b> numbers from your in-game character sheet (hover each one), with the gear you wear now. They follow your gear changes from then on.</div>
+          <div class="row resrow">
+            <label>Fire <input type="number" id="resFire" class="num"></label>
+            <label>Cold <input type="number" id="resCold" class="num"></label>
+            <label>Lightning <input type="number" id="resLightning" class="num"></label>
+            <label>Chaos <input type="number" id="resChaos" class="num"></label>
+            <label>Cap <input type="number" id="resCap" class="num" placeholder="75"></label>
+            <label title="How far over the cap a resistance must be before more of it stops counting. PoB numbers can include charms and buffs that aren't always on.">Safety buffer <input type="number" id="resBuffer" class="num" placeholder="15"></label>
+          </div>
+          <div class="row">
+            <span class="dim small" id="resSource"></span>
+            <span class="note" id="resMsg"></span>
+          </div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section class="tab" id="tab-stash">
-      <div class="st-head">
-        <div>
-          <div class="st-total" id="stTotal">—</div>
-          <div class="dim" id="stSub"></div>
-        </div>
-        <div class="st-kpis" id="stKpis"></div>
-      </div>
-      <div class="row">
-        <button class="primary" id="stScan">Scan the open tab</button>
-        <span class="dim" id="stHowTo"></span>
-      </div>
-      <div class="note" id="stMsg"></div>
-      <div class="st-chartwrap">
-        <div class="st-range" id="stRange"><button data-range="24">24 h</button><button data-range="168" class="active">7 days</button><button data-range="720">30 days</button><button data-range="0">All</button></div>
-        <svg id="stChart" class="st-chart" viewBox="0 0 640 150" preserveAspectRatio="none" role="img" aria-label="Net worth over time"></svg>
-        <div class="dim small" id="stChartNote"></div>
-      </div>
-
-      <h3>Stash tabs</h3>
-      <div class="help">Open a specialty tab in game (Currency, Essence, Runes, Soul Cores, Omens, Delirium, Breach, Expedition, Abyss, Fragments, Idols) and press the scan hotkey. Each tab's value is kept until you scan it again. Rescanning shows what changed.</div>
-      <table class="rows st-tabs" id="stTabs"></table>
-
-      <h3>Listed for sale <span class="dim small">(public tabs and merchant tabs on the trade site)</span></h3>
-      <div class="row">
-        <label>Account <input id="stAccount" placeholder="Name#1234"></label>
-        <button id="stListings">Refresh listings</button>
-        <label class="small"><input type="checkbox" id="stHideListings"> Don't count them</label>
-        <span class="dim" id="stListMsg"></span>
-      </div>
-      <table class="rows" id="stListed"></table>
-
-      <h3>Other items</h3>
-      <div class="help">Gear and uniques from your normal tabs. Use <b>Add to stash value</b> in the item popup (More ▾). Uniques follow poe.ninja prices; other items use your <i>What's it worth?</i> check, or the price you type here.</div>
-      <table class="rows" id="stItems"></table>
-      <div class="row">
-        <input id="stNewName" placeholder="Item name"> <input id="stNewQty" class="num" type="number" min="1" value="1" title="How many">
-        <input id="stNewDiv" class="num" type="number" min="0" step="0.01" placeholder="div each"> <button id="stAdd">Add</button>
-      </div>
-
-      <h3>Recent changes</h3>
-      <div id="stFeed" class="st-feed"></div>
-
-      <h3>Stash options</h3>
-      <div class="row">
-        <label>Scan hotkey <input id="stHotkey" class="hotkey" readonly placeholder="click, then press keys"></label>
-        <button id="stHotkeySave">Save</button><button id="stHotkeyOff">Turn off</button>
-        <span id="stHotkeyMsg" class="note"></span>
-      </div>
-      <div class="row">
-        <button id="stPrices">Refresh prices</button>
-        <button id="stSession">Start a new session</button>
-        <button id="stCsv">Export CSV</button>
-        <button id="stRecal">Scan &amp; recalibrate</button>
-        <button id="stDebug">Save last capture</button>
-        <span class="dim" id="stOptMsg"></span>
-      </div>
-      <div class="help">Prices come from poe.ninja: currency-type items from the in-game Currency Exchange, uniques from trade listings. Prices refresh hourly. The reader only looks at a screenshot of your screen when you press the hotkey. It never reads game memory and never sends keys to the game.
-        Wrong or missing count? Hover that stack in game and press <b>Ctrl+C</b>; the app reads the exact stack size and fixes it. That also teaches it the name of any slot it didn't know.</div>
+    <section class="tab" id="tab-char">
+      <header class="page-head">
+        <div><h2 id="charTitle">Character</h2><div class="sub" id="charSub">Your character as Path of Building calculates it, with the gear you copied in game.</div></div>
+        <div class="page-actions"><button id="charRefresh">Recalculate</button></div>
+      </header>
+      <div id="charBody"><div class="card-p dim">Loading…</div></div>
     </section>
 
     <section class="tab" id="tab-find">
-      <div class="toolbar">
-        <label>Item <select id="findSlot"></select></label>
-        <label>League <select id="findLeague"></select></label>
-        <button id="tradeRefresh" title="Reload leagues and stat list from the trade site">↻</button>
-      </div>
-      <div id="findItem" class="finditem"></div>
-      <div class="row"><span id="findNotice" class="note"></span></div>
-      <div class="row">
-        <button id="findSimilar" class="primary" title="Listings with this item's stats at its values or higher. If nothing is listed it loosens step by step (90%, 80%, 65%) and tells you. Rune bonuses are left out – you can socket your own.">Same stats or better</button>
-        <button id="findQuick" title="Anything that scores higher with your stat weights, even with different stats">Beat it by my weights</button>
-        <button id="findCraft" title="Bases with this slot's key stats and an open affix you can craft">Craftable bases</button>
-        <button id="findPrice" title="What items like this sell for">What's it worth?</button>
-      </div>
-      <div class="row"><span id="findMsg" class="note"></span></div>
-      <div class="help">Price range, sellers and ignored stats are in <button class="link" data-goto="search">Search settings</button>.</div>
-
-      <h3>Custom search</h3>
-      <div class="help">Untick stats you don't care about, change the minimums, add stats you want instead, then search.</div>
-      <div class="row">
-        <label>Set minimums to <select id="minScale">
-          <option value="1">100%</option><option value="0.9">90%</option><option value="0.8">80%</option><option value="0.7">70%</option>
-        </select> of the item's values</label>
-        <button id="tickAll">Tick all</button><button id="tickNone">Untick all</button>
-        <label><input type="checkbox" id="findSameBase"> Same base type only</label>
-      </div>
-      <table class="list" id="findStats"></table>
-      <div class="row">
-        <input id="addTradeStat" list="tradeStats" placeholder="Add a stat you want, e.g. #% increased Spell Damage" class="grow">
-        <input id="addTradeMin" type="number" placeholder="min" class="num">
-        <button id="addTradeBtn">Add</button>
-        <button id="addBrowse" class="primary">Browse stats…</button>
-        <datalist id="tradeStats"></datalist>
-      </div>
-      <div class="row">
-        <button id="findSearch" class="primary">Search with ticked stats</button>
-        <span id="findMsg2" class="note"></span>
+      <header class="page-head">
+        <div><h2>Find upgrades</h2><div class="sub">Pick an item, set what you'll pay, then search. Results open scored against your gear.</div></div>
+      </header>
+      <div class="card-p filterbar">
+        <div class="fb-row">
+          <label class="fb-item">Item <select id="findSlot"></select></label>
+          <span class="fb-sep"></span>
+          <label class="fb-price">Price from <input type="number" id="budgetMin" class="num" min="0" step="0.5" placeholder="any"></label>
+          <label>to <input type="number" id="budgetMax" class="num" min="0" step="0.5" placeholder="any"></label>
+          <select id="budgetCurrency" aria-label="Currency">
+            <option value="divine">Divine Orbs</option>
+            <option value="exalted">Exalted Orbs</option>
+            <option value="chaos">Chaos Orbs</option>
+          </select>
+          <button id="budgetClear" class="link">any price</button>
+          <span class="fb-sep"></span>
+          <label>Sellers <select id="findStatus">
+            <option value="available">Instant Buyout + In Person</option>
+            <option value="securable">Instant Buyout only</option>
+            <option value="online">In Person (online) only</option>
+            <option value="any">Any (incl. offline)</option>
+          </select></label>
+          <label>League <select id="findLeague"></select></label>
+          <button id="tradeRefresh" title="Reload leagues and stat list from the trade site">↻</button>
+        </div>
+        <div class="fb-row fb-sub">
+          <span id="rateWrap">
+            <label>1 Divine = <input type="number" id="divineRate" class="num" min="0" placeholder="?"> Exalted</label>
+            <label><input type="checkbox" id="autoRate" checked> auto from poe.ninja</label>
+            <button id="rateRefresh" title="Get the latest rate now" class="link">refresh</button>
+          </span>
+          <span class="help" id="budgetHelp"></span>
+          <span class="help" id="rateStatus"></span>
+        </div>
       </div>
 
-      <h3>Saved searches</h3>
-      <div class="help">Save a search from the results window (☆ Save search) and run it again here with one click. Tick <b>Alert</b> to get a Windows notification when something new is listed.</div>
-      <div class="row">
-        <label>Check alerts every <select id="alertEvery">
-          <option value="0">never</option><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">hour</option>
-        </select></label>
-        <span class="dim" id="alertStatus"></span>
+      <div class="grid g-2">
+        <div class="col">
+          <div class="card-p">
+            <div id="findItem" class="finditem"></div>
+            <div class="row"><span id="findNotice" class="note"></span></div>
+            <div class="actions find-actions">
+              <button id="findGear" class="primary" title="Listings that score higher for your build (gear score), even with a different mix of stats. If nothing beats yours, it shows the ones that come close.">Better for my build</button>
+              <button id="findSimilar" title="Listings with this item's stats at its values or higher. If nothing is listed it loosens step by step (90%, 80%, 65%) and tells you. Rune bonuses are left out – you can socket your own.">Same stats or better</button>
+              <button id="findQuick" title="Anything that scores higher with your stat weights, even with different stats">By my weights</button>
+              <button id="findCraft" title="Bases with this slot's key stats and an open affix you can craft">Craftable bases</button>
+              <button id="findPrice" title="What items like this sell for">What's it worth?</button>
+            </div>
+            <div class="row"><span id="findMsg" class="note"></span></div>
+          </div>
+          <div class="card-p">
+            <h3>Custom search</h3>
+          <div class="help">Untick stats you don't care about, change the minimums, add stats you want instead, then search.</div>
+          <div class="row">
+            <label>Set minimums to <select id="minScale">
+              <option value="1">100%</option><option value="0.9">90%</option><option value="0.8">80%</option><option value="0.7">70%</option>
+            </select> of the item's values</label>
+            <button id="tickAll">Tick all</button><button id="tickNone">Untick all</button>
+            <label><input type="checkbox" id="findSameBase"> Same base type only</label>
+          </div>
+          <table class="list" id="findStats"></table>
+          <div class="row">
+            <input id="addTradeStat" list="tradeStats" placeholder="Add a stat you want, e.g. #% increased Spell Damage" class="grow">
+            <input id="addTradeMin" type="number" placeholder="min" class="num">
+            <button id="addTradeBtn">Add</button>
+            <button id="addBrowse" class="primary">Browse stats…</button>
+            <datalist id="tradeStats"></datalist>
+          </div>
+          <div class="row">
+            <button id="findSearch" class="primary">Search with ticked stats</button>
+            <span id="findMsg2" class="note"></span>
+          </div>
+          </div>
+        </div>
+        <div class="col side-col">
+          <div class="card-p" id="ignoreCard">
+            <h3>Ignored stats</h3>
+          <div class="help">Stats you don't care about. <b>Ignore</b> leaves them out of the gear score and every search. <b>Exclude</b> also hides listings that have them.</div>
+          <table class="list" id="ignoreList"></table>
+          <div class="row">
+            <input id="ignoreAdd" list="ignoreStatsList" placeholder="Ignore another stat, e.g. # to maximum Mana" class="grow">
+            <button id="ignoreAddBtn">Add</button>
+            <button id="ignoreBrowse" class="primary">Browse stats…</button>
+            <datalist id="ignoreStatsList"></datalist>
+          </div>
+          </div>
+          <div class="card-p">
+            <h3>Saved searches &amp; alerts</h3>
+          <div class="help">Save a search from the results window (☆ Save search) and run it again here with one click. Tick <b>Alert</b> to get a Windows notification when something new is listed.</div>
+          <div class="row">
+            <label>Check alerts every <select id="alertEvery">
+              <option value="0">never</option><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">hour</option>
+            </select></label>
+            <span class="dim" id="alertStatus"></span>
+          </div>
+          <table class="list" id="savedList"></table>
+          </div>
+        </div>
       </div>
-      <table class="list" id="savedList"></table>
     </section>
 
-    <section class="tab" id="tab-search">
-      <h3>Price range</h3>
-      <div class="toolbar budget">
-        <label>Price: from <input type="number" id="budgetMin" class="num" min="0" step="0.5" placeholder="any"></label>
-        <label>to <input type="number" id="budgetMax" class="num" min="0" step="0.5" placeholder="any"></label>
-        <select id="budgetCurrency">
-          <option value="divine">Divine Orbs</option>
-          <option value="exalted">Exalted Orbs</option>
-          <option value="chaos">Chaos Orbs</option>
-        </select>
-        <span id="rateWrap">
-          <label>1 Divine = <input type="number" id="divineRate" class="num" min="0" placeholder="?"> Exalted</label>
-          <label><input type="checkbox" id="autoRate" checked> Auto (poe.ninja)</label>
-          <button id="rateRefresh" title="Get the latest rate now">↻</button>
-        </span>
-        <button id="budgetClear">No price limits</button>
-      </div>
-      <div class="help" id="budgetHelp"></div>
-      <div class="help" id="rateStatus"></div>
-      <h3>Sellers</h3>
-      <div class="toolbar">
-        <label>Show <select id="findStatus">
-          <option value="available">Instant Buyout + In Person</option>
-          <option value="securable">Instant Buyout only</option>
-          <option value="online">In Person (online) only</option>
-          <option value="any">Any (incl. offline)</option>
-        </select></label>
-      </div>
-
-      <h3>Ignored stats</h3>
-      <div class="help">Stats you don't care about. <b>Ignore</b> leaves them out of the gear score and every search. <b>Exclude</b> also hides listings that have them.</div>
-      <table class="list" id="ignoreList"></table>
-      <div class="row">
-        <input id="ignoreAdd" list="ignoreStatsList" placeholder="Ignore another stat, e.g. # to maximum Mana" class="grow">
-        <button id="ignoreAddBtn">Add</button>
-        <button id="ignoreBrowse" class="primary">Browse stats…</button>
-        <datalist id="ignoreStatsList"></datalist>
-      </div>
-    </section>
 
     <section class="tab" id="tab-build">
-      <h3>Your build</h3>
-      <div class="row"><label>Build <select id="buildSel"></select></label></div>
-      <div class="help" id="buildHelp"></div>
-      <h3>Gear score editor</h3>
-      <div class="help">How much each stat matters to you. 1× is the build's default, 0× turns it off, 2× doubles it. Changes apply to this character only.</div>
-      <table class="list" id="buildEditor"></table>
-      <div class="row"><button id="buildTweaksReset">Reset to the build's defaults</button><span class="note" id="buildMsg"></span></div>
-
-      <h3>Stat weights (advanced)</h3>
-      <div class="help">
-        Only used for <b>By my weights</b> searches, and for the verdict when the build is turned off.
-        A weight says how many points one unit of a stat is worth: Life 1 and Fire Res 1.5 means +10% fire res = +15 life.
+      <header class="page-head">
+        <div><h2>Build &amp; stats</h2><div class="sub">Which stats matter to your character, for the gear score.<span class="gs-fallback-note hidden"> With your Path of Building build loaded, verdicts and <b>Better for my build</b> come from Path of Building instead – the gear score is a rough guide and the fallback.</span></div></div>
+      </header>
+      <div class="grid g-2">
+        <div class="col"><div class="card-p">
+          <h3>Your build</h3>
+          <div class="row"><label>Build <select id="buildSel"></select></label></div>
+          <div class="help" id="buildHelp"></div>
+          <h3>Gear score editor</h3>
+          <div class="help">How much each stat matters to you. 1× is the build's default, 0× turns it off, 2× doubles it. Changes apply to this character only.</div>
+          <table class="list" id="buildEditor"></table>
+          <div class="row"><button id="buildTweaksReset">Reset to the build's defaults</button><span class="note" id="buildMsg"></span></div>
+        </div></div>
+        <div class="col side-col"><div class="card-p" id="gsExplainCard">
+          <h3>How the gear score works</h3>
+          <div id="gsExplain"></div>
+        </div><div class="card-p" id="weightsCard">
+          <h3>Stat weights</h3>
+          <div class="help">
+            Only used for <b>By my weights</b> searches, and for the verdict when the build is turned off.
+            A weight says how many points one unit of a stat is worth: Life 1 and Fire Res 1.5 means +10% fire res = +15 life.
+          </div>
+          <div class="toolbar">
+            <input type="search" id="filter" placeholder="Filter stats…">
+            <label><input type="checkbox" id="onlyWeighted"> Only weighted</label>
+            <button id="addStat">+ Add stat</button>
+            <button id="weightBrowse" class="primary">Browse stats…</button>
+            <button id="resetWeights">Reset to defaults</button>
+            <button id="suggestBtn" class="primary" title="Builds weights from the stats your equipped gear has">Suggest from my gear</button>
+          </div>
+          <div id="suggestBox" class="suggest hidden"></div>
+          <table class="list" id="weights"></table>
+          <h3>Import / export weights</h3>
+          <textarea id="weightsJson" rows="6"></textarea>
+          <div class="row"><button id="exportW">Refresh export</button><button id="importW">Import</button><span id="importMsg" class="dim"></span></div>
+        </div></div>
       </div>
-      <div class="toolbar">
-        <input type="search" id="filter" placeholder="Filter stats…">
-        <label><input type="checkbox" id="onlyWeighted"> Only weighted</label>
-        <button id="addStat">+ Add stat</button>
-        <button id="weightBrowse" class="primary">Browse stats…</button>
-        <button id="resetWeights">Reset to defaults</button>
-        <button id="suggestBtn" class="primary" title="Builds weights from the stats your equipped gear has">Suggest from my gear</button>
-      </div>
-      <div id="suggestBox" class="suggest hidden"></div>
-      <table class="list" id="weights"></table>
-      <h3>Import / export weights</h3>
-      <textarea id="weightsJson" rows="6"></textarea>
-      <div class="row"><button id="exportW">Refresh export</button><button id="importW">Import</button><span id="importMsg" class="dim"></span></div>
     </section>
 
     <section class="tab" id="tab-test">
-      <div class="help">Paste item text here (from the game, or from someone's trade listing copied in game) to check it without the popup.</div>
-      <textarea id="testText" rows="10" placeholder="Item Class: Helmets&#10;Rarity: Rare&#10;..."></textarea>
-      <div class="row"><button id="testBtn">Check item</button></div>
-      <div id="testResult"></div>
+      <header class="page-head">
+        <div><h2>Check an item</h2><div class="sub">Paste item text (from the game, or someone's listing copied in game) to check it without the popup.</div></div>
+      </header>
+      <div class="grid g-2 g-even">
+        <div class="col"><div class="card-p">
+          <textarea id="testText" rows="14" placeholder="Item Class: Helmets&#10;Rarity: Rare&#10;..."></textarea>
+          <div class="row"><button id="testBtn" class="primary">Check item</button></div>
+        </div></div>
+        <div class="col"><div id="testResult"></div></div>
+      </div>
     </section>
 
     <section class="tab" id="tab-options">
-      <h3>Hotkeys</h3>
+      <header class="page-head">
+        <div><h2>Settings</h2><div class="sub">Hotkeys, the popup, startup and updates.</div></div>
+      </header>
+      <div class="grid g-cards">
+      <div class="card-p">
+        <h3>Hotkeys</h3>
       <div class="row">
         <label>Check item <input id="hotkey" class="hotkey" readonly placeholder="click, then press keys"></label>
         <button id="hotkeySave">Save</button>
@@ -253,11 +267,12 @@
         <button id="resultsHotkeySave">Save</button>
         <span id="resultsHotkeyMsg" class="note"></span>
       </div>
-      <div class="help">Hover an item in game and press the check-item hotkey. The app presses Ctrl+C for you (one keystroke per press). Pick keys the game doesn't use, e.g. Ctrl+D, Alt+D or F2.</div>
+      <div class="help">Hover an item in game and press the check-item hotkey. The app presses Ctrl+C for you (one keystroke per press). Pick a key the game doesn&rsquo;t use: an F-key like F2 works best. Letters such as D also reach the game (with WASD movement, D walks your character).</div>
       <div class="row"><label><input type="checkbox" id="advancedCopy"> Use advanced copy (Ctrl+Alt+C) – needed to spot open prefixes/suffixes for crafting</label></div>
       <div class="row"><label><input type="checkbox" id="watchClipboard"> Also show the popup when I press Ctrl+C myself (gear only)</label></div>
-
-      <h3>Popup</h3>
+      </div>
+      <div class="card-p">
+        <h3>Popup</h3>
       <div class="row">
         <label>Position <select id="popupPosition">
           <option value="cursor">Next to the mouse</option>
@@ -276,22 +291,25 @@
       <div class="row"><label><input type="checkbox" id="colorblind"> Colour-blind friendly colours (blue = better, orange = worse)</label></div>
       <div class="row"><label>Hide popup after <input type="number" id="autoHide" min="2" max="120" class="num"> seconds (it stays open while your mouse is over it)</label></div>
       <div class="row"><label><input type="checkbox" id="paused"> Pause (ignore the hotkey and the clipboard)</label></div>
-
-      <h3>Results &amp; startup</h3>
-      <div class="row"><label><input type="checkbox" id="resultsInApp"> Show trade results in the app (scored against your gear) instead of the browser</label></div>
+      </div>
+      <div class="card-p">
+        <h3>Startup</h3>
       <div class="row"><label><input type="checkbox" id="startWithWindows"> Start with Windows (quietly, in the tray)</label></div>
       <div class="row"><label><input type="checkbox" id="openSettingsOnStart"> Open this window when the app starts</label></div>
-
-      <h3>Trade site account (optional, experimental)</h3>
-      <div class="help">Sign in to pathofexile.com inside the app to use <b>Travel to hideout</b> on Instant Buyout listings straight from the results window. Your password goes only to pathofexile.com; the app keeps the login cookie on this PC.</div>
+      </div>
+      <div class="card-p">
+        <h3>Trade site account (optional)</h3>
+      <div class="help">Sign in to pathofexile.com inside the app for <b>Travel to hideout</b> straight from the results window, and for fuller searches (the trade site allows bigger ones when you're signed in). Your password goes only to pathofexile.com; the app keeps the login cookie on this PC.</div>
       <div class="row"><button id="signIn">Sign in…</button><button id="signOut">Sign out</button><span class="dim" id="signStatus"></span></div>
-
-      <h3>Updates</h3>
+      </div>
+      <div class="card-p">
+        <h3>Updates</h3>
       <div class="help">The installed app checks GitHub for a new version when it starts and every few hours, downloads it quietly, and installs it the next time you quit or restart.</div>
       <div class="row"><label><input type="checkbox" id="autoUpdate"> Download updates automatically</label></div>
       <div class="row"><button id="updCheck">Check for updates</button><button class="primary hidden" id="updAction"></button><span class="dim" id="updStatus"></span></div>
-
-      <h3>Troubleshooting</h3>
+      </div>
+      <div class="card-p">
+        <h3>Troubleshooting</h3>
       <div class="row">
         <button id="testPopup">Show a test popup</button>
         <button id="openLog">Open log file</button>
@@ -300,8 +318,10 @@
         If the test popup appears here but not in game, switch PoE2 to <b>Windowed Fullscreen</b> (Options → Graphics).
         If the hotkey does nothing, open the log. Your data is saved in %APPDATA%\poe2-upgrade-checker.
       </div>
+      </div>
+      </div>
     </section>
-  </div>
+  </main>
   <div id="wizard" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-box wizard-box">
       <div class="modal-head"><h2 id="wizTitle">Welcome</h2><button id="wizClose" class="x" title="Close">×</button></div>
@@ -336,7 +356,7 @@
   </div>
   <script src="render.js"></script>
   <script src="settings.js"></script>
+  <script src="character.js"></script>
   <script src="picker.js"></script>
-  <script src="stash.js"></script>
 </body>
 </html>

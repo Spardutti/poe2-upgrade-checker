@@ -14,6 +14,7 @@
     <div class="price-banner hidden" id="priceBanner"></div>
     <div class="toolbar">
       <label>Sort <select id="sort">
+        <option value="res">Resistances first</option>
         <option value="upgrade">Best upgrade</option>
         <option value="gear">Best gear score</option>
         <option value="value">Best value (upgrade per divine)</option>
@@ -21,14 +22,21 @@
         <option value="site">Trade site order</option>
       </select></label>
       <label><input type="checkbox" id="onlyUp"> Upgrades only</label>
+      <label title="How many of each listing's stat changes to show on its card">Show <select id="modCount">
+        <option value="3">3 mods</option><option value="4">4 mods</option><option value="5">5 mods</option>
+        <option value="6">6 mods</option><option value="8">8 mods</option><option value="all">all mods</option>
+      </select></label>
       <span class="grow"></span>
       <button id="save" title="Save this search so you can re-run it later">☆ Save search</button>
       <button id="site" class="primary">Open on trade site</button>
-      <span class="dim small" title="Esc hides this window; Ctrl+Shift+D (Options) brings it back">Esc hides · Ctrl+Shift+D reopens</span>
+      <button id="gsHelpBtn" class="link" title="How the gear score and the UPGRADE / SIDEGRADE verdicts work">What's the gear score?</button>
+      <span class="dim small" id="hideHint">Esc hides</span>
     </div>
+    <div id="gsHelp" class="gs-panel hidden"></div>
   </header>
-  <main id="list"></main>
+  <main id="list" class="res-list"></main>
   <div class="row center"><button id="more">Load 10 more</button><span id="moreMsg" class="note"></span></div>
+  <script src="render.js"></script>
   <script src="results.js"></script>
 </body>
 </html>

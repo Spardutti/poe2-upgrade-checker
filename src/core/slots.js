@@ -50,7 +50,7 @@ const WEAPON_WORDS = [
   'wand', 'sceptre', 'spear', 'flail', 'dagger', 'claw', 'talisman', 'warstave',
 ];
 
-const TWO_HANDED_PREFIXES = ['two hand', 'quarterstaves', 'staves', 'crossbows', 'warstaves'];
+const TWO_HANDED_PREFIXES = ['two hand', 'quarterstaves', 'staves', 'crossbows', 'warstaves', 'talismans'];
 
 function slotForClass(itemClass) {
   if (!itemClass) return null;

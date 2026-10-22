@@ -19,11 +19,12 @@ async function load() {
   loadBudget();
   renderIgnore();
   renderSaved();
-  $('#buildSel').innerHTML = (state.builds || []).map((b) => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join('') + '<option value="off">Off – no gear score</option>';
-  $('#buildSel').value = state.settings.build || 'djinn-varashta';
+  $('#buildSel').innerHTML = (state.builds || []).map((b) => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join('') + '<option value="off">None – score by my own stat weights</option>';
+  $('#buildSel').value = state.settings.build || state.defaultBuild;
+  // "By my weights" only makes sense when you score by stat weights (build turned off)
+  $('#findQuick').classList.toggle('hidden', state.settings.build !== 'off');
   const bd = (state.builds || []).find((b) => b.id === $('#buildSel').value);
-  $('#buildHelp').textContent = bd ? bd.summary + ' Ignored stats (Find upgrade tab) are left out of the score.' : 'Gear score is turned off.';
-  $('#resultsInApp').checked = state.settings.resultsInApp !== false;
+  $('#buildHelp').textContent = bd ? bd.summary + ' Ignored stats (Find upgrades page) are left out of the score.' : 'Gear score is turned off.';
   $('#popupPosition').value = state.settings.popupPosition || 'cursor';
   $('#uiScale').value = String(state.settings.uiScale || 1);
   $('#popupDetail').value = state.settings.popupDetail || 'compact';
@@ -39,11 +40,14 @@ async function load() {
   $('#advancedCopy').checked = !!state.settings.advancedCopy;
   $('#watchClipboard').checked = state.settings.watchClipboard !== false;
   const hs = state.hotkeyStatus || {};
-  if (document.activeElement !== $('#hotkey')) $('#hotkey').value = state.settings.hotkey || 'Ctrl+D';
+  if (document.activeElement !== $('#hotkey')) $('#hotkey').value = state.settings.hotkey || 'F2';
   $('#hotkeyMsg').textContent = hs.ok ? `Active: ${hs.accelerator}` : (hs.error || 'Hotkey not registered.');
   $('#hotkeyLine').innerHTML = hs.ok
-    ? `Hover an item in game and press <b>${esc(hs.accelerator)}</b>. A popup shows whether it beats what you have equipped. This window can be closed; the app keeps running in the system tray.`
-    : `<span class="note">Hotkey isn't working: ${esc(hs.error || 'not registered')} – change it in Options.</span>`;
+    ? `In game: hover an item and press <b>${esc(hs.accelerator)}</b>.<br>You can close this window; the app keeps running in the tray.`
+    : `<span class="note">Hotkey isn't working: ${esc(hs.error || 'not registered')} – change it in Settings.</span>`;
+  renderPob(false);
+  renderAccount();
+  renderModeHints();
 }
 
 function summary(item) {
@@ -59,13 +63,13 @@ function renderGearSummary() {
   const avg = Math.round(rated.reduce((a, [, g]) => a + g.score, 0) / rated.length);
   const grade = avg >= 85 ? 'S' : avg >= 70 ? 'A' : avg >= 55 ? 'B' : avg >= 40 ? 'C' : 'D';
   const weakest = rated.slice().sort((a, b) => a[1].score - b[1].score).slice(0, 3);
-  const build = (state.builds || []).find((b) => b.id === (state.settings.build || 'djinn-varashta'));
-  $('#gearSummary').innerHTML = `<div class="gear"><span class="gs g-${grade}">${avg} ${grade}</span> <b>Overall gear score</b> <span class="dim">for ${esc(build ? build.name : 'your build')}</span></div>
+  const build = (state.builds || []).find((b) => b.id === (state.settings.build || state.defaultBuild));
+  $('#gearSummary').innerHTML = `<div class="gear"><span class="gs g-${grade}">${avg} ${grade}</span> <b>Overall gear score</b> <span class="dim">for ${esc(build ? build.name : 'your build')}${state.pobOn ? ' – a rough guide; verdicts come from Path of Building' : ''}</span></div>
     <div>Upgrade first: ${weakest.map(([slot, g]) => `<button class="link" data-quick2="${esc(slot)}">${esc(slot)} (${g.score})</button>`).join(' · ')}
     <span class="note" id="gearSumMsg"></span></div>`;
   document.querySelectorAll('[data-quick2]').forEach((b) => b.addEventListener('click', async () => {
     $('#gearSumMsg').textContent = ` Searching upgrades for ${b.dataset.quick2}…`;
-    window.showSearchResult($('#gearSumMsg'), await window.api.quickFind(b.dataset.quick2, 'similar'));
+    window.showSearchResult($('#gearSumMsg'), await window.api.quickFind(b.dataset.quick2, 'upgrade'));
   }));
 }
 
@@ -75,7 +79,7 @@ function renderSlots() {
   const main = state.mainSlots || state.slots;
   const extras = state.slots.filter((s) => !main.includes(s));
   const showExtras = extras.filter((s) => state.equipped[s]);
-  const extraOpen = window.__extraOpen || showExtras.length > 0;
+  const extraOpen = window.__extraOpen != null ? window.__extraOpen : showExtras.length > 0;
   const row = (s) => {
     const it = state.equipped[s];
     const g = gs[s];
@@ -96,9 +100,15 @@ function renderSlots() {
   document.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', async () => {
     await window.api.clearSlot(b.dataset.clear); load();
   }));
+  // the answer shows right under the button you clicked (the table's last row is often off screen)
   document.querySelectorAll('[data-quick]').forEach((b) => b.addEventListener('click', async () => {
-    $('#gearMsg').textContent = 'Searching the trade site…';
-    window.showSearchResult($('#gearMsg'), await window.api.quickFind(b.dataset.quick, 'similar'));
+    document.querySelectorAll('.slot-msg').forEach((x) => x.remove());
+    const msg = document.createElement('div'); msg.className = 'note slot-msg'; msg.textContent = 'Searching the trade site…';
+    b.parentNode.appendChild(msg);
+    document.querySelectorAll('[data-quick]').forEach((x) => { x.disabled = true; });
+    try { window.showSearchResult(msg, await window.api.quickFind(b.dataset.quick, 'upgrade')); } finally {
+      document.querySelectorAll('[data-quick]').forEach((x) => { x.disabled = false; });
+    }
   }));
   document.querySelectorAll('[data-custom]').forEach((b) => b.addEventListener('click', () => openFind(b.dataset.custom)));
 }
@@ -125,7 +135,8 @@ async function ensureTradeInfo(force) {
   tradeInfo = await window.api.tradeData(!!force);
   if (!tradeInfo.ok) {
     $('#findMsg').textContent = 'Could not reach the trade site: ' + tradeInfo.error;
-    return tradeInfo;
+    const failed = tradeInfo; tradeInfo = null; // try again next time
+    return failed;
   }
   $('#findMsg').textContent = '';
   const saved = state && state.settings.league;
@@ -151,7 +162,7 @@ async function buildFindRows() {
   $('#findNotice').textContent = '';
   const { item: it, rows } = await window.api.findRows(toTarget($('#findSlot').value));
   if (!it) {
-    $('#findItem').textContent = 'No item here yet. Save your equipped gear first (Equipped gear tab), or copy an item in game.';
+    $('#findItem').textContent = 'No item here yet. Save your equipped gear first (My gear page), or copy an item in game.';
     findRows = [];
   } else {
     $('#findItem').innerHTML = `<b>${esc(it.name)}</b> ${esc(it.baseType !== it.name ? it.baseType : '')} <span class="dim">(${esc(it.itemClass)}${it.rarity ? ', ' + esc(it.rarity) : ''})</span>`;
@@ -229,9 +240,10 @@ async function runFind(fn, msgSel) {
   await window.api.setSetting('budget', readBudget());
   $('#findMsg').textContent = ''; $('#findMsg2').textContent = '';
   msg.textContent = 'Searching the trade site…';
-  ['#findSimilar', '#findSearch', '#findQuick'].forEach((id) => { $(id).disabled = true; });
+  const btns = [...document.querySelectorAll('.find-actions button, #findSearch')];
+  btns.forEach((b) => { b.disabled = true; });
   try { window.showSearchResult(msg, await fn()); } finally {
-    ['#findSimilar', '#findSearch', '#findQuick'].forEach((id) => { $(id).disabled = false; });
+    btns.forEach((b) => { b.disabled = false; });
   }
 }
 $('#findSearch').addEventListener('click', () => runFind(() => {
@@ -242,6 +254,7 @@ $('#findSearch').addEventListener('click', () => runFind(() => {
     matchBase: $('#findSameBase').checked, ...searchExtra(),
   });
 }, '#findMsg2'));
+$('#findGear').addEventListener('click', () => runFind(() => window.api.quickFind(toTarget($('#findSlot').value), 'upgrade', searchExtra())));
 $('#findSimilar').addEventListener('click', () => runFind(() => window.api.quickFind(toTarget($('#findSlot').value), 'similar', searchExtra())));
 $('#findQuick').addEventListener('click', () => runFind(() => window.api.quickFind(toTarget($('#findSlot').value), 'weights', searchExtra())));
 $('#findStatus').addEventListener('change', () => window.api.setSetting('status', $('#findStatus').value));
@@ -335,13 +348,13 @@ function toAccelerator(e) {
 $('#hotkey').addEventListener('keydown', (e) => {
   e.preventDefault();
   const acc = toAccelerator(e);
-  if (acc) { $('#hotkey').value = acc; $('#hotkeyMsg').textContent = 'Click Save hotkey to use it.'; }
+  if (acc) { $('#hotkey').value = acc; $('#hotkeyMsg').textContent = 'Click Save to use it.'; }
   else if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) $('#hotkeyMsg').textContent = 'Use a modifier (Ctrl/Alt) plus a key, or an F-key.';
 });
 $('#hotkeySave').addEventListener('click', async () => {
   const res = await window.api.setHotkey($('#hotkey').value.trim());
-  $('#hotkeyMsg').textContent = res.ok ? `Saved. Active: ${res.accelerator}` : res.error;
-  load();
+  await load();
+  $('#hotkeyMsg').textContent = res.ok ? `Saved. Active: ${res.accelerator}.${res.warning ? ' ' + res.warning : ''}` : res.error;
 });
 $('#advancedCopy').addEventListener('change', () => window.api.setSetting('advancedCopy', $('#advancedCopy').checked));
 $('#watchClipboard').addEventListener('change', () => window.api.setSetting('watchClipboard', $('#watchClipboard').checked));
@@ -359,24 +372,22 @@ function readBudget() {
 function budgetHelp() {
   const b = readBudget();
   $('#rateWrap').classList.toggle('hidden', $('#budgetCurrency').value !== 'divine');
-  if (!b) { $('#budgetHelp').textContent = 'No price limits. They apply to both Search buttons and the popup\'s Find upgrades button.'; return; }
+  if (!b) { $('#budgetHelp').textContent = 'No price limits. They apply to every trade search.'; return; }
   const name = { divine: 'div', exalted: 'ex', chaos: 'chaos' }[b.currency];
   const range = b.min != null && b.max != null ? `between ${b.min} and ${b.max} ${name}` : b.max != null ? `up to ${b.max} ${name}` : `at least ${b.min} ${name}`;
   let t;
-  if (b.currency === 'divine' && b.divineRate) {
-    const ex = [b.min != null ? Math.ceil(b.min * b.divineRate) : null, b.max != null ? Math.floor(b.max * b.divineRate) : null];
-    const f = (x) => Number(x).toLocaleString();
-    const exText = ex[0] != null && ex[1] != null ? `${f(ex[0])}–${f(ex[1])} ex` : ex[1] != null ? `up to ${f(ex[1])} ex` : `at least ${f(ex[0])} ex`;
-    t = `Listings worth ${range} (${exText}), whatever currency they're priced in.`;
-  } else if (b.currency === 'divine') t = `Only listings priced in Divine Orbs, ${range}. A Divine→Exalted rate also includes listings priced in exalts.`;
-  else if (b.currency === 'exalted') t = `Listings worth ${range}, whatever currency they're priced in.`;
+  const f = (x) => Number(x).toLocaleString();
+  // matches trade.priceFilter: the trade site's own "exalted equivalent" is far off the market rate
+  if (b.currency === 'divine' && b.max != null && b.max <= 2 && b.divineRate) t = `Listings priced in exalts, ${range} (${b.min != null ? f(Math.ceil(b.min * b.divineRate)) + '–' : 'up to '}${f(Math.floor(b.max * b.divineRate))} ex at today's rate). At these prices almost everything is listed in exalts.`;
+  else if (b.currency === 'divine') t = `Listings priced in Divine Orbs, ${range}. (Items priced only in exalts aren't included – at these prices almost everything is listed in divines.)`;
+  else if (b.currency === 'exalted') t = `Listings priced in Exalted Orbs, ${range}.`;
   else t = `Only listings priced in Chaos Orbs, ${range}.`;
   if (b.min != null) t += ' Cheaper junk is filtered out.';
   $('#budgetHelp').textContent = t;
 }
 function loadBudget() {
   const b = state.settings.budget;
-  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.budget')) return;
+  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.filterbar')) return;
   $('#budgetMax').value = b && b.max != null ? b.max : '';
   $('#budgetMin').value = b && b.min != null ? b.min : '';
   $('#budgetCurrency').value = (b && b.currency) || 'divine';
@@ -513,7 +524,7 @@ $('#ignoreBrowse').addEventListener('click', () => window.openStatPicker({ mode:
 $('#weightBrowse').addEventListener('click', () => window.openStatPicker({ mode: 'weight', query: $('#filter').value.trim() }));
 
 // ---------- options: results & startup ----------
-$('#resultsInApp').addEventListener('change', () => window.api.setSetting('resultsInApp', $('#resultsInApp').checked));
+
 $('#startWithWindows').addEventListener('change', () => window.api.setSetting('startWithWindows', $('#startWithWindows').checked));
 $('#openSettingsOnStart').addEventListener('change', () => window.api.setSetting('openSettingsOnStart', $('#openSettingsOnStart').checked));
 
@@ -551,7 +562,7 @@ $('#suggestBtn').addEventListener('click', async () => {
   const list = await window.api.suggestWeights();
   const box = $('#suggestBox');
   box.classList.remove('hidden');
-  if (!list.length) { box.innerHTML = '<div class="note">Save your equipped gear first (Equipped gear tab) – the suggestions come from it.</div>'; return; }
+  if (!list.length) { box.innerHTML = '<div class="note">Save your equipped gear first (My gear page) – the suggestions come from it.</div>'; return; }
   box.innerHTML = `<div class="help">Based on your equipped gear: each stat's typical roll is worth about 30 points, more if several of your items have it. You can tweak any number afterwards.</div>
     <table class="list"><tr><th>Stat</th><th>On items</th><th>Typical roll</th><th>Now</th><th>Suggested</th></tr>
     ${list.map((x) => `<tr><td>${esc(x.key)}</td><td>${x.slots}</td><td>${x.avg}</td><td class="dim">${state.weights[x.key] || '–'}</td><td><b>${x.weight}</b></td></tr>`).join('')}</table>
@@ -589,10 +600,18 @@ $('#resultsHotkey').addEventListener('keydown', (e) => {
 });
 $('#resultsHotkeySave').addEventListener('click', async () => {
   await window.api.setSetting('resultsHotkey', $('#resultsHotkey').value.trim());
-  $('#resultsHotkeyMsg').textContent = 'Saved.';
+  const st = await window.api.getState();
+  $('#resultsHotkeyMsg').textContent = st.resultsHotkeyOk === false ? `Saved, but ${$('#resultsHotkey').value.trim()} couldn't be registered – another app may use it.` : 'Saved.';
 });
 document.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => document.querySelector(`.tabs button[data-tab="${b.dataset.goto}"]`).click()));
-window.api.onSettingsTab((tab) => { const b = document.querySelector(`.tabs button[data-tab="${tab}"]`); if (b) b.click(); });
+window.api.onSettingsTab((tab) => {
+  // price range, sellers and ignored stats now live on the Find upgrades page
+  const focus = tab === 'search' ? '#ignoreCard' : null;
+  if (tab === 'search') tab = 'find';
+  const b = document.querySelector(`.tabs button[data-tab="${tab}"]`);
+  if (b) b.click();
+  if (focus) setTimeout(() => { const el = $(focus); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 150);
+});
 
 // Find tab extra buttons
 $('#findCraft').addEventListener('click', () => runFind(() => window.api.quickFind(toTarget($('#findSlot').value), 'craft', searchExtra())));
@@ -604,7 +623,7 @@ function renderSetup() {
   const have = SETUP_SLOTS.filter((s) => state.equipped[s]);
   const box = $('#setupBox');
   if (have.length >= SETUP_SLOTS.length || state.settings.setupHidden) { box.innerHTML = ''; return; }
-  const hk = (state.hotkeyStatus && state.hotkeyStatus.accelerator) || state.settings.hotkey || 'Ctrl+D';
+  const hk = (state.hotkeyStatus && state.hotkeyStatus.accelerator) || state.settings.hotkey || 'F2';
   box.innerHTML = `<div class="setup-head"><b>Set up your gear: ${have.length} of ${SETUP_SLOTS.length} slots saved</b>
       <div class="progress"><span id="setupBar"></span></div></div>
     <div class="help">In game, open your character screen (C), hover each item and press <b>${esc(hk)}</b>, then click <b>Set as …</b> in the popup. Or import everything from Path of Building below.</div>
@@ -618,35 +637,40 @@ let wizStep = 0;
 const WIZ = [
   {
     title: 'Welcome to PoE2 Upgrade Checker',
-    body: () => `<p>Hover any item in game and press your hotkey: a popup tells you if it's an <b>upgrade for your build</b>, gives it a <b>gear score</b>, and finds better items on the trade site in one click.</p>
+    body: () => `<p>Hover any item in game and press your hotkey: a popup tells you if it's an <b>upgrade for your build</b> – worked out by Path of Building with your own build – and finds better items on the trade site in one click.</p>
       <p class="help">This guide takes about a minute. You can run it again from <b>My gear → Setup guide</b>.</p>
       <p class="help"><b>Game setting:</b> set PoE2 to <b>Windowed Fullscreen</b> (Options → Graphics), or the popup can't show over the game.</p>`,
   },
   {
     title: '1. Your build',
-    body: () => `<p>The gear score rates items for your build.</p><div class="row"><select id="wizBuild">${(state.builds || []).map((b) => `<option value="${esc(b.id)}" ${b.id === (state.settings.build || 'djinn-varashta') ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}<option value="off">None – use my own stat weights</option></select></div>
+    body: () => `<p><b>Best:</b> paste your <b>Path of Building</b> export (PoB2: Import/Export Build → Generate) or a pobb.in link. The app then judges every item with Path of Building's own calculations for <i>your</i> build – any class, any skill – and loads your gear.</p>
+      <div class="row"><input id="wizPob" class="grow" placeholder="https://pobb.in/…  or  eNrt…"><button id="wizPobBtn" class="primary">Import</button></div><div class="note" id="wizPobMsg"></div>
+      <p class="help">No PoB? Pick the closest profile for a rough gear score instead, and save your gear in the next steps:</p>
+      <div class="row"><select id="wizBuild">${(state.builds || []).map((b) => `<option value="${esc(b.id)}" ${b.id === (state.settings.build || state.defaultBuild) ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}<option value="off">None – score by my own stat weights</option></select></div>
       <p class="help" id="wizBuildHelp"></p>`,
-    after: () => { const u = () => { const b = (state.builds || []).find((x) => x.id === $('#wizBuild').value); $('#wizBuildHelp').textContent = b ? b.summary : 'You set stat weights yourself in Build & weights.'; }; u(); $('#wizBuild').addEventListener('change', async () => { await window.api.setSetting('build', $('#wizBuild').value); u(); }); },
+    after: () => {
+      const u = () => { const b = (state.builds || []).find((x) => x.id === $('#wizBuild').value); $('#wizBuildHelp').textContent = b ? b.summary : 'You set stat weights yourself in Build & stats.'; };
+      u();
+      $('#wizBuild').addEventListener('change', async () => { await window.api.setSetting('build', $('#wizBuild').value); u(); });
+      $('#wizPobBtn').addEventListener('click', async () => { $('#wizPobMsg').textContent = 'Importing… (the first time, Path of Building takes a few seconds to start)'; const r = await window.api.importPob($('#wizPob').value.trim()); $('#wizPobMsg').textContent = r.ok ? r.message : r.error; if (r.ok) { await load(); state = await window.api.getState(); $('#wizBuild').value = state.settings.build; u(); } });
+    },
   },
   {
     title: '2. Your hotkey',
-    body: () => `<p>Your check-item hotkey is <b>${esc((state.hotkeyStatus && state.hotkeyStatus.accelerator) || state.settings.hotkey || 'Ctrl+D')}</b>${state.hotkeyStatus && state.hotkeyStatus.ok ? ' and it\'s working.' : ' – <span class="note">it isn\'t registered, change it in Options.</span>'}</p>
+    body: () => `<p>Your check-item hotkey is <b>${esc((state.hotkeyStatus && state.hotkeyStatus.accelerator) || state.settings.hotkey || 'F2')}</b>${state.hotkeyStatus && state.hotkeyStatus.ok ? ' and it\'s working.' : ' – <span class="note">it isn\'t registered, change it in Settings.</span>'}</p>
       <p>Where should the popup appear?</p><div class="row"><select id="wizPos"><option value="cursor">Next to the mouse</option><option value="left">Left side of the screen</option><option value="right">Right side of the screen</option><option value="top">Top of the screen</option></select> <button id="wizTest">Show a test popup</button></div>
       <p class="help">If it covers the game's item tooltip, pick a side of the screen.</p>`,
     after: () => { $('#wizPos').value = state.settings.popupPosition || 'cursor'; $('#wizPos').addEventListener('change', async () => { await window.api.setSetting('popupPosition', $('#wizPos').value); }); $('#wizTest').addEventListener('click', () => window.api.testPopup()); },
   },
   {
     title: '3. Your gear',
-    body: () => `<p>Save what you're wearing so the app can compare. Either:</p>
-      <p><b>a)</b> paste a Path of Building code or pobb.in link:</p>
-      <div class="row"><input id="wizPob" class="grow" placeholder="https://pobb.in/…  or  eNrt…"><button id="wizPobBtn" class="primary">Import</button></div><div class="note" id="wizPobMsg"></div>
-      <p><b>b)</b> or in game, hover each equipped item, press the hotkey and click <b>Set as …</b> in the popup. The <b>My gear</b> tab shows a checklist.</p>`,
-    after: () => { $('#wizPobBtn').addEventListener('click', async () => { $('#wizPobMsg').textContent = 'Importing…'; const r = await window.api.importPob($('#wizPob').value.trim()); $('#wizPobMsg').textContent = r.ok ? r.message : r.error; if (r.ok) load(); }); },
+    body: () => `<p>${Object.keys(state.equipped || {}).length ? `You have <b>${Object.keys(state.equipped).length}</b> items saved.` : 'Save what you\'re wearing so the app can compare.'} In game, hover each equipped item, press the hotkey and click <b>Set as …</b> in the popup. Items you copy in game replace Path of Building's, so the app uses exactly what you wear.</p>
+      <p class="help">The <b>My gear</b> tab shows a checklist. Also type your resistances from the character sheet there.</p>`,
   },
   {
     title: "4. You're set",
     body: () => `<p>Try it: hover an item in game and press the hotkey.</p>
-      <ul><li><b>Find upgrades</b> searches the trade site and shows listings scored for your build.</li><li><b>What's it worth?</b> prices loot.</li><li>Set a price range and stats to ignore in <b>Search settings</b>.</li></ul>`,
+      <ul><li><b>Find upgrades</b> searches the trade site and shows listings scored for your build.</li><li><b>What's it worth?</b> prices loot.</li><li>Set your price range and stats to ignore on the <b>Find upgrades</b> page.</li></ul>`,
   },
 ];
 function renderWiz() {
@@ -711,19 +735,80 @@ $('#pobImport').addEventListener('click', async () => {
   $('#pobMsg').textContent = 'Importing…';
   const r = await window.api.importPob($('#pobInput').value.trim());
   $('#pobMsg').textContent = r.ok ? r.message : r.error;
-  if (r.ok) { $('#pobInput').value = ''; await load(); }
+  if (r.ok) { $('#pobInput').value = ''; await load(); renderPob(false); }
 });
+const kfmt = (v) => (v == null ? '–' : v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e4 ? Math.round(v / 1000) + 'k' : Math.round(v).toLocaleString('en'));
+async function renderPob(load) {
+  const el = $('#pobStatus');
+  renderPriorities();
+  $('#pobUse').checked = state.settings.usePob !== false;
+  // the slider goes from Damage (left) to Survivability (right): its value is the survivability share
+  $('#pobBalance').value = Math.round((1 - (state.settings.pobDamageWeight == null ? 0.6 : state.settings.pobDamageWeight)) * 100);
+  const st = await window.api.pobStatus(!!load);
+  $('#pobControls').classList.toggle('hidden', !(st.available && st.hasBuild));
+  if (!st.available) { el.innerHTML = '<div class="note">The Path of Building engine isn\'t included in this copy of the app – items are judged by the gear score instead.</div>'; return; }
+  if (!st.hasBuild) { el.innerHTML = '<div class="note">No build yet: paste your PoB export above so items are judged by Path of Building.</div>'; return; }
+  if (!st.enabled) { el.innerHTML = '<div class="dim">Turned off – items are judged by the gear score.</div>'; return; }
+  if (st.error) { el.innerHTML = `<div class="note">Path of Building: ${esc(st.error)}</div>`; return; }
+  const m = st.summary;
+  if (!m) {
+    // start it in the background the first time you look, so the status is right without a click
+    if (!window.__pobAutoLoad) { window.__pobAutoLoad = true; el.innerHTML = '<div class="dim"><span class="spinner"></span> Starting Path of Building…</div>'; renderPob(true); return; }
+    el.innerHTML = '<div class="dim">Build saved. Path of Building starts the first time an item is checked. <button class="link" id="pobLoad">Check it now</button></div>'; const b = $('#pobLoad'); if (b) b.addEventListener('click', () => { el.innerHTML = '<div class="dim"><span class="spinner"></span> Starting Path of Building…</div>'; renderPob(true); }); return;
+  }
+  const res = (m.res || []).filter((r) => r.value != null && !(m.ci && r.el === 'Chaos')).map((r) => `${esc(r.el)} ${Math.round(r.value)}%${r.total > r.value ? ` <span class="dim">(${Math.round(r.total)})</span>` : ''}`).join(' · ');
+  $('#prChaos').disabled = !!m.ci || !$('#prRes').checked;
+  if (m.ci) { $('#prChaos').checked = false; $('#prChaos').parentNode.title = 'Chaos Inoculation: you are immune to chaos damage, so chaos resistance is ignored'; }
+  el.innerHTML = `<div class="pob"><span class="pob-tag">PoB</span> <b>${esc(m.ascendancy || m.className || '')}</b> level ${esc(m.level)}${m.mainSkill ? ` · ${esc(m.mainSkill)}` : ''}${m.ci ? ' · <span title="Life is 1 in your build: chaos resistance is ignored everywhere">Chaos Inoculation</span>' : ''}</div>
+    <div class="dim">${m.dpsKey === 'MinionDPS' ? 'Minion DPS' : 'DPS'} <b>${kfmt(m.dps)}</b> · Effective HP <b>${kfmt(m.ehp)}</b> · ES <b>${kfmt(m.es)}</b> · Spirit free <b>${m.spiritFree == null ? '–' : Math.round(m.spiritFree)}</b> of ${m.spirit == null ? '–' : Math.round(m.spirit)}</div>
+    <div class="dim">Resistances: ${res}</div>
+    ${m.overridden && m.overridden.length ? `<div class="dim">Using your in-game copies for: ${esc(m.overridden.join(', '))}</div>` : ''}
+    ${m.mismatch.map((x) => `<div class="note">⚠ ${esc(x)}</div>`).join('')}`;
+}
+// what "Better for my build" does depends on the build: PoB judges, or the gear score, or off
+function renderModeHints() {
+  const off = state.settings.build === 'off';
+  const fg = $('#findGear');
+  if (fg) {
+    fg.classList.toggle('hidden', off && !state.pobOn);
+    fg.title = state.pobOn ? 'Path of Building builds the search from your build, then checks every listing with it' : 'Listings that score higher for your build (gear score)';
+  }
+  document.querySelectorAll('.gs-fallback-note').forEach((e) => e.classList.toggle('hidden', !state.pobOn));
+  // stat weights are only used when you score by your own weights
+  const wc = $('#weightsCard'); if (wc) wc.classList.toggle('hidden', state.settings.build !== 'off');
+  $('#gsExplain').innerHTML = window.gearExplainHtml({ where: 'gear score editor on this page', pobOn: state.pobOn });
+}
+function renderPriorities() {
+  const p = state.priorities || {};
+  $('#prRes').checked = !!p.resFirst; $('#prChaos').checked = !!p.chaos; $('#prChaos').disabled = !p.resFirst;
+  $('#prSpirit').checked = !!p.spirit; $('#prAttrs').checked = !!p.attrs; $('#prDmg').checked = !!p.keepDmg;
+  $('#prNote').textContent = p.resFirst
+    ? 'Resistances first: each resistance point an item adds toward your cap counts +0.5% on its score (losing them costs the same), and Find upgrades searches for the resistances you still need.'
+    : 'Resistances count through effective HP like everything else.';
+}
+['#prRes', '#prChaos', '#prDmg', '#prSpirit', '#prAttrs'].forEach((id) => $(id).addEventListener('change', async () => {
+  state.priorities = await window.api.setPriorities({ resFirst: $('#prRes').checked, chaos: $('#prChaos').checked, keepDmg: $('#prDmg').checked, spirit: $('#prSpirit').checked, attrs: $('#prAttrs').checked });
+  renderPriorities();
+}));
+$('#pobUse').addEventListener('change', async () => { await window.api.pobEnable($('#pobUse').checked); state = await window.api.getState(); renderPob(false); });
+$('#pobBalance').addEventListener('change', async () => { await window.api.setSetting('pobDamageWeight', 1 - Number($('#pobBalance').value) / 100); state = await window.api.getState(); });
+
 
 // ---------- resistances ----------
 function renderResists() {
-  const r = state.settings.resists || {};
+  const r = state.liveResists || state.settings.resists || {};
   const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v == null ? '' : v; };
-  set('#resFire', r.fire); set('#resCold', r.cold); set('#resLightning', r.lightning); set('#resChaos', r.chaos); set('#resCap', r.cap);
+  set('#resFire', r.fire); set('#resCold', r.cold); set('#resLightning', r.lightning); set('#resChaos', r.chaos); set('#resCap', r.cap); set('#resBuffer', r.buffer);
+  const rec = state.settings.resists;
+  const when = rec && rec.at ? new Date(rec.at).toLocaleDateString() : '';
+  $('#resSource').textContent = !rec ? '' : rec.source === 'pob'
+    ? `From Path of Building${when ? ` (${when})` : ''}, adjusted for gear you've changed since. PoB can count charms and buffs that aren't always on – check them against your character sheet and type the real numbers here.`
+    : `From your character sheet${when ? ` (${when})` : ''}, adjusted for gear you've changed since.`;
 }
-['#resFire', '#resCold', '#resLightning', '#resChaos', '#resCap'].forEach((id) => $(id).addEventListener('change', async () => {
+['#resFire', '#resCold', '#resLightning', '#resChaos', '#resCap', '#resBuffer'].forEach((id) => $(id).addEventListener('change', async () => {
   const v = (x) => $(x).value.trim();
-  const saved = await window.api.setResists({ fire: v('#resFire'), cold: v('#resCold'), lightning: v('#resLightning'), chaos: v('#resChaos'), cap: v('#resCap') });
-  $('#resMsg').textContent = saved ? 'Saved – capped resistances stop counting in gear scores.' : 'Cleared – resistance caps are ignored.';
+  const saved = await window.api.setResists({ fire: v('#resFire'), cold: v('#resCold'), lightning: v('#resLightning'), chaos: v('#resChaos'), cap: v('#resCap'), buffer: v('#resBuffer') });
+  $('#resMsg').textContent = saved ? 'Saved.' : 'Cleared – resistance caps are ignored.';
   state = await window.api.getState(); renderSlots();
 }));
 
@@ -802,3 +887,11 @@ $('#updAction').addEventListener('click', async () => {
 })();
 window.api.onUpdateChanged(() => renderUpdate());
 renderUpdate();
+
+// ---------- gear score explanation ----------
+$('#gsExplain').innerHTML = window.gearExplainHtml({ where: 'gear score editor on this page' });
+window.showGearHelp = () => {
+  document.querySelector('.tabs button[data-tab="build"]').click();
+  setTimeout(() => $('#gsExplainCard').scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+};
+document.querySelectorAll('.page-head .gs-help').forEach((b) => b.addEventListener('click', () => window.showGearHelp()));

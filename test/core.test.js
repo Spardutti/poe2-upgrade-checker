@@ -244,7 +244,7 @@ Energy Shield: 520
 +90 to maximum Life
 +30% to Chaos Resistance
 80% increased Energy Shield`);
-  const g = gearScore(helm);
+  const g = gearScore(helm, { build: 'djinn-varashta' });
   assert.ok(g.score >= 85, `great helm should be S, got ${g.score}`);
   assert.equal(g.grade, 'S');
   assert.deepEqual(g.wasted, []); // local ES% is part of the base, not wasted
@@ -258,15 +258,15 @@ Energy Shield: 150
 Adds 1 to 4 Physical Damage to Attacks
 +10 to Strength
 12% increased Stun Threshold`);
-  const j = gearScore(junk);
+  const j = gearScore(junk, { build: 'djinn-varashta' });
   assert.ok(j.score < 30, `junk helm should be low, got ${j.score}`);
   assert.ok(j.missing.includes('Minion skill levels'));
   assert.equal(j.wasted.length, 2);
   // if you ignore resistances, a helm whose mods are mostly resistances is worth less to you
-  const noRes = gearScore(helm, { ignore: (k) => /Resistance/.test(k) });
+  const noRes = gearScore(helm, { build: 'djinn-varashta', ignore: (k) => /Resistance/.test(k) });
   assert.ok(noRes.score < g.score && noRes.score > 60, String(noRes.score));
   const boots = parseItem('Item Class: Boots\nRarity: Rare\nX\nY\n--------\nEnergy Shield: 100\n--------\n+30 to maximum Life');
-  const b = gearScore(boots);
+  const b = gearScore(boots, { build: 'djinn-varashta' });
   assert.equal(b.missing[0], 'Movement speed');
   assert.equal(gearScore(parseItem('Item Class: Belts\nRarity: Unique\nMageblood\nHeavy Belt\n--------\n+50 to maximum Life')).unique, true);
 });
@@ -311,4 +311,34 @@ Energy Shield: 280
   assert.deepEqual(it.affixes, { known: true, prefixes: 2, suffixes: 1, openPrefix: 1, openSuffix: 2 });
   assert.equal(it.stats['# to maximum Energy Shield'], 20); // hybrid lines still read
   assert.equal(parseItem(HELMET_OLD).affixes.known, false);
+});
+
+test('advanced copy: { Implicit Modifier } lines are implicits', () => {
+  const it = parseItem('Item Class: Rings\nRarity: Rare\nEmpyrean Gyre\nIron Ring\n--------\nItem Level: 81\n--------\n{ Implicit Modifier }\nAdds 1 to 4 Physical Damage to Attacks\n--------\n{ Prefix Modifier "Sapphire" (Tier: 2) — Mana }\n+56(55-64) to maximum Mana\n{ Suffix Modifier "of the Sage" (Tier: 1) — Attribute }\n+31(31-33) to Intelligence');
+  assert.strictEqual(it.lines.find((l) => /Physical/.test(l.text)).tag, 'implicit');
+  assert.strictEqual(it.lines.find((l) => /Mana/.test(l.text)).tag, 'explicit');
+});
+
+test('Mageblood Legacies become stats, with the duplicate bonus', () => {
+  const { parseItem } = require('../src/core/parser');
+  const base = "Item Class: Belts\nRarity: Unique\nMageblood\nUtility Belt\n--------\nItem Level: 80\n--------\nHas 3 Charm Slots\n20% of Flask Recovery applied Instantly\n--------\nLegacy of Bismuth\nLegacy of Sulphur\nLegacy of Quicksilver\nLegacy of Jade\nAll Mage's Legacies have 50% increased effect per duplicate Mage's Legacy you have\n--------\nRivers of power coursed through their veins.";
+  const a = parseItem(base);
+  assert.strictEqual(a.stats['#% to Cold Resistance'], 45);
+  assert.strictEqual(a.stats['#% increased Movement Speed'], 30);
+  assert.ok(a.lines.some((l) => l.text === 'Legacy of Jade'));
+  const b = parseItem(base.replace('Legacy of Jade', 'Legacy of Ruby').replace('Legacy of Sulphur', 'Legacy of Ruby'));
+  assert.strictEqual(b.legacies.duplicates, 1);
+  assert.strictEqual(b.stats['#% to Fire Resistance'], 45 * 1.5 + 60 * 1.5);
+  assert.strictEqual(b.stats['#% to Maximum Fire Resistance'], 7.5);
+});
+
+test('re-copying the same item does not move your resistance totals', () => {
+  const R = require('../src/core/resists');
+  const old = { name: 'Mageblood', baseType: 'Utility Belt', stats: {} };
+  const neu = { name: 'Mageblood', baseType: 'Utility Belt', stats: { '#% to Cold Resistance': 45 } };
+  let rec = R.snapshot({ cold: 112 }, { Belt: old }, 'pob');
+  rec = R.rebase(rec, old, neu);
+  assert.strictEqual(R.live(rec, { Belt: neu }).cold, 112);
+  const ruby = { name: 'X', stats: { '#% to Maximum Fire Resistance': 5 } };
+  assert.strictEqual(R.live(R.snapshot({ fire: 80 }, {}, 'game'), { Belt: ruby }).caps.fire, 80);
 });

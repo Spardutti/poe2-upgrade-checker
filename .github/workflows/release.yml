@@ -1,8 +1,8 @@
 name: Release
 
-# Builds the Windows installer and publishes it as a GitHub release.
-# Run it from the Actions tab ("Run workflow"), or push a tag like v0.3.1.
-# The version comes from package.json, so bump that first.
+# Builds the Windows installer and the portable .exe, runs the tests, and publishes both as a
+# GitHub release with the matching CHANGELOG.md section as release notes.
+# Started by release.bat (it pushes a tag like v0.4.1), or by hand: Actions -> Release -> Run workflow.
 on:
   workflow_dispatch:
   push:
@@ -11,16 +11,50 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Check the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          if [ "v$VER" != "${GITHUB_REF_NAME}" ]; then echo "Tag ${GITHUB_REF_NAME} but package.json says $VER"; exit 1; fi
       - run: npm install --no-audit --no-fund
+      - run: node tools/get-pob.js
+      - run: node tools/pob-smoke.js
       - run: npm test
-      - run: npx electron-builder@25.1.8 --win nsis portable --publish always
+      - name: Build and upload the installer and portable .exe
+        run: npx electron-builder@25.1.8 --win nsis portable --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release notes from CHANGELOG.md
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          node -e '
+            const fs = require("fs"); const v = process.argv[1];
+            const log = fs.existsSync("CHANGELOG.md") ? fs.readFileSync("CHANGELOG.md", "utf8") : "";
+            const lines = log.split(/\r?\n/); let out = []; let on = false;
+            for (const l of lines) {
+              if (/^## /.test(l)) { if (on) break; on = l.slice(3).trim() === v || l.slice(3).startsWith(v + " "); continue; }
+              if (on) out.push(l);
+            }
+            const notes = out.join("\n").trim() || "Fixes and improvements.";
+            const head = "## Download\n\n- **`PoE2-Upgrade-Checker-Setup-" + v + ".exe`**: installs for your user (no admin) and **updates itself**. Recommended.\n- `PoE2-Upgrade-Checker-Portable-" + v + ".exe`: no install, no auto-update.\n\nWindows may say the app is unrecognised (it isn\x27t code-signed): click *More info → Run anyway*. In PoE2, use **Windowed Fullscreen**.\n\n## What\x27s new\n\n";
+            fs.writeFileSync("notes.md", head + notes + "\n\nFull guide: [README](https://github.com/" + process.env.GITHUB_REPOSITORY + "#readme)\n");
+          ' "$VER"
+          gh release edit "v$VER" --title "$VER" --notes-file notes.md

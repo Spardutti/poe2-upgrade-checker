@@ -14,9 +14,14 @@ const pick = (v, slot) => (v && typeof v === 'object' ? (v[slot] != null ? v[slo
 
 const RES = (el) => ({ test: new RegExp(`^#% to ${el} Resistance$`), label: `${el} res`, key: `#% to ${el} Resistance`, res: el, imp: { Weapon: 0, Jewel: 0, default: 4 }, cap: 45 });
 
+// used when you haven't picked a profile (Path of Building usually picks one for you on import)
+const DEFAULT_BUILD = 'life-res';
+// mods that only work some of the time ("…if you've Hit Recently", "while…", "per Power Charge"); not "per second"
+const COND = /\b(if you've|if you have|while|when|recently)\b|\bper (?!second)/i;
+
 const BUILDS = {
   'djinn-varashta': {
-    name: 'Disciple of Varashta – Djinn summoner (ES)',
+    name: 'Minion summoner (ES) – e.g. Disciple of Varashta Djinns',
     summary: 'Minion skill levels and Spirit first, then ally/minion damage, Energy Shield, resistances; movement speed on boots.',
     // imp is per slot; 0 (default) means the stat can't roll there, so it
     // doesn't count towards that slot's "perfect item".
@@ -110,17 +115,17 @@ function grade(score) {
 // opts: { build: id, ignore(key) -> bool }
 function gearScore(item, opts) {
   opts = opts || {};
-  const build = BUILDS[opts.build || 'djinn-varashta'];
+  const build = BUILDS[opts.build || DEFAULT_BUILD];
   if (!build || !item || !item.slot) return null;
   const slot = slotName(item.slot);
   if (['Charm', 'Life Flask', 'Mana Flask'].includes(slot)) {
-    return { score: null, grade: '–', unrated: 'type', slot, build: opts.build || 'djinn-varashta', buildName: build.name, contributions: [], wasted: [], missing: [] };
+    return { score: null, grade: '–', unrated: 'type', slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions: [], wasted: [], missing: [] };
   }
   if (item.unidentified) {
-    return { score: null, grade: '–', unrated: 'unidentified', slot, build: opts.build || 'djinn-varashta', buildName: build.name, contributions: [], wasted: [], missing: [] };
+    return { score: null, grade: '–', unrated: 'unidentified', slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions: [], wasted: [], missing: [] };
   }
   if (/unique/i.test(item.rarity || '')) {
-    return { score: null, grade: '–', unique: true, slot, build: opts.build || 'djinn-varashta', buildName: build.name, contributions: [], wasted: [], missing: [] };
+    return { score: null, grade: '–', unique: true, slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions: [], wasted: [], missing: [] };
   }
   const ignore = opts.ignore || (() => false);
   const entries = build.stats.filter((e) => pick(e.imp, slot) * ((opts.tweaks && opts.tweaks[e.label] != null) ? Number(opts.tweaks[e.label]) : 1) > 0);
@@ -147,6 +152,7 @@ function gearScore(item, opts) {
   const contributions = [];
   const wasted = [];
   const used = new Set();
+  const usedQ = new Map();
   for (const x of statSources(item)) {
     if (!(x.value > 0)) continue;
     if (ignore(x.key)) continue;
@@ -171,8 +177,15 @@ function gearScore(item, opts) {
       resNotes.push(need[e.res] > 0 ? `${e.res} res: you only need ${Math.round(need[e.res])} more to cap – the rest doesn't count.` : `${e.res} res: you're already capped – it doesn't count.`);
       value = need[e.res];
     }
-    const quality = Math.min(value / cap, 1.15);
-    const factor = x.source === 'socket' ? 0.5 : 1; // rune bonuses can be swapped
+    // one stat of the profile can't score more than one top roll, even from several mods
+    // (implicit + explicit life, or "+# to all Attributes" counting as Str, Dex and Int)
+    const sofar = usedQ.get(e) || 0;
+    const quality = Math.max(0, Math.min(value / cap, 1.15 - sofar));
+    if (quality <= 0) continue;
+    usedQ.set(e, sofar + quality);
+    // rune bonuses can be swapped; conditional mods ("if you've Hit Recently", "while ...") aren't always on
+    const conditional = COND.test(x.key);
+    const factor = (x.source === 'socket' ? 0.5 : 1) * (conditional ? 0.6 : 1);
     const points = imp * quality * factor;
     used.add(e);
     contributions.push({ key: x.key, label: e.label, value: x.value, quality: Math.round(quality * 100), points: Math.round(points * 10) / 10, source: x.source });
@@ -186,13 +199,13 @@ function gearScore(item, opts) {
     .slice(0, 3)
     .filter((e) => impOf(e) >= 5)
     .map((e) => e.label);
-  return { score, grade: grade(score), slot, build: opts.build || 'djinn-varashta', buildName: build.name, contributions, wasted, missing, resNote: resNotes.join(' ') || null };
+  return { score, grade: grade(score), slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions, wasted, missing, ideal: Math.round(ideal * 10) / 10, resNote: resNotes.join(' ') || null };
 }
 
 // Is this stat something the build wants on this slot? (used to colour the
 // popup's change list and pick the "top changes")
 function usefulness(slotIn, key, opts) {
-  const build = BUILDS[(opts && opts.build) || 'djinn-varashta'];
+  const build = BUILDS[(opts && opts.build) || DEFAULT_BUILD];
   if (!build) return 0;
   const slot = slotName(slotIn);
   const e = build.stats.find((en) => en.test.test(key));
@@ -204,7 +217,7 @@ function usefulness(slotIn, key, opts) {
 
 // The most important searchable stats for a slot (for "craftable bases").
 function topStats(slotIn, n, opts) {
-  const build = BUILDS[(opts && opts.build) || 'djinn-varashta'];
+  const build = BUILDS[(opts && opts.build) || DEFAULT_BUILD];
   if (!build) return [];
   const slot = slotName(slotIn);
   const tw = (opts && opts.tweaks) || {};
@@ -216,9 +229,31 @@ function topStats(slotIn, n, opts) {
     .slice(0, n || 2);
 }
 
+// What a slot's gear score is made of, as search weights: points per unit of each stat.
+// Ignored stats and resistances you're already capped on are left out.
+function searchWeights(slotIn, opts) {
+  opts = opts || {};
+  const build = BUILDS[opts.build || DEFAULT_BUILD];
+  if (!build) return [];
+  const slot = slotName(slotIn);
+  const tw = opts.tweaks || {};
+  const ignore = opts.ignore || (() => false);
+  const need = opts.resNeed || null;
+  const out = [];
+  for (const e of build.stats) {
+    const imp = pick(e.imp, slot) * (tw[e.label] != null ? Number(tw[e.label]) : 1);
+    if (!(imp > 0)) continue;
+    if (e.key && ignore(e.key)) continue;
+    if (e.res && need && need[e.res] != null && need[e.res] <= 0) continue;
+    const cap = pick(e.cap, slot) || 1;
+    out.push({ label: e.label, test: e.test, key: e.key || null, w: imp / cap, imp, cap, res: e.res || null, need: e.res && need ? need[e.res] : null });
+  }
+  return out;
+}
+
 // For the gear score editor: each stat line of a build, with where it counts.
 function buildStats(id) {
-  const b = BUILDS[id || 'djinn-varashta'];
+  const b = BUILDS[id || DEFAULT_BUILD];
   if (!b) return [];
   const seen = new Set();
   return b.stats.filter((e) => { if (seen.has(e.label)) return false; seen.add(e.label); return true; }).map((e) => {
@@ -232,4 +267,4 @@ function buildList() {
   return Object.entries(BUILDS).map(([id, b]) => ({ id, name: b.name, summary: b.summary }));
 }
 
-module.exports = { gearScore, grade, buildList, buildStats, usefulness, topStats, BUILDS, slotName };
+module.exports = { COND, gearScore, grade, buildList, buildStats, usefulness, topStats, searchWeights, BUILDS, DEFAULT_BUILD, slotName };

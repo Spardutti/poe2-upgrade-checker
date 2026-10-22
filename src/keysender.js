@@ -84,6 +84,13 @@ class KeySender {
       }
     });
     this.proc.stderr.on('data', (d) => this.log('keysender stderr: ' + d.toString().trim()));
+    // PowerShell blocked (AppLocker, antivirus) or gone: log it instead of crashing, and start over next time
+    this.proc.on('error', (err) => {
+      this.log('keysender: ' + err.message);
+      this.proc = null; this.ready = false;
+      this.waiters.splice(0).forEach((w) => w(false));
+    });
+    this.proc.stdin.on('error', (err) => this.log('keysender: ' + err.message));
     this.proc.on('exit', (code) => {
       this.log('keysender exited ' + code);
       this.proc = null; this.ready = false;
@@ -99,7 +106,7 @@ class KeySender {
     return new Promise((resolve) => {
       const t = setTimeout(() => resolve(false), 1500);
       this.waiters.push((ok) => { clearTimeout(t); resolve(ok); });
-      this.proc.stdin.write((advanced ? 'advanced' : 'copy') + '\n');
+      try { this.proc.stdin.write((advanced ? 'advanced' : 'copy') + '\n'); } catch (_) { clearTimeout(t); resolve(false); }
     });
   }
 

@@ -1,0 +1,181 @@
+'use strict';
+/* global window, document */
+
+// Character page: everything Path of Building calculates for your character (yours and your
+// minions'), with the gear you copied in game, plus what the app itself knows.
+(function () {
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+  const n0 = (v) => (isNum(v) ? Math.round(v).toLocaleString('en') : '–');
+  const n1 = (v) => (isNum(v) ? (Math.round(v * 10) / 10).toLocaleString('en') : '–');
+  const big = (v) => (!isNum(v) ? '–' : v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `${(v / 1e3).toFixed(1)}k` : n0(v));
+  const pct = (v) => (isNum(v) ? `${n1(v)}%` : '–');
+  const row = (k, v, hint) => (v == null || v === '–' ? '' : `<tr><td>${esc(k)}${hint ? ` <small>${esc(hint)}</small>` : ''}</td><td>${v}</td></tr>`);
+  const card = (title, body, extra) => (body ? `<div class="card-p ${extra || ''}"><h3>${esc(title)}</h3>${body}</div>` : '');
+  const table = (rows) => { const r = rows.filter(Boolean).join(''); return r ? `<table class="kv">${r}</table>` : ''; };
+  const SLOT_ORDER = ['Weapon', 'Offhand', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring 1', 'Ring 2', 'Belt'];
+  const POB_SLOT = { Weapon: 'Weapon 1', Offhand: 'Weapon 2' };
+
+  let busy = false;
+  async function render(refresh) {
+    if (busy) return;
+    busy = true;
+    const body = $('#charBody');
+    try {
+      const [st, d] = await Promise.all([window.api.getState(), window.api.pobSheet(!!refresh)]);
+      const prof = (st.profiles || []).find((p) => p.active);
+      $('#charTitle').textContent = prof ? prof.name : 'Character';
+      body.innerHTML = d.sheet ? sheetHtml(d, st) : noPobHtml(d, st);
+      $('#charSub').textContent = d.sheet
+        ? `Calculated by Path of Building with your build${d.sheet.overridden && d.sheet.overridden.length ? ` and the ${d.sheet.overridden.length} item${d.sheet.overridden.length === 1 ? '' : 's'} you copied in game` : ''}${d.at ? ` · ${new Date(d.at).toLocaleTimeString()}` : ''}.${d.error ? ` Couldn't recalculate just now: ${d.error}` : ''}`
+        : 'Add your Path of Building build on My gear to see your full character sheet.';
+      $('#charRefresh').classList.toggle('hidden', !d.on);
+      // widths set here: the page's security policy doesn't allow inline styles
+      body.querySelectorAll('[data-w]').forEach((e) => { e.style.width = `${Number(e.dataset.w) || 0}%`; });
+      body.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => document.querySelector(`.tabs button[data-tab="${b.dataset.goto}"]`).click()));
+    } catch (err) {
+      body.innerHTML = `<div class="card-p">Couldn't load your character: ${esc(err.message || err)}</div>`;
+    } finally { busy = false; }
+  }
+
+  function resBars(list, ci) {
+    return list.map((r) => {
+      const el = String(r.el).toLowerCase();
+      if (el === 'chaos' && ci) return `<div class="resbar chaos ok"><div class="rl"><span>Chaos</span><b>immune</b></div><div class="track"><div class="fill" data-w="100"></div></div><div class="dim small">Chaos Inoculation – chaos resistance doesn't matter.</div></div>`;
+      const max = r.max || 75; const v = isNum(r.value) ? r.value : null;
+      const under = v != null && v < max - 0.5;
+      const over = isNum(r.over) && r.over > 0 ? ` <small class="dim">(${n0(r.total)}%, ${n0(r.over)} over the cap)</small>` : '';
+      return `<div class="resbar ${el} ${under ? 'under' : 'ok'}"><div class="rl"><span>${esc(r.el)}</span><span><b>${v == null ? '–' : n0(v)}%</b> / ${n0(max)}%${over}${under ? ` <small>${n0(max - v)} short</small>` : ''}</span></div><div class="track"><div class="fill" data-w="${v == null ? 0 : Math.max(0, Math.min(100, (v / max) * 100))}"></div></div></div>`;
+    }).join('');
+  }
+
+  function sheetHtml(d, st) {
+    const s = d.sheet; const p = s.player || {}; const m = s.minion; const ci = !!p.ChaosInoculation || (isNum(p.Life) && p.Life <= 1);
+    const minionMain = m && isNum(m.CombinedDPS) && m.CombinedDPS > 0;
+    const playerDps = Math.max(p.FullDPS || 0, p.CombinedDPS || 0, p.TotalDPS || 0);
+    const tags = [
+      s.mainSkill ? `<span class="char-tag">Main skill: ${esc(s.mainSkill)}</span>` : '',
+      ci ? '<span class="char-tag good">Chaos Inoculation</span>' : '',
+      ...(s.tree && s.tree.keystones ? s.tree.keystones.filter((k) => k !== 'Chaos Inoculation').map((k) => `<span class="char-tag">${esc(k)}</span>`) : []),
+    ].join('');
+    const tiles = [
+      minionMain ? ['Minion DPS', big(m.CombinedDPS)] : null,
+      playerDps > 0 ? [minionMain ? 'Your DPS' : 'DPS', big(playerDps)] : null,
+      ['Effective HP', big(p.TotalEHP)],
+      isNum(p.EnergyShield) && p.EnergyShield > 0 ? ['Energy Shield', n0(p.EnergyShield)] : null,
+      !ci ? ['Life', n0(p.Life)] : null,
+      ['Mana', n0(p.Mana)],
+      ['Spirit free', `${n0(p.SpiritUnreserved)} <small class="dim tile-sub">/ ${n0(p.Spirit)}</small>`],
+      isNum(p.MovementSpeedMod) ? ['Movement speed', `${p.MovementSpeedMod >= 1 ? '+' : ''}${n0((p.MovementSpeedMod - 1) * 100)}%`] : null,
+    ].filter(Boolean).map(([k, v]) => `<div class="tile"><b>${v}</b><span>${esc(k)}</span></div>`).join('');
+    const hero = `<div class="card-p"><div class="char-hero"><div class="who">${esc(s.ascendancy || s.className || 'Your character')}<small>${esc(s.ascendancy && s.className ? s.className + ' · ' : '')}Level ${esc(s.level || '?')}${s.tree && s.tree.points ? ` · ${s.tree.points} passive points` : ''}</small></div><div class="char-tags">${tags}</div></div><div class="char-big">${tiles}</div></div>`;
+
+    const mres = m ? ['Fire', 'Cold', 'Lightning', 'Chaos'].map((el) => (isNum(m[`${el}Resist`]) ? `${n0(m[`${el}Resist`])}%` : '–')).join(' / ') : null;
+    const minionCard = m ? card(m.name ? `Minions – ${m.name}` : 'Minions', table([
+      row('DPS', big(m.CombinedDPS || m.TotalDPS)),
+      row('Average hit', big(m.AverageHit)),
+      isNum(m.Speed) && m.Speed > 0 ? row('Uses per second', n1(m.Speed), isNum(m.Cooldown) && m.Cooldown > 0 ? 'with the cooldown' : '') : '',
+      isNum(m.CastRate) && m.CastRate > 0 && !(isNum(m.Speed) && Math.abs(m.CastRate - m.Speed) < 0.05) ? row('Cast rate', `${n1(m.CastRate)}/s`, 'without the cooldown') : '',
+      isNum(m.Cooldown) && m.Cooldown > 0 ? row('Cooldown', `${n1(m.Cooldown)} s`) : '',
+      row('Critical hit chance', pct(m.CritChance)),
+      row('Critical damage', isNum(m.CritMultiplier) ? `×${n1(m.CritMultiplier)}` : null),
+      row('Hit chance', pct(m.HitChance)),
+      isNum(m.AreaOfEffectRadiusMetres) ? row('Area radius', `${n1(m.AreaOfEffectRadiusMetres)} m`) : '',
+      row('Life', n0(m.Life)),
+      isNum(m.EnergyShield) && m.EnergyShield > 0 ? row('Energy shield', n0(m.EnergyShield)) : '',
+      isNum(m.Armour) && m.Armour > 0 ? row('Armour', n0(m.Armour), isNum(m.PhysicalDamageReduction) ? `${n0(m.PhysicalDamageReduction)}% phys. reduction` : '') : '',
+      isNum(m.Evasion) && m.Evasion > 0 ? row('Evasion', n0(m.Evasion)) : '',
+      row('Effective HP', n0(m.TotalEHP)),
+      row('Resistances', mres, 'fire / cold / lightning / chaos'),
+    ])) : '';
+
+    const offence = playerDps > 0 || !minionMain ? card(minionMain ? 'Your own damage' : 'Offence', table([
+      row('Full DPS', big(p.FullDPS)), row('Main skill DPS', big(p.CombinedDPS || p.TotalDPS)), isNum(p.TotalDotDPS) && p.TotalDotDPS > 0 ? row('Damage over time', big(p.TotalDotDPS)) : '',
+      row('Average hit', big(p.AverageHit)), isNum(p.Speed) && p.Speed > 0 ? row('Uses per second', n1(p.Speed)) : '',
+      row('Critical hit chance', pct(p.CritChance)), row('Critical damage', isNum(p.CritMultiplier) ? `×${n1(p.CritMultiplier)}` : null),
+      row('Hit chance', pct(p.HitChance)), row('Accuracy', n0(p.Accuracy)),
+    ])) : '';
+
+    const defence = card('Defences', table([
+      row('Effective HP', n0(p.TotalEHP)),
+      isNum(p.EnergyShield) && p.EnergyShield > 0 ? row('Energy shield', n0(p.EnergyShield), isNum(p.EnergyShieldRecharge) ? `recharges ${n0(p.EnergyShieldRecharge)}/s after ${n1(p.EnergyShieldRechargeDelay)} s` : '') : '',
+      ci ? row('Life', '1', 'Chaos Inoculation') : row('Life', n0(p.Life), isNum(p.LifeRegenRecovery) && p.LifeRegenRecovery > 0 ? `regenerates ${n1(p.LifeRegenRecovery)}/s` : ''),
+      isNum(p.Ward) && p.Ward > 0 ? row('Ward', n0(p.Ward)) : '',
+      row('Armour', n0(p.Armour), isNum(p.PhysicalDamageReduction) && p.PhysicalDamageReduction > 0 ? `${n0(p.PhysicalDamageReduction)}% physical reduction` : ''),
+      row('Evasion', n0(p.Evasion), isNum(p.EvadeChance) ? `${n0(p.EvadeChance)}% chance to evade` : ''),
+      isNum(p.DeflectChance) && p.DeflectChance > 0 ? row('Deflect chance', pct(p.DeflectChance)) : '',
+      row('Block chance', isNum(p.BlockChance) ? `${n0(p.BlockChance)}%${isNum(p.BlockChanceMax) ? ` <small>of ${n0(p.BlockChanceMax)}%</small>` : ''}` : null),
+      isNum(p.SpellBlockChance) && p.SpellBlockChance > 0 ? row('Spell block chance', pct(p.SpellBlockChance)) : '',
+      row('Stun threshold', n0(p.StunThreshold)), row('Ailment threshold', n0(p.AilmentThreshold)),
+    ]));
+
+    const res = card('Resistances', resBars(s.res || [], ci) + (d.resists && d.resists.source === 'game' ? '<div class="dim small">From Path of Building. Your typed-in character sheet numbers are on My gear.</div>' : ''));
+
+    const hit = (v) => (v === null || v === undefined ? (ci ? 'immune' : '–') : n0(v));
+    const maxHit = card('Biggest hit you can take', table([
+      row('Physical', hit(p.PhysicalMaximumHitTaken)), row('Fire', hit(p.FireMaximumHitTaken)), row('Cold', hit(p.ColdMaximumHitTaken)),
+      row('Lightning', hit(p.LightningMaximumHitTaken)), row('Chaos', ci ? 'immune' : hit(p.ChaosMaximumHitTaken)),
+    ]) + '<div class="dim small">From full energy shield / life, after your resistances and mitigation.</div>');
+
+    const spPct = isNum(p.Spirit) && p.Spirit > 0 && isNum(p.SpiritReserved) ? Math.min(100, (p.SpiritReserved / p.Spirit) * 100) : 0;
+    const resources = card('Spirit & mana', `<div class="resbar spiritbar"><div class="rl"><span>Spirit</span><span><b>${n0(p.SpiritReserved)}</b> reserved of ${n0(p.Spirit)} · <b class="${isNum(p.SpiritUnreserved) && p.SpiritUnreserved < 0 ? 'neg' : 'pos'}">${n0(p.SpiritUnreserved)}</b> free</span></div><div class="track"><div class="fill" data-w="${spPct}"></div></div></div>` + table([
+      row('Mana', n0(p.Mana), isNum(p.ManaUnreserved) && p.ManaUnreserved !== p.Mana ? `${n0(p.ManaUnreserved)} unreserved` : ''),
+      row('Mana regeneration', isNum(p.ManaRegenRecovery) ? `${n1(p.ManaRegenRecovery)}/s` : null),
+    ]));
+
+    const attr = (k, label) => { const have = p[k]; const need = p[`Req${k}`]; const ok = !isNum(need) || have >= need; return row(label, `<b class="${ok ? '' : 'neg'}">${n0(have)}</b>${isNum(need) && need > 0 ? ` <small>needs ${n0(need)}</small>` : ''}`); };
+    const charges = ['Power', 'Frenzy', 'Endurance'].map((c) => (isNum(p[`${c}ChargesMax`]) ? `${c} ${n0(p[`${c}ChargesMax`])}` : null)).filter(Boolean).join(' · ');
+    const misc = card('Attributes & more', table([
+      attr('Str', 'Strength'), attr('Dex', 'Dexterity'), attr('Int', 'Intelligence'),
+      isNum(p.MovementSpeedMod) ? row('Movement speed', `${p.MovementSpeedMod >= 1 ? '+' : ''}${n0((p.MovementSpeedMod - 1) * 100)}%`) : '',
+      charges ? row('Max charges', charges) : '',
+      isNum(p.PresenceRadiusMetres) ? row('Presence radius', `${n1(p.PresenceRadiusMetres)} m`) : '',
+      isNum(p.TotalCompanionLife) && p.TotalCompanionLife > 0 ? row('Companion life', n0(p.TotalCompanionLife)) : '',
+    ]));
+
+    // skills: one line per skill group, the main one first and highlighted (duplicates PoB keeps for
+    // item-granted skills are left out)
+    const seen = new Set();
+    const groups = (s.skills || []).filter((g) => { const act = (g.gems || []).filter((x) => !x.support); const k = (act.length ? act : g.gems || []).map((x) => x.name).join('|'); if (seen.has(k)) return false; seen.add(k); return true; })
+      .sort((a, b) => (b.main ? 1 : 0) - (a.main ? 1 : 0));
+    const skills = groups.length ? card(`Skills (${groups.length})`, groups.map((g) => {
+      const act = g.gems.filter((x) => !x.support); const sup = g.gems.filter((x) => x.support);
+      return `<div class="skill-group ${g.main ? 'main' : ''} ${g.enabled ? '' : 'off'}"><div class="sk">${act.map((x) => `${esc(x.name)} <small class="dim">${x.level ? `lvl ${x.level}` : ''}${x.quality ? ` · ${x.quality}%` : ''}</small>`).join(' + ') || esc(g.label)}${g.main ? ' <span class="char-tag">main</span>' : ''}${g.enabled ? '' : ' <small class="dim">(disabled)</small>'}</div>${sup.length ? `<div class="gems">${sup.map((x) => `<span class="sup">${esc(x.name)}</span>`).join(' · ')}</div>` : ''}</div>`;
+    }).join('')) : '';
+
+    const t = s.tree || {};
+    const tree = t.points ? card('Passive tree', `<div class="dim small">${t.points} points allocated${t.notables ? ` · ${t.notables.length} notables` : ''}</div>`
+      + (t.keystones && t.keystones.length ? `<div class="small">Keystones</div><div class="chips key">${t.keystones.map((x) => `<span>${esc(x)}</span>`).join('')}</div>` : '')
+      + (t.ascendancy && t.ascendancy.length ? `<div class="small">${esc(s.ascendancy || 'Ascendancy')}</div><div class="chips asc">${t.ascendancy.map((x) => `<span>${esc(x)}</span>`).join('')}</div>` : '')
+      + (t.notables && t.notables.length ? `<div class="small">Notables</div><div class="chips">${t.notables.map((x) => `<span>${esc(x)}</span>`).join('')}</div>` : '')) : '';
+
+    const over = new Set(s.overridden || []);
+    const gs = st.gearScores || {};
+    const gear = card('Gear', table(SLOT_ORDER.map((slot) => {
+      const it = (st.equipped || {})[slot]; const pobName = (s.gear || {})[POB_SLOT[slot] || slot];
+      const name = it ? it.name : pobName; if (!name) return '';
+      const g = gs[slot];
+      return row(slot, `${esc(name)}${over.has(POB_SLOT[slot] || slot) ? ' <small>copied in game</small>' : it && it.fromPob ? ' <small>from PoB</small>' : ''}${g && g.score != null ? ` <span class="gs g-${esc(g.grade)}">${g.score} ${esc(g.grade)}</span>` : ''}`);
+    })) + '<div class="row"><button class="link" data-goto="gear">Change gear on My gear →</button></div>');
+
+    return `${hero}<div class="grid g-cards">${minionCard}${offence}${defence}${res}${maxHit}${resources}${misc}${gear}</div><div class="grid g-2 g-even"><div class="col">${skills}</div><div class="col">${tree}</div></div>`;
+  }
+
+  function noPobHtml(d, st) {
+    const why = !d.hasBuild ? 'Paste your Path of Building export on <b>My gear</b> and this page shows your whole character: damage (or your minions\'), defences, resistances against the cap, the biggest hits you can take, Spirit, attributes, skills and passive tree.'
+      : !d.enabled ? 'Path of Building is switched off on My gear (<i>Judge items with Path of Building</i>). Switch it on to see your character sheet.'
+        : !d.available ? 'The Path of Building engine isn\'t included with this copy of the app.' : 'Path of Building isn\'t available right now.';
+    const rs = d.resists;
+    const res = rs ? card('Resistances (from My gear)', resBars(['fire', 'cold', 'lightning', 'chaos'].filter((el) => rs[el] != null).map((el) => ({ el: el[0].toUpperCase() + el.slice(1), value: Math.min(rs[el], (rs.caps && rs.caps[el]) || rs.cap || 75), total: rs[el], over: rs[el] - ((rs.caps && rs.caps[el]) || rs.cap || 75), max: (rs.caps && rs.caps[el]) || rs.cap || 75 })), false)) : '';
+    const gs = st.gearScores || {};
+    const gear = card('Gear', table(SLOT_ORDER.map((slot) => { const it = (st.equipped || {})[slot]; const g = gs[slot]; return it ? row(slot, `${esc(it.name)}${g && g.score != null ? ` <span class="gs g-${esc(g.grade)}">${g.score} ${esc(g.grade)}</span>` : ''}`) : ''; })));
+    return `<div class="card-p"><h3>Your character sheet</h3><div class="help">${why}</div><div class="row"><button class="primary" data-goto="gear">Go to My gear</button></div></div><div class="grid g-cards">${res}${gear}</div>`;
+  }
+
+  document.querySelector('.tabs button[data-tab="char"]').addEventListener('click', () => render(false));
+  $('#charRefresh').addEventListener('click', () => render(true));
+  // keep it current while it's open (gear copied, build changed, character switched)
+  window.api.onChanged(() => { if ($('#tab-char').classList.contains('active')) render(false); });
+  window.renderCharacter = render;
+})();

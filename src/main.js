@@ -5,8 +5,6 @@ const fs = require('fs');
 const {
   app, BrowserWindow, Tray, Menu, clipboard, screen, ipcMain, globalShortcut, nativeImage, net, shell, desktopCapturer,
 } = require('electron');
-const stashLib = require('./stash/manager');
-const stashPrices = require('./stash/prices');
 const trade = require('./core/trade');
 const rates = require('./core/rates');
 const ignoreLib = require('./core/ignore');
@@ -14,6 +12,7 @@ const catalogLib = require('./core/catalog');
 const listingLib = require('./core/listing');
 const { suggestWeights } = require('./core/autoweights');
 const gearLib = require('./core/gearscore');
+const characterLib = require('./core/character');
 const { parseItem } = require('./core/parser');
 const { compare } = require('./core/scorer');
 const { Store } = require('./core/store');
@@ -23,7 +22,6 @@ const { KeySender } = require('./keysender');
 if (!app.requestSingleInstanceLock()) { app.exit(0); }
 
 let store;
-let stash = null;
 const lastWorth = new Map(); // item id -> typical price (ex) from "What's it worth?"
 let tray;
 let popup;
@@ -42,6 +40,15 @@ function remember(item) {
   lastItem = item;
   return item;
 }
+// trade listings get their own list, so they don't push out what you copied (or become "last item")
+const listingItems = new Map();
+function rememberListing(item) {
+  item.id = `l${Date.now().toString(36)}${(++itemSeq).toString(36)}`;
+  listingItems.set(item.id, item);
+  while (listingItems.size > 200) listingItems.delete(listingItems.keys().next().value);
+  return item;
+}
+const itemById = (id) => recentItems.get(id) || listingItems.get(id) || null;
 let hideTimer = null;
 let popupHovered = false;
 
@@ -62,17 +69,211 @@ const preload = path.join(__dirname, 'preload.js');
 function ignoreRules() { return ignoreLib.cleanRules(store.settings.ignoreStats); }
 function gearOpts() {
   const rules = ignoreRules();
-  return { build: store.settings.build || 'djinn-varashta', ignore: (k) => ignoreLib.isIgnored(rules, k), tweaks: store.settings.buildTweaks || {} };
+  const tweaks = { ...(store.settings.buildTweaks || {}) };
+  // "cap resistances first" also counts for the gear score (unless you've tuned resistances yourself)
+  // – only for resistances you're actually short of
+  const pr = pobPriorities();
+  if (pobCI() && tweaks['Chaos res'] == null) tweaks['Chaos res'] = 0; // Chaos Inoculation
+  const rs = pr.resFirst ? liveResists() : null;
+  if (rs) {
+    for (const [El, el] of Object.entries(RES_EL)) {
+      if (el === 'chaos' && (!pr.chaos || pobCI())) continue;
+      const cap = (rs.caps && rs.caps[el]) || rs.cap || 75;
+      if (rs[el] != null && rs[el] < cap && tweaks[`${El} res`] == null) tweaks[`${El} res`] = 2;
+    }
+  }
+  return { build: store.settings.build || gearLib.DEFAULT_BUILD, ignore: (k) => ignoreLib.isIgnored(rules, k), tweaks };
 }
 
 // How much of each resistance an item in `slot` still needs to give before you
 // hit the cap, from the resistances you entered (or imported from PoB):
 // need = cap - (your total - what the item in that slot gives now).
 const RES_EL = { Fire: 'fire', Cold: 'cold', Lightning: 'lightning', Chaos: 'chaos' };
+const resLib = require('./core/resists');
+
+// ---------- Path of Building engine ----------
+// Your PoB export is the reference build; every item is judged by what it really changes on it
+// (minion DPS, effective HP, resistances against the cap, Spirit, attributes). Items you've
+// copied in game replace PoB's, so it calculates with what you're actually wearing.
+const { createEngine } = require('./pobengine');
+const pobVerdict = require('./core/pobverdict');
+let pobEng = null;
+function pobEngine() {
+  if (!pobEng) pobEng = createEngine({ log, appPath: path.join(__dirname, '..'), resourcesPath: process.resourcesPath, packaged: app.isPackaged });
+  return pobEng;
+}
+function pobFile(id) { return path.join(app.getPath('userData'), 'pob', `${id || store.data.activeProfile || 'main'}.xml`); }
+function pobXml() { try { return fs.readFileSync(pobFile(), 'utf8'); } catch (_) { return null; } }
+function pobOverrides() {
+  const out = [];
+  for (const [slot, pobSlot] of Object.entries(pobVerdict.SLOT_TO_POB)) {
+    const it = store.equipped[slot];
+    if (it && it.raw && !it.fromPob) out.push({ slot: pobSlot, text: it.raw });
+  }
+  return out;
+}
+function pobOn() { return store.settings.usePob !== false && pobEngine().available() && !!pobXml(); }
+let pobSheetGen = 0; // bumped whenever build or gear changes, so the Character page recalculates
+function pobSync() { pobQueries.clear(); pobSheetGen++; if (pobOn()) pobEngine().setBuild(pobXml(), pobOverrides()); }
+const pobPriorities = () => ({ ...pobVerdict.DEFAULT_PRIORITIES, ...(store.settings.priorities || {}) });
+// Chaos Inoculation (seen in your PoB build) makes chaos resistance irrelevant
+// (remembered per character from the last time PoB loaded the build, so it doesn't flip when the engine idles)
+const pobCI = () => {
+  const i = pobEng && pobEng.info();
+  if (i && i.stats && pobOn()) { const ci = pobVerdict.hasCI(i.stats); const m = store.settings.pobCI || {}; if (m[store.data.activeProfile] !== ci) store.setSetting('pobCI', { ...m, [store.data.activeProfile]: ci }); return ci; }
+  return pobOn() && !!(store.settings.pobCI || {})[store.data.activeProfile];
+};
+const pobWeights = () => ({ damageWeight: store.settings.pobDamageWeight == null ? 0.6 : Number(store.settings.pobDamageWeight), priorities: pobPriorities(), ignoreChaos: pobCI() });
+// list: [{ item, slot }] -> a PoB verdict for each (or null)
+async function pobJudge(list) {
+  if (!pobOn() || !list.length) return list.map(() => null);
+  const req = []; const idx = [];
+  list.forEach((x, i) => {
+    const text = x.item && (x.item.raw || x.item.listingText);
+    if (!text) return;
+    const group = x.item.slot && SLOT_GROUPS[x.item.slot];
+    const slots = group && group.every((g) => pobVerdict.SLOT_TO_POB[g]) ? group : [x.slot || x.item.slot];
+    for (const sl of slots) { const ps = pobVerdict.SLOT_TO_POB[sl]; if (ps) { req.push({ slot: ps, text }); idx.push([i, sl]); } }
+  });
+  const per = list.map(() => []);
+  if (req.length) {
+    const res = await pobEngine().evalItems(req);
+    res.forEach((r, k) => {
+      if (!r || !r.ok) return;
+      const j = pobVerdict.judge(r.before, r.after, pobWeights());
+      if (j) { j.slot = idx[k][1]; per[idx[k][0]].push(j); }
+    });
+  }
+  return per.map((arr) => pobVerdict.best(arr));
+}
+// Path of Building's own weighted trade search for a slot ("Trader"), trimmed to what the trade
+// site accepts; every listing it finds is then checked exactly with your build.
+const pobQueries = new Map(); // slot|weights -> { at, r }
+async function pobQueryFor(slot) {
+  const eng = pobEngine();
+  const info = await eng.ensureLoaded();
+  const key = pobVerdict.dpsKey(info && info.stats);
+  const w = pobWeights().damageWeight;
+  // the damage number PoB's search should raise: the same one the verdicts use for this build
+  const dmgStat = { MinionDPS: 'MinionCombinedDPS', FullDPS: 'FullDPS', CombinedDPS: 'CombinedDPS', TotalDPS: 'TotalDPS' }[key] || 'FullDPS';
+  const weights = [{ stat: dmgStat, weightMult: w }, { stat: 'TotalEHP', weightMult: Math.max(0.05, 1 - w) }];
+  const ck = `${store.data.activeProfile}|${slot}|${w}`; // resistance priority is applied after, per search
+  const hit = pobQueries.get(ck);
+  if (hit && Date.now() - hit.at < 15 * 60000) return hit.r;
+  const t0 = Date.now();
+  const r = await eng.makeQuery({ slot: pobVerdict.SLOT_TO_POB[slot], weights });
+  r.query = typeof r.query === 'string' ? JSON.parse(r.query) : r.query;
+  log(`pob: built a ${slot} search in ${Date.now() - t0} ms (${((r.query.query.stats || []).find((g) => g.type === 'weight') || { filters: [] }).filters.length} weighted stats)`);
+  pobQueries.set(ck, { at: Date.now(), r });
+  return r;
+}
+async function pobSearch(item, slot, league, budget, opts) {
+  const pq = await pobQueryFor(slot);
+  const all = JSON.parse(JSON.stringify(pq.query));
+  const wg = (all.query.stats || []).find((g) => g.type === 'weight');
+  if (!wg || !wg.filters.length) return null;
+  // "cap resistances first": push the resistances you're still missing to the top of the search
+  const pr = pobPriorities();
+  const boosted = [];
+  if (pr.resFirst && opts.statIndex) {
+    const info = pobEngine().info();
+    const st = (info && (info.stats || {})) || {};
+    const short = ['Fire', 'Cold', 'Lightning', ...(pr.chaos && !pobCI() ? ['Chaos'] : [])].filter((El) => {
+      const v = Number(st[`${El}Resist`]); const tot = Number(st[`${El}ResistTotal`]);
+      return Number.isFinite(v) && v < 75 - 0.5 && !(tot > v + 0.5);
+    });
+    if (short.length) {
+      const re = new RegExp(`^\\+?#% to (all Elemental Resistances|(${short.join('|')})( and (Fire|Cold|Lightning|Chaos))? Resistances?|(Fire|Cold|Lightning|Chaos) and (${short.join('|')}) Resistances)$`, 'i');
+      const ids = (opts.statIndex.all || []).filter((e) => (e.type === 'explicit' || e.type === 'implicit') && re.test(e.text)).map((e) => e.id);
+      // Each resistance point counts half as much as a point of your best % stat (e.g. minion damage).
+      // So an item with your damage mods *and* the resistance comes first, and one with only a big
+      // resistance roll doesn't push them out. (Matching the top stat filled the search with res-only rings.)
+      const text = new Map((opts.statIndex.all || []).map((e) => [e.id, e.text]));
+      const isRes = (id) => /Resistances?$/i.test(text.get(id) || '');
+      const pctW = wg.filters.filter((f) => !isRes(f.id) && /#%/.test(text.get(f.id) || '')).map((f) => Math.abs(f.value.weight));
+      const ref = pctW.length ? Math.max(...pctW) : Math.max(...wg.filters.map((f) => Math.abs(f.value.weight)), 1);
+      for (const id of ids) {
+        const f = wg.filters.find((x) => x.id === id);
+        if (f) f.value.weight = Math.max(f.value.weight, ref * 0.5);
+        else wg.filters.push({ id, value: { weight: ref * 0.5 } });
+        boosted.push(id);
+      }
+      log(`pob search: resistances first – boosting ${short.join(', ')} res (${ids.length} stats)`);
+    }
+  }
+  wg.filters.sort((a, b) => Math.abs(b.value.weight) - Math.abs(a.value.weight));
+  // "never lose damage": the weighted sum alone happily trades your damage mods for one big
+  // resistance roll (PoB values filling a resistance highly), so a listing must also have as many of
+  // the build's damage mods as the item you wear in this slot (up to 2)
+  let dmgGroup = null;
+  if (pr.keepDmg && opts.statIndex) {
+    const text = new Map((opts.statIndex.all || []).map((e) => [e.id, e.text]));
+    const norm = (t) => String(t || '').replace(/^\+/, '').toLowerCase();
+    const isDmg = (t) => /damage|critical|attack speed|cast speed|cooldown|level of|minions? (deal|have)/i.test(t) && !/resistances?$|energy shield|armour|evasion|life|mana/i.test(t);
+    const dmg = wg.filters.filter((f) => f.value.weight > 0 && isDmg(text.get(f.id))).slice(0, 8);
+    const worn = store.equipped[slot];
+    const have = new Set(Object.keys((worn && worn.stats) || {}).map(norm));
+    const own = new Set(dmg.filter((f) => have.has(norm(text.get(f.id)))).map((f) => norm(text.get(f.id)))).size;
+    if (own > 0 && dmg.length) {
+      dmgGroup = { type: 'count', value: { min: Math.min(2, own) }, filters: dmg.map((f) => ({ id: f.id, disabled: false })) };
+      log(`pob search: never lose damage – needs ${dmgGroup.value.min} of ${dmg.length} damage stats (your ${slot} has ${own})`);
+    }
+  }
+  // the site's complexity limit is lower when you're not signed in: start at the size it took last time
+  const SIZES = [30, 15, 10, 7, 5, 3];
+  const sizeKey = (await signedIn()) ? 'signed' : 'anon';
+  let size = Math.min((store.settings.pobSearchSize || {})[sizeKey] || 0, SIZES.length - 1);
+  let r = null; let body = null;
+  for (;;) {
+    body = JSON.parse(JSON.stringify(all));
+    const g = body.query.stats.find((x) => x.type === 'weight');
+    g.filters = g.filters.slice(0, SIZES[size]);
+    if (dmgGroup) body.query.stats.push({ ...dmgGroup, filters: dmgGroup.filters.slice(0, Math.max(3, Math.min(8, SIZES[size] / 2))) });
+    body.query.status = { option: trade.statusOpt(opts.status) };
+    delete body.engine;
+    trade.applyBudget(body, budget);
+    r = await runSearch(league, body, `pob ${slot}${size ? ` size${size}` : ''}`);
+    if (!(r && r.tooComplex) || size >= SIZES.length - 1) break;
+    size++;
+    store.setSetting('pobSearchSize', { ...(store.settings.pobSearchSize || {}), [sizeKey]: size });
+  }
+  if (r && r.tooComplex) return { ok: false, error: `The trade site says this search has too many filters.${(await signedIn()) ? '' : ' Signing in to pathofexile.com (Settings → Trade site account) raises the limit.'}` };
+  if (!r || !r.ok) return r;
+  let droppedDmg = false;
+  if (!r.total && dmgGroup) {
+    // nothing with your damage mods in this budget: show the best without that rule (marked LOSES DAMAGE)
+    body.query.stats = body.query.stats.filter((x) => x.type !== 'count');
+    const r2 = await runSearch(league, body, `pob ${slot} no-dmg-rule`);
+    if (r2 && r2.ok) { r = r2; dmgGroup = null; droppedDmg = true; }
+  }
+  const used = body.query.stats.find((x) => x.type === 'weight').filters.length;
+  const needDmg = dmgGroup ? `; every listing has at least ${dmgGroup.value.min} of your damage mods` : droppedDmg ? '; nothing in your budget has your damage mods, so these may lose damage' : '';
+  const res = await openIfAny(r, {
+    item, mode: 'pob', body, searchKey: searchKey(body),
+    title: `Best for your build: ${item.slot === 'Ring' ? 'rings' : slot}${budget && budget.max ? '' : ''}`,
+    note: `Path of Building weighted this search by what each stat does to your build (${used} stats${used < wg.filters.length ? `, the trade site allowed ${used} of ${wg.filters.length}` : ''})${boosted.length ? ', with extra weight on the resistances you still need' : ''}${needDmg}. Every listing below is then checked with your build: items that lose resistance or damage are marked and go to the bottom.`,
+  });
+  return { ...res, mode: 'pob', filters: used };
+}
+
+// put a PoB verdict onto a comparison (popup result or listing compare)
+function applyPob(r, j) {
+  if (!r || !j) return r;
+  r.pob = j;
+  r.verdict = j.verdict;
+  r.scoreMode = 'pob';
+  r.delta = j.score;
+  r.pct = null;
+  if (j.slot && j.slot !== r.targetSlot && store.equipped[j.slot]) { r.targetSlot = j.slot; r.replacing = [store.equipped[j.slot].name]; }
+  r.risks = j.breaks.length ? j.breaks : null;
+  r.resRank = j.resRank;
+  return r;
+}
+function liveResists() { return resLib.live(store.settings.resists, store.equipped); }
 function resNeedFor(slot) {
-  const rs = store.settings.resists;
+  const rs = liveResists();
   if (!rs || !slot) return null;
-  const cap = Number(rs.cap) > 0 ? Number(rs.cap) : 75;
+  // resistance keeps counting until you're over the cap by the safety buffer
   const cur = store.equipped[slot];
   const out = {};
   let any = false;
@@ -80,6 +281,7 @@ function resNeedFor(slot) {
     const total = Number(rs[el]);
     if (rs[el] === '' || rs[el] == null || !Number.isFinite(total)) continue;
     const fromSlot = cur && cur.stats ? (cur.stats[`#% to ${El} Resistance`] || 0) : 0;
+    const cap = ((rs.caps && rs.caps[el]) || rs.cap) + (rs.buffer || 0);
     out[El] = Math.max(0, cap - (total - fromSlot));
     any = true;
   }
@@ -125,12 +327,42 @@ function evaluate(item) {
       if (yours == null) { r.delta = null; r.verdict = 'same'; } else {
         r.delta = r.gear.score - yours;
         r.pct = null;
-        r.verdict = r.delta >= 2 ? 'upgrade' : r.delta <= -2 ? 'downgrade' : 'same';
+        // a few points either way is noise: only +6 or more is a real upgrade
+        r.verdict = r.delta >= 6 ? 'upgrade' : r.delta >= 3 ? 'small' : r.delta <= -3 ? 'downgrade' : 'same';
       }
     }
   } else {
     r.scoreMode = 'weights';
     r.gearEquipped = r.isEquipped ? null : gearOf(store.equipped[r.targetSlot], r.targetSlot);
+  }
+  // what changes on your character if you equip it
+  if (!r.isEquipped && r.targetSlot) {
+    const slots = [r.targetSlot];
+    if (item.twoHanded && r.targetSlot === 'Weapon' && store.equipped.Offhand) slots.push('Offhand');
+    try {
+      r.character = characterLib.changeIfEquipped(store.equipped, item, slots, {
+        resists: liveResists(),
+        gearScore: gearOn ? (it, sl) => { const g = gearOf(it, sl); return g && g.score != null ? g.score : null; } : null,
+      });
+    } catch (err) { log('character change: ' + err.message); }
+    // things the score doesn't see that can make an "upgrade" a sidegrade (or worse)
+    const ch = r.character;
+    const risks = [];
+    if (ch) {
+      const sp = (ch.lines || []).find((l) => l.label === 'Spirit');
+      if (sp && sp.delta < 0) risks.push(`Spirit ${sp.delta}: check your minions and auras still fit`);
+      for (const w of ch.warnings || []) risks.push(w);
+      const lv = (ch.lines || []).find((l) => l.label === 'Minion skill levels');
+      if (lv && lv.delta < 0) risks.push(`${lv.delta} minion skill level${lv.delta === -1 ? '' : 's'}`);
+    }
+    if (risks.length) {
+      r.risks = risks;
+      if (r.verdict === 'upgrade' || r.verdict === 'small') r.verdict = 'risky';
+    }
+    // resistances matter most: losing them (off the cap or further under it) is its own verdict
+    const lost = ch ? (ch.res || []).filter((x) => x.from != null && x.delta < 0 && x.under && (x.el !== 'chaos' || (!pobCI() && (pobPriorities().chaos || !x.wasUnder)))) : [];
+    if (lost.length && !r.isEquipped) r.verdict = 'resloss';
+    r.resRank = lost.length ? -1 : ch && (ch.res || []).some((x) => x.wasUnder && !x.under) ? 2 : ch && (ch.res || []).some((x) => x.wasUnder && x.delta > 0) ? 1 : 0;
   }
   // how much each changed stat matters to the build (for colours / top changes)
   const go = gearOpts();
@@ -158,7 +390,7 @@ function createPopup() {
   popup = new BrowserWindow({
     width: 400, height: 300, show: false, frame: false, resizable: false,
     transparent: true, backgroundColor: '#00000000',
-    alwaysOnTop: true, skipTaskbar: true, focusable: true, hasShadow: false,
+    alwaysOnTop: true, skipTaskbar: true, focusable: false, hasShadow: false,
     webPreferences: {
       preload, contextIsolation: true, nodeIntegration: false, sandbox: true,
       backgroundThrottling: false,
@@ -249,9 +481,20 @@ function showResult(result) {
   popupItem = result && result.item ? recentItems.get(result.item.id) || result.item : null;
   if (!popup) createPopup();
   pendingShow = true; // every new copy re-positions the popup at the cursor
+  const withPob = result && result.ok && !result.isEquipped && result.item && pobOn();
+  if (withPob) result.pobPending = true;
   const send = () => popup && popup.webContents.send('popup:result', serialise(result));
   if (popup.webContents.isLoading()) popup.webContents.once('did-finish-load', send);
   else send();
+  if (withPob) {
+    const item = popupItem;
+    pobJudge([{ item: result.item.raw ? result.item : (item || result.item), slot: result.targetSlot }]).then(([j]) => {
+      result.pobPending = false;
+      if (!j) result.pobError = 'Path of Building could not read this item.';
+      else applyPob(result, j);
+    }).catch((err) => { result.pobPending = false; result.pobError = err.message; log('pob: ' + err.message); })
+      .then(() => { if (popupItem === item && popup && !popup.isDestroyed() && popup.isVisible()) popup.webContents.send('popup:result', serialise(result)); });
+  }
   // Renderer replies with its height via popup:resize; show anyway if it doesn't.
   clearTimeout(showFallback);
   showFallback = setTimeout(() => { if (pendingShow) revealPopup(null); }, 400);
@@ -259,7 +502,7 @@ function showResult(result) {
 
 function serialise(result) {
   return JSON.parse(JSON.stringify({
-    ...result, slots: SLOTS, slotGroups: SLOT_GROUPS, budgetLabel: trade.budgetLabel(budgetNow()),
+    ...result, pobNudge: !!(result && result.ok && !result.pob && !result.pobPending && !result.pobError && pobEngine().available() && !pobXml()), slots: SLOTS, slotGroups: SLOT_GROUPS, budgetLabel: trade.budgetLabel(budgetNow()),
     ui: { detail: store.settings.popupDetail || 'compact', colorblind: !!store.settings.colorblind, divineRate: store.settings.divineRate || null },
   }));
 }
@@ -268,6 +511,14 @@ ipcMain.on('popup:resize', (_e, height) => revealPopup(Number(height) || null));
 
 ipcMain.on('popup:hover', (_e, hovered) => {
   popupHovered = !!hovered;
+  // the popup only becomes focusable while the mouse is on it (so its inputs work),
+  // otherwise the game keeps the keyboard: no more clicking the game after every copy
+  try {
+    if (popup && !popup.isDestroyed()) {
+      popup.setFocusable(popupHovered);
+      if (!popupHovered && popup.isFocused()) popup.blur();
+    }
+  } catch (_) { /* ignore */ }
   if (popupHovered) clearTimeout(hideTimer);
   else if (popup && popup.isVisible()) scheduleHide(2500);
 });
@@ -291,10 +542,6 @@ function handleItemText(text, source) {
   // Tag the clipboard so copying the same item again still counts as a change.
   // (Just a trailing line break; pasting into the trade site / PoB is unaffected.)
   try { const tagged = text.endsWith(TAG) ? text : text + TAG; clipboard.writeText(tagged); lastClip = tagged; } catch (_) { lastClip = text; }
-  // hovering a stash slot + Ctrl+C after a stash scan teaches/fixes that slot
-  if (stash && !item.slot) {
-    try { const t = stash.onItemCopied(text); if (t) { showResult(t); lastClip = text; return true; } } catch (err) { log('stash label: ' + err.message); }
-  }
   if (!item.slot && source === 'clipboard') {
     // you copied currency, a gem, a map... with plain Ctrl+C: no popup
     log(`clipboard: ${item.itemClass} "${item.name}" – not gear, no popup`);
@@ -338,11 +585,15 @@ async function onHotkey() {
       }
       return '';
     };
-    // instant feedback while the game copies the item (~0.1–1s)
-    showResult({ ok: false, loading: true, reason: 'Reading item…' });
+    // send the copy before anything appears on screen: a window popping up first can make
+    // the game drop its tooltip (then nothing gets copied)
     let sent = await keys.copy(!!store.settings.advancedCopy);
     if (!sent) log('hotkey: could not send Ctrl+C to the game');
-    let text = await waitForText(450);
+    let text = await waitForText(250);
+    if (!text) {
+      showResult({ ok: false, loading: true, reason: 'Reading item…' });
+      text = await waitForText(300);
+    }
     if (!text && sent) {
       // The game sometimes misses the first copy (e.g. the tooltip wasn't up
       // yet). Copying is client-side only, so trying once more is harmless.
@@ -366,8 +617,18 @@ async function onHotkey() {
   }
 }
 
+// F2: letters are game keys (with WASD movement, Ctrl+D also walked your character right).
+const DEFAULT_HOTKEY = 'F2';
+// keys that move your character or are common skill keys in PoE2
+function gameKeyWarning(accel) {
+  const k = String(accel || '').split('+').pop();
+  if (/^[WASD]$/i.test(k)) return `${k.toUpperCase()} is a movement key (WASD) in PoE2, so the game will also act on it. An F-key (e.g. F2) works best.`;
+  if (/^[QERTF]$/i.test(k)) return `${k.toUpperCase()} is often a skill key in PoE2, so the game may also act on it. An F-key (e.g. F2) works best.`;
+  return null;
+}
+
 function registerHotkey(accel) {
-  const want = accel || store.settings.hotkey || 'Ctrl+D';
+  const want = accel || store.settings.hotkey || DEFAULT_HOTKEY;
   if (hotkeyStatus.accelerator) {
     try { globalShortcut.unregister(hotkeyStatus.accelerator); } catch (_) { /* ignore */ }
   }
@@ -380,12 +641,12 @@ function registerHotkey(accel) {
 }
 
 ipcMain.handle('hotkey:set', (_e, accel) => {
-  const prev = store.settings.hotkey || 'Ctrl+D';
+  const prev = store.settings.hotkey || DEFAULT_HOTKEY;
   const st = registerHotkey(accel);
   if (st.ok) store.setSetting('hotkey', accel);
   else registerHotkey(prev); // put the old one back
   buildTrayMenu();
-  return { ...st, accelerator: accel };
+  return { ...st, accelerator: accel, warning: gameKeyWarning(accel) };
 });
 
 ipcMain.on('open:log', () => { if (logFile) shell.openPath(logFile); });
@@ -403,7 +664,7 @@ function notifySettings(channel, payload) {
 }
 
 function resolveItem(target) {
-  if (target && typeof target === 'object' && target.itemId) return recentItems.get(target.itemId) || null;
+  if (target && typeof target === 'object' && target.itemId) return itemById(target.itemId);
   if (target === '__last') return lastItem;
   if (WEAKEST_OF.includes(target)) {
     // your weakest ring / charm / jewel (by gear score, or weights if the build is off)
@@ -415,9 +676,22 @@ function resolveItem(target) {
   return store.equipped[target] || null;
 }
 
+function resolveSlotOf(item) {
+  for (const [sl, it] of Object.entries(store.equipped || {})) if (it === item || (it && item && it.id && it.id === item.id)) return sl;
+  return null;
+}
+
 function refreshAll() {
   if (popupItem && popup && popup.isVisible()) {
-    popup.webContents.send('popup:result', serialise(evaluate(popupItem)));
+    const r = evaluate(popupItem);
+    popup.webContents.send('popup:result', serialise(r));
+    // and Path of Building again (settings like priorities change its verdict)
+    if (r && r.ok && !r.isEquipped && pobOn()) {
+      const item = popupItem;
+      pobJudge([{ item, slot: r.targetSlot }]).then(([j]) => {
+        if (j && popupItem === item && popup && !popup.isDestroyed() && popup.isVisible()) popup.webContents.send('popup:result', serialise(applyPob(r, j)));
+      }).catch((err) => log('pob: ' + err.message));
+    }
   }
   if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('settings:changed');
   if (resultsWin && !resultsWin.isDestroyed()) resultsWin.webContents.send('settings:changed');
@@ -425,11 +699,14 @@ function refreshAll() {
 
 ipcMain.handle('equip', (_e, slot, ref) => {
   let item = null;
-  if (ref && typeof ref === 'object' && ref.itemId) item = recentItems.get(ref.itemId);
+  if (ref && typeof ref === 'object' && ref.itemId) item = itemById(ref.itemId);
   else if (typeof ref === 'string' && ref) item = parseItem(ref);
   else item = lastItem;
   if (!item || !SLOTS.includes(slot)) return false;
   log(`equip ${slot}: "${item.name}"`);
+  setTimeout(pobSync, 0);
+  const before = store.equipped[slot];
+  if (store.settings.resists) store.setSetting('resists', resLib.rebase(store.settings.resists, before, item));
   store.setEquipped(slot, item);
   store.noteStats(item);
   refreshAll();
@@ -443,11 +720,12 @@ ipcMain.handle('weights:suggest', () => {
   return suggestWeights(store.equipped, (k) => ignoreLib.isIgnored(rules, k));
 });
 ipcMain.handle('weights:reset', () => { store.resetWeights(); refreshAll(); return true; });
-ipcMain.handle('slot:clear', (_e, slot) => { store.setEquipped(slot, null); refreshAll(); return true; });
+ipcMain.handle('slot:clear', (_e, slot) => { store.setEquipped(slot, null); pobSync(); refreshAll(); return true; });
 ipcMain.handle('setting:set', (_e, key, value) => {
   store.setSetting(key, value);
+  if (key === 'build') store.setSetting('buildPicked', true); // you chose it: PoB imports won't change it
   if (key === 'startWithWindows') applyLoginItem();
-  if (key === 'build' || key === 'colorblind' || key === 'popupDetail' || key === 'buildTweaks') refreshAll();
+  if (key === 'build' || key === 'colorblind' || key === 'popupDetail' || key === 'buildTweaks' || key === 'pobDamageWeight') { if (key === 'pobDamageWeight') pobQueries.clear(); refreshAll(); }
   if (key === 'resultsHotkey') registerResultsHotkey();
   if (key === 'autoUpdate' && autoUpdater) autoUpdater.autoDownload = value !== false;
   if (key === 'uiScale') { [settingsWin, resultsWin].forEach((w) => { try { if (w && !w.isDestroyed()) w.webContents.setZoomFactor(uiScale()); } catch (_) { /* ignore */ } }); }
@@ -467,19 +745,25 @@ ipcMain.handle('stats:catalog', async () => {
 
 // ---------- characters ----------
 ipcMain.handle('profiles:list', () => store.listProfiles());
-ipcMain.handle('profiles:switch', (_e, id) => { const ok = store.switchProfile(id); log(`switched to character ${id}`); refreshAll(); buildTrayMenu(); return ok; });
-ipcMain.handle('profiles:create', (_e, name, copy) => { const id = store.createProfile(name, copy); refreshAll(); return id; });
+ipcMain.handle('profiles:switch', (_e, id) => { const ok = store.switchProfile(id); log(`switched to character ${id}`); pobSync(); refreshAll(); buildTrayMenu(); return ok; });
+ipcMain.handle('profiles:create', (_e, name, copy) => { const id = store.createProfile(name, copy); pobSync(); refreshAll(); return id; });
 ipcMain.handle('profiles:rename', (_e, id, name) => { store.renameProfile(id, name); buildTrayMenu(); return true; });
-ipcMain.handle('profiles:delete', (_e, id) => { const ok = store.deleteProfile(id); refreshAll(); return ok; });
+ipcMain.handle('profiles:delete', (_e, id) => { const ok = store.deleteProfile(id); pobSync(); refreshAll(); return ok; });
 
 // ---------- resistances ----------
 ipcMain.handle('resists:set', (_e, r) => {
   const clean = {};
-  for (const k of ['fire', 'cold', 'lightning', 'chaos', 'cap']) {
+  for (const k of ['fire', 'cold', 'lightning', 'chaos', 'cap', 'buffer']) {
     const v = r && r[k] !== '' && r[k] != null ? Number(r[k]) : null;
     if (Number.isFinite(v)) clean[k] = v;
   }
-  store.setSetting('resists', Object.keys(clean).some((k) => k !== 'cap') ? clean : null);
+  const prev = store.settings.resists;
+  const hasRes = ['fire', 'cold', 'lightning', 'chaos'].some((k) => k in clean);
+  // typed in = read off the character sheet with the gear you're wearing now
+  const changedRes = !prev || ['fire', 'cold', 'lightning', 'chaos'].some((k) => clean[k] !== (resLib.live(prev, store.equipped) || {})[k]);
+  if (!hasRes) store.setSetting('resists', null);
+  else if (changedRes) store.setSetting('resists', resLib.snapshot(clean, store.equipped, 'game', prev));
+  else store.setSetting('resists', { ...prev, cap: clean.cap || prev.cap, ...(clean.buffer != null ? { buffer: clean.buffer, bufferSet: true } : {}) });
   refreshAll();
   return store.settings.resists;
 });
@@ -498,7 +782,8 @@ ipcMain.handle('pob:import', async (_e, input) => {
     } else if (/^https?:/i.test(code)) {
       return { ok: false, error: 'Only pobb.in links can be read directly – for other sites, copy the export code instead.' };
     }
-    const r = pobLib.parsePob(pobLib.decodeCode(code));
+    const xml = pobLib.decodeCode(code);
+    const r = pobLib.parsePob(xml);
     const slots = Object.keys(r.items);
     if (!slots.length) return { ok: false, error: 'No equipped items found in that build.' };
     let kept = 0;
@@ -512,19 +797,101 @@ ipcMain.handle('pob:import', async (_e, input) => {
       store.setEquipped(slot, item);
       store.noteStats(item);
     }
-    if (r.resists) store.setSetting('resists', { ...(store.settings.resists || {}), ...r.resists, cap: (store.settings.resists && store.settings.resists.cap) || 75 });
+    // numbers you typed from your character sheet beat PoB's
+    const typed = store.settings.resists && store.settings.resists.source === 'game';
+    if (r.resists && !typed) store.setSetting('resists', resLib.snapshot({ ...r.resists, cap: (store.settings.resists && store.settings.resists.cap) || 75 }, store.equipped, 'pob', store.settings.resists));
+    // keep the build itself for the Path of Building engine
+    try { fs.mkdirSync(path.dirname(pobFile()), { recursive: true }); fs.writeFileSync(pobFile(), xml); } catch (err) { log('pob: could not save the build: ' + err.message); }
+    pobSync();
     refreshAll();
     const who = [r.character.ascendancy || r.character.className, r.character.level ? `level ${r.character.level}` : ''].filter(Boolean).join(', ');
     let message = `Imported ${slots.length} item${slots.length === 1 ? '' : 's'}${who ? ` (${who})` : ''}${r.resists ? ' and your resistances' : ''}.`;
     if (kept) message += ` Kept ${kept} you'd already copied from the game (same item, more detail).`;
     if (r.missingBase) message += ` PoB doesn't store base Armour/Energy Shield, so ${r.missingBase} armour piece${r.missingBase === 1 ? '' : 's'} score a bit low until you copy them in game once.`;
     log('pob import: ' + message);
-    return { ok: true, message, slots };
+    let engine = null;
+    if (pobOn()) {
+      try {
+        const info = await pobEngine().ensureLoaded();
+        engine = pobSummary(info);
+        // the gear score (used when PoB can't judge something) gets a profile that fits this build
+        if (!store.settings.buildPicked && engine) {
+          const fit = engine.dpsKey === 'MinionDPS' ? 'djinn-varashta' : (engine.es || 0) > (engine.life || 0) * 2 ? 'es-caster' : 'life-res';
+          if (fit !== store.settings.build) { store.setSetting('build', fit); log(`gear score profile set to ${fit} from the PoB build`); }
+        }
+        if (engine.mismatch.length) message += ` Note: ${engine.mismatch.join('; ')}.`;
+      } catch (err) { engine = { ok: false, error: err.message }; log('pob: ' + err.message); }
+    }
+    return { ok: true, message, slots, engine };
   } catch (err) {
     log('pob import failed: ' + (err.stack || err));
     return { ok: false, error: err.message || String(err) };
   }
 });
+
+// what the engine says about your build, plus where it disagrees with your character sheet
+function pobSummary(info) {
+  if (!info) return null;
+  const st = info.stats || {};
+  const rs = liveResists();
+  const mismatch = [];
+  if (rs && rs.source === 'game') {
+    for (const [El, el] of Object.entries(RES_EL)) {
+      const typedV = rs[el]; const pobV = st[`${El}ResistTotal`];
+      if (typedV != null && pobV != null && Math.abs(typedV - pobV) >= 5) mismatch.push(`PoB has ${El.toLowerCase()} res at ${Math.round(pobV)}%, your character sheet ${typedV}% – check PoB's Configuration (charms, buffs) and gear`);
+    }
+  }
+  const dk = pobVerdict.dpsKey(st);
+  return {
+    ok: true, className: info.className, ascendancy: info.ascendancy, level: info.level, mainSkill: info.mainSkill,
+    dps: pobVerdict.dpsOf(st, dk), dpsKey: dk, ehp: st.TotalEHP, es: st.EnergyShield, life: st.Life, spirit: st.Spirit, spiritFree: st.SpiritUnreserved,
+    res: Object.keys(RES_EL).map((El) => ({ el: El, value: st[`${El}Resist`], total: st[`${El}ResistTotal`] })),
+    gear: info.gear || {}, overridden: info.equipped || [], mismatch,
+    ci: pobVerdict.hasCI(st),
+  };
+}
+const pobLastSummary = new Map();
+// Character page: everything Path of Building calculates for your character (with the gear you
+// copied in game), plus what the app itself knows. Kept per character so it shows instantly next time.
+const pobLastSheet = new Map();
+ipcMain.handle('pob:sheet', async (_e, refresh) => {
+  const key = store.data.activeProfile;
+  const out = { on: pobOn(), hasBuild: !!pobXml(), available: pobEngine().available(), enabled: store.settings.usePob !== false, resists: liveResists() || null };
+  if (!out.on) return out;
+  if (!refresh && pobLastSheet.has(key) && pobLastSheet.get(key).gen === pobSheetGen) return { ...out, sheet: pobLastSheet.get(key).sheet, at: pobLastSheet.get(key).at };
+  try {
+    await pobEngine().ensureLoaded();
+    const sheet = await pobEngine().sheet();
+    sheet.overridden = (pobEngine().info() || {}).equipped || [];
+    pobLastSheet.set(key, { sheet, at: Date.now(), gen: pobSheetGen });
+    return { ...out, sheet, at: Date.now() };
+  } catch (err) {
+    log('pob sheet: ' + (err.message || err));
+    const last = pobLastSheet.get(key);
+    return { ...out, error: err.message || String(err), sheet: last ? last.sheet : null, at: last ? last.at : null };
+  }
+});
+ipcMain.handle('pob:status', async (_e, load) => {
+  const eng = pobEngine();
+  const out = { available: eng.available(), hasBuild: !!pobXml(), on: pobOn(), enabled: store.settings.usePob !== false };
+  if (load && pobOn()) {
+    try { out.summary = pobSummary(await eng.ensureLoaded()); } catch (err) { out.error = err.message; }
+  } else if (eng.info()) out.summary = pobSummary(eng.info());
+  // keep showing the last good summary while the engine reloads after a gear change
+  const key = store.data.activeProfile;
+  if (out.summary) pobLastSummary.set(key, out.summary);
+  else if (pobOn() && pobLastSummary.has(key)) out.summary = pobLastSummary.get(key);
+  return out;
+});
+ipcMain.handle('priorities:set', (_e, p) => {
+  const clean = {};
+  for (const k of Object.keys(pobVerdict.DEFAULT_PRIORITIES)) if (p && typeof p[k] === 'boolean') clean[k] = p[k];
+  store.setSetting('priorities', { ...pobPriorities(), ...clean });
+  pobQueries.clear();
+  refreshAll();
+  return pobPriorities();
+});
+ipcMain.handle('pob:enable', (_e, on) => { store.setSetting('usePob', !!on); if (on) pobSync(); refreshAll(); return pobOn(); });
 
 ipcMain.handle('ignore:set', (_e, rules) => {
   store.setSetting('ignoreStats', ignoreLib.cleanRules(rules));
@@ -534,6 +901,10 @@ ipcMain.handle('ignore:set', (_e, rules) => {
 });
 
 ipcMain.handle('state:get', () => JSON.parse(JSON.stringify({
+  defaultBuild: gearLib.DEFAULT_BUILD,
+  pobOn: pobOn(),
+  resultsHotkeyOk: !!resultsHotkey,
+  priorities: pobPriorities(),
   profiles: store.listProfiles(),
   buildStats: gearLib.buildStats(store.settings.build),
   builds: gearLib.buildList(),
@@ -545,6 +916,7 @@ ipcMain.handle('state:get', () => JSON.parse(JSON.stringify({
   equipped: store.equipped,
   seenStats: Object.keys(store.data.seenStats),
   settings: store.settings,
+  liveResists: liveResists(),
   slots: SLOTS,
   lastItem,
   hotkeyStatus,
@@ -685,6 +1057,48 @@ function nearRateLimit(headers) {
   } catch (_) { return false; }
 }
 
+// ---------- search rate limiting ----------
+// The trade site allows only a few searches per 10 s / 60 s / 300 s (it says how many in the
+// x-rate-limit headers) and bans you for a minute when you go over. Every search waits for a
+// free slot instead, keeping one spare, and a 429 blocks searching until the site says so.
+const searchLog = [];
+let searchRules = [[5, 10], [15, 60], [30, 300]]; // safe guesses until the site tells us
+let searchBlockedUntil = 0;
+function learnLimits(get) {
+  try {
+    const parse = (v) => String(v || '').split(',').filter(Boolean).map((r) => r.split(':').map(Number)).filter((x) => x[0] > 0 && x[1] > 0).map((x) => [x[0], x[1]]);
+    const rules = [...parse(get('x-rate-limit-ip')), ...parse(get('x-rate-limit-account'))];
+    if (rules.length) searchRules = rules;
+    const ra = Number(get('retry-after'));
+    if (ra > 0) searchBlockedUntil = Math.max(searchBlockedUntil, Date.now() + ra * 1000);
+  } catch (_) { /* keep the old rules */ }
+}
+function searchWait() {
+  const now = Date.now();
+  let wait = Math.max(0, searchBlockedUntil - now);
+  for (const [hits, sec] of searchRules) {
+    const recent = searchLog.filter((t) => now - t < sec * 1000);
+    const room = Math.max(1, hits - 1); // keep one spare for safety
+    if (recent.length >= room) wait = Math.max(wait, recent[recent.length - room] + sec * 1000 - now + 250);
+  }
+  return wait;
+}
+// waits for a slot (up to maxWait ms); false if it would take longer
+async function searchSlot(maxWait = 30000) {
+  for (let i = 0; i < 20; i++) {
+    const w = searchWait();
+    if (!w) {
+      searchLog.push(Date.now());
+      while (searchLog.length > 200) searchLog.shift();
+      return true;
+    }
+    if (w > maxWait) return false;
+    if (w > 1500) log(`search: waiting ${Math.round(w / 1000)} s for the trade site rate limit`);
+    await new Promise((r) => setTimeout(r, w));
+  }
+  return false;
+}
+
 async function postSearch(league, body) {
   const res = await net.fetch(trade.searchUrl(league), {
     method: 'POST',
@@ -692,6 +1106,7 @@ async function postSearch(league, body) {
     body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
+  learnLimits((h) => res.headers.get(h));
   if (res.status === 429) {
     const wait = res.headers.get('retry-after');
     const err = new Error(`The trade site says too many searches – wait ${wait || 'a minute'} seconds and try again.`);
@@ -715,11 +1130,19 @@ async function postSearchViaPage(league, body) {
   }
   const js = `fetch(${JSON.stringify(trade.searchUrl(league))}, { method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: ${JSON.stringify(JSON.stringify(body))} })
-    .then(async (r) => ({ status: r.status, json: await r.json().catch(() => ({})) }))`;
+    .then(async (r) => ({ status: r.status, json: await r.json().catch(() => ({})),
+      h: Object.fromEntries(['x-rate-limit-ip', 'x-rate-limit-ip-state', 'x-rate-limit-account', 'x-rate-limit-account-state', 'retry-after'].map((k) => [k, r.headers.get(k)])) }))`;
   const r = await Promise.race([
     tradeWin.webContents.executeJavaScript(js, true),
     new Promise((_, rej) => setTimeout(() => rej(new Error('timed out')), 15000)),
   ]);
+  if (r && r.h) learnLimits((k) => r.h[k]);
+  if (r && r.status === 429) {
+    const wait = r.h && r.h['retry-after'];
+    const err = new Error(`The trade site says too many searches – wait ${wait || 'a minute'} seconds and try again.`);
+    err.rateLimited = true; throw err;
+  }
+  if (r && r.json && r.json.id && r.h) r.json._near = nearRateLimit({ get: (k) => r.h[k] });
   if (!r || r.status !== 200 || !r.json || !r.json.id) {
     throw new Error((r && r.json && r.json.error && r.json.error.message) || `HTTP ${r && r.status}`);
   }
@@ -729,11 +1152,17 @@ async function postSearchViaPage(league, body) {
 // Runs a search and returns { ok, total, url }. Doesn't open the browser:
 // callers decide (so a search with 0 results can be loosened first).
 let statusBroken = false; // set if the trade site rejects 'available'
-async function runSearch(league, body, label) {
+async function runSearch(league, body, label, o = {}) {
   if (statusBroken && body.query.status && body.query.status.option === 'available') body.query.status.option = 'online';
   log(`search ${label || ''} league=${league} body=${JSON.stringify(body)}`);
-  const errors = [];
-  for (const [name, fn] of [['app', postSearch], ['page', postSearchViaPage]]) {
+  const errors = []; let complex = 0;
+  // signed in, the trade site allows bigger searches: send it from the signed-in page first
+  const order = (await signedIn()) ? [['page', postSearchViaPage], ['app', postSearch]] : [['app', postSearch], ['page', postSearchViaPage]];
+  for (const [name, fn] of order) {
+    if (!(await searchSlot(o.maxWait == null ? 30000 : o.maxWait))) {
+      const w = Math.ceil(searchWait() / 1000);
+      return { ok: false, league, rateLimited: true, error: `The trade site allows only a few searches a minute – try again in ${w} seconds.` };
+    }
     try {
       const json = await fn(league, body);
       log(`search via ${name}: id=${json.id} total=${json.total}`);
@@ -748,11 +1177,16 @@ async function runSearch(league, body, label) {
       if (/status/i.test(msg) && body.query.status && body.query.status.option !== 'online') {
         statusBroken = true;
         log('trade site rejected the listing status; retrying with "online"');
-        return runSearch(league, { ...body, query: { ...body.query, status: { option: 'online' } } }, label);
+        return runSearch(league, { ...body, query: { ...body.query, status: { option: 'online' } } }, label, o);
       }
       errors.push(`${name}: ${msg}`);
+      // the other route would get the same answer and cost another search
+      if (/too complex/i.test(msg)) { complex++; break; }
+      if (/rate limit/i.test(msg)) { searchBlockedUntil = Math.max(searchBlockedUntil, Date.now() + 60000); return { ok: false, league, error: msg, rateLimited: true }; }
     }
   }
+  // the browser link would fail the same way: let the caller make the search smaller
+  if (complex) return { ok: false, league, tooComplex: true, error: 'The trade site says this search has too many filters.' };
   // Last resort: a pre-filled search link (we can't know how many results).
   return { ok: true, league, total: null, url: trade.prefilledUrl(league, body), fallback: errors.join('; ') };
 }
@@ -762,7 +1196,7 @@ async function runSearch(league, body, label) {
 // read the listings, and listings are scored against your equipped gear).
 async function deliver(r, ctx) {
   if (!r.url || (r.total != null && r.total <= 0)) return r;
-  const inApp = store.settings.resultsInApp !== false && r.searchId && r.ids && r.ids.length;
+  const inApp = r.searchId && r.ids && r.ids.length;
   if (inApp) {
     const shown = await showResults(r, ctx || {});
     if (shown) { r.inApp = true; r.opened = true; return r; }
@@ -844,12 +1278,30 @@ function scoreListing(s) {
   const r = evaluate(s.item);
   const c = r && r.ok ? {
     verdict: r.verdict, delta: r.delta, pct: r.pct, targetSlot: r.targetSlot, replacing: r.replacing, scoreMode: r.scoreMode,
-    rows: r.rows.slice(0, 8).map((x) => ({ key: x.key, diff: x.diff, weight: x.weight, impact: x.impact, useful: x.useful })),
+    rows: r.rows.slice(0, 16).map((x) => ({ key: x.key, diff: x.diff, weight: x.weight, impact: x.impact, useful: x.useful })),
+    character: r.character || null, risks: r.risks || null, resRank: r.resRank || 0,
   } : null;
   const value = c && s.priceEx ? (c.delta / Math.max(s.priceEx, 1)) * (store.settings.divineRate || 1) : null; // score per divine
   const g = gearOf(s.item, c && c.targetSlot);
   const ge = c && store.equipped[c.targetSlot] ? gearOf(store.equipped[c.targetSlot], c.targetSlot) : null;
-  return { ...s, compare: c, valuePerDiv: value, gear: g ? { score: g.score, grade: g.grade, missing: g.missing, unique: g.unique } : null, gearEquipped: ge ? ge.score : null };
+  const slim = (x) => ({ score: x.score, grade: x.grade, missing: x.missing, unique: x.unique, ideal: x.ideal, wasted: x.wasted, resNote: x.resNote,
+    contributions: (x.contributions || []).map((k) => ({ label: k.label, points: k.points, quality: k.quality, source: k.source })) });
+  return { ...s, compare: c, valuePerDiv: value, gear: g ? slim(g) : null, gearEquipped: ge ? ge.score : null, gearEquippedDetail: ge ? slim(ge) : null };
+}
+
+async function pobListings(list) {
+  const fresh = list.filter((x) => x.item && x.compare);
+  if (!fresh.length || !pobOn()) return;
+  try {
+    const t0 = Date.now();
+    const js = await pobJudge(fresh.map((x) => ({ item: x.item, slot: x.compare.targetSlot })));
+    fresh.forEach((x, i) => {
+      if (!js[i]) return;
+      applyPob(x.compare, js[i]);
+      x.valuePerDiv = x.priceEx && js[i].score > 0 ? (js[i].score / Math.max(x.priceEx, 1)) * (store.settings.divineRate || 1) : null;
+    });
+    log(`pob: judged ${js.filter(Boolean).length} of ${fresh.length} listings in ${Date.now() - t0} ms`);
+  } catch (err) { log('pob: listings: ' + err.message); }
 }
 
 function resultsPayload() {
@@ -863,6 +1315,9 @@ function resultsPayload() {
     listings: listings.map((x) => ({ ...x, item: x.item ? { name: x.item.name, baseType: x.item.baseType, rarity: x.item.rarity, itemLevel: x.item.itemLevel, lines: x.item.lines, id: x.item.id } : null })),
     saved: !!(store.data.savedSearches || []).find((x) => x.searchKey === ctx.searchKey),
     signedIn: !!resultsState.signedIn,
+    resFirst: !!pobPriorities().resFirst,
+    resultsHotkey: resultsHotkey || null,
+    pobOn: pobOn(),
   }));
 }
 
@@ -876,8 +1331,31 @@ async function loadMoreListings(count) {
   for (const res of raw) {
     const s = listingLib.summarise(res, st.ctx.item && st.ctx.item.itemClass, rates);
     s.pos = st.r.ids.indexOf(res.id) + 1; // where it sits on the trade site page
-    if (s.item) remember(s.item);
+    if (s.item) rememberListing(s.item);
     st.listings.push(scoreListing(s));
+  }
+  // judge the new ones with Path of Building (one request for all of them)
+  await pobListings(st.listings.slice(-raw.length));
+}
+
+// Show the results window where you'll see it: a minimised one is restored (showInactive alone
+// leaves it in the taskbar, so a search looked like it did nothing). Searching from the app window
+// brings it to the front, and onto that window's monitor if it was left on one that's gone or far off;
+// searching from the popup over the game doesn't take focus away from the game.
+function bringUpResults() {
+  if (!resultsWin || resultsWin.isDestroyed()) return;
+  if (resultsWin.isMinimized()) resultsWin.restore();
+  const fromApp = settingsWin && !settingsWin.isDestroyed() && settingsWin.isFocused();
+  if (fromApp) {
+    const rb = resultsWin.getBounds();
+    const onScreen = screen.getAllDisplays().some((d) => { const a = d.workArea; return rb.x + 100 > a.x && rb.x < a.x + a.width - 100 && rb.y >= a.y - 50 && rb.y < a.y + a.height - 100; });
+    if (!onScreen) {
+      const a = screen.getDisplayMatching(settingsWin.getBounds()).workArea;
+      resultsWin.setBounds({ width: rb.width, height: Math.min(rb.height, a.height - 40), x: a.x + a.width - rb.width - 20, y: a.y + 20 });
+    }
+    resultsWin.show(); resultsWin.moveTop(); resultsWin.focus();
+  } else {
+    resultsWin.showInactive(); resultsWin.moveTop();
   }
 }
 
@@ -892,7 +1370,7 @@ async function showResults(r, ctx) {
   if (!resultsWin || resultsWin.isDestroyed()) createResultsWindow();
   const send = () => resultsWin.webContents.send('results:data', resultsPayload());
   if (resultsWin.webContents.isLoading()) resultsWin.webContents.once('did-finish-load', send); else send();
-  resultsWin.showInactive();
+  bringUpResults();
   buildTrayMenu();
   return true;
 }
@@ -902,15 +1380,16 @@ ipcMain.handle('results:more', async () => {
   try { await loadMoreListings(10); } catch (err) { return { error: err.message || String(err) }; }
   return resultsPayload();
 });
-ipcMain.handle('results:rescore', () => {
+ipcMain.handle('results:rescore', async () => {
   if (!resultsState) return null;
   resultsState.listings = resultsState.listings.map((x) => scoreListing(x));
+  await pobListings(resultsState.listings);
   return resultsPayload();
 });
 ipcMain.on('results:hide', () => { if (resultsWin && !resultsWin.isDestroyed()) resultsWin.hide(); });
 function toggleResults() {
   if (resultsWin && !resultsWin.isDestroyed()) {
-    if (resultsWin.isVisible()) resultsWin.hide(); else resultsWin.showInactive();
+    if (resultsWin.isVisible() && !resultsWin.isMinimized()) resultsWin.hide(); else bringUpResults();
   } else if (resultsState) {
     createResultsWindow();
     resultsWin.webContents.once('did-finish-load', () => resultsWin.webContents.send('results:data', resultsPayload()));
@@ -1019,7 +1498,7 @@ ipcMain.handle('trade:quick', async (_e, target, mode, extra) => {
   if (mode === 'craft') {
     const go = gearOpts();
     const top = gearLib.topStats(item.slot, 2, go);
-    if (!top.length) return { ok: false, error: 'Pick a build (Build & weights) so the app knows which stats matter on this slot.' };
+    if (!top.length) return { ok: false, error: 'Pick a build (Build & stats) so the app knows which stats matter on this slot.' };
     const q = trade.buildCraftQuery(item, { ...opts, top });
     trade.applyBudget(q.body, budget);
     const r = await openIfAny(await runSearch(league, q.body, 'craft'), {
@@ -1030,8 +1509,69 @@ ipcMain.handle('trade:quick', async (_e, target, mode, extra) => {
     return { ...base, ...r, mode: 'craft', keyStats: q.keyStats, unmatched: q.unmatched };
   }
 
+  // default "Find upgrades": Path of Building's weighted search when your build is loaded,
+  // otherwise better for your build by gear score
+  const pobSlot = (() => { const sl = WEAKEST_OF.includes(item.slot) ? (resolveSlotOf(item) || (SLOT_GROUPS[item.slot] || [])[0]) : item.slot; return pobVerdict.SLOT_TO_POB[sl] ? sl : null; })();
+  if (mode === 'upgrade' && pobOn() && pobSlot) mode = 'pob';
+  if (mode === 'upgrade') mode = store.settings.build === 'off' || /unique/i.test(item.rarity || '') ? 'similar' : 'gear';
+  if (mode === 'pob') {
+    try {
+      const r = await pobSearch(item, pobSlot, league, budget, opts);
+      if (r) return { ...base, ...r };
+    } catch (err) { log('pob search: ' + (err.stack || err)); }
+    mode = store.settings.build === 'off' || /unique/i.test(item.rarity || '') ? 'similar' : 'gear'; // fall back
+  }
+  if (mode === 'gear') {
+    const go = gearOpts();
+    const slot = WEAKEST_OF.includes(item.slot) ? (resolveSlotOf(item) || SLOT_GROUPS[item.slot][0]) : item.slot;
+    const weights = gearLib.searchWeights(item.slot, { ...go, resNeed: resNeedFor(slot) });
+    if (!weights.length) return { ok: false, error: 'Your build has no weighted stats for this slot.' };
+    const g = gearOf(item, slot);
+    let r = null; let q = null; let level = 0;
+    const LEVELS = [{ share: 1.06, baseShare: 0.9, label: 'clearly better than yours' }, { share: 1, baseShare: 0.85, label: 'a little better than yours' }, { share: 0.9, baseShare: 0.75, label: 'within 10% of yours' }];
+    // if the trade site says "too complex", shrink the search step by step (logged out it
+    // allows only a handful of filters); the results are still scored by your gear score
+    const SIZES = [{ maxFilters: 40 }, { maxFilters: 20, explicitOnly: true }, { maxFilters: 10, explicitOnly: true, coreShare: 0 }, { maxFilters: 6, explicitOnly: true, coreShare: 0 }, { countOnly: true, explicitOnly: true }];
+    // start at the size the trade site accepted last time, so we don't spend searches on ones it rejects
+    const sizeKey = (await signedIn()) ? 'signed' : 'anon';
+    const learnedSize = (store.settings.gearSearchSize || {})[sizeKey] || 0;
+    let size = Math.min(learnedSize, SIZES.length - 1); let shrunk = size > 0;
+    for (; level < LEVELS.length; level++) {
+      for (;;) {
+        q = trade.buildGearQuery(item, { ...opts, weights, ...LEVELS[level], ...SIZES[size] });
+        if (!q.filters) return { ok: false, error: 'None of your build\'s stats for this slot could be matched on the trade site.' };
+        trade.applyBudget(q.body, budget);
+        r = await runSearch(league, q.body, `gear L${level}${size ? ` size${size}` : ''}`);
+        if (!(r && r.tooComplex) || size >= SIZES.length - 1) break;
+        size++; shrunk = true;
+        store.setSetting('gearSearchSize', { ...(store.settings.gearSearchSize || {}), [sizeKey]: Math.max(size, (store.settings.gearSearchSize || {})[sizeKey] || 0) });
+      }
+      if (r && r.tooComplex) return { ok: false, error: `The trade site says this search has too many filters even at its smallest.${(await signedIn()) ? '' : ' Signing in to pathofexile.com (Settings → Trade site account) raises the limit.'}` };
+      if (!r.ok || r.total == null || r.total > 0) break;
+      if (q.countOnly) break; // the simplest form doesn't get looser
+      if (r.near) break;
+      await new Promise((res) => setTimeout(res, 700));
+    }
+    if (level >= LEVELS.length) level = LEVELS.length - 1;
+    if (r && r.ok) {
+      await openIfAny(r, {
+        item, mode: 'gear', body: q.body, searchKey: searchKey(q.body),
+        title: `Better for your build than ${item.name}${g && g.score != null ? ` (gear score ${g.score})` : ''}`,
+        note: q.countOnly ? `The trade site only allowed a simple search${(await signedIn()) ? '' : ' (sign in under Settings for better ones)'}: items with ${q.body.query.stats[0].value.min}+ of ${q.keyStats.join(', ')} at a good roll, cheapest first. Use Upgrades only / Best gear score to see which beat yours.`
+          : shrunk && level === 0 ? `Scored with your build's main weights (the trade site limits filters${(await signedIn()) ? '' : ' – signing in under Settings allows more'}). Best for your build first.`
+          : level === 1 ? 'No clear upgrade is listed right now, so these are the ones a little better than yours.'
+          : level > 1 ? `Nothing beats it yet, so these come close (${LEVELS[level].label}). Sorted cheapest first; sort by Best gear score to compare.`
+          : `Scored with your build's weights (${q.parts.slice(0, 5).join(', ')}${q.parts.length > 5 ? '…' : ''})${q.needCore ? `, with at least ${q.needCore} of: ${q.keyStats.join(', ')}` : ''}. Best for your build first.`,
+      });
+    }
+    return { ...base, ...r, mode: 'gear', level, levelLabel: LEVELS[level].label, score: g && g.score, filters: q.filters, excluded: q.excluded };
+  }
+
   if (mode === 'weights') {
     const q = trade.buildUpgradeQuery(item, store.weights, opts);
+    if (!(q.currentScore > 0)) {
+      return { ok: false, error: `None of your stat weights are on this ${item.itemClass ? item.itemClass.toLowerCase().replace(/s$/, '') : 'item'}, so "By my weights" would match almost anything. Use Better for my build, or set weights for its stats (Build & stats).` };
+    }
     if (!q.body.query.stats.length && !q.body.query.filters.equipment_filters) {
       return { ok: false, error: 'None of your weighted stats could be matched on the trade site. Set weights for your build\'s stats first.' };
     }
@@ -1107,10 +1647,12 @@ ipcMain.handle('trade:price', async (_e, target) => {
     await new Promise((res) => setTimeout(res, 700));
   }
   if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'Search failed.' };
+  // the search itself failed (only a pre-filled link came back): open that rather than saying "nothing listed"
+  if (r.total == null) { if (r.url) shell.openExternal(r.url); return { ok: true, mode: 'price', total: null, league, item: item.name, url: r.url, opened: true, levelLabel: q.levelLabel }; }
   if (!r.total) return { ok: true, mode: 'price', total: 0, league, item: item.name, url: r.url, levelLabel: q.levelLabel };
   const ctx = { item, mode: 'price', title: `Price check: ${item.name}`, body: q.body, searchKey: searchKey(q.body),
     note: `Listings like this one (${q.levelLabel}, ${q.need} of ${q.total} stats), cheapest first.` };
-  const shown = store.settings.resultsInApp !== false && r.ids && r.ids.length ? await showResults(r, ctx) : false;
+  const shown = r.ids && r.ids.length ? await showResults(r, ctx) : false;
   let summary = null;
   if (shown) {
     summary = priceSummary(resultsState.listings);
@@ -1122,24 +1664,6 @@ ipcMain.handle('trade:price', async (_e, target) => {
   }
   return { ok: true, mode: 'price', total: r.total, league, item: item.name, url: r.url, inApp: shown, opened: true,
     summary, levelLabel: q.levelLabel, level: q.level, need: q.need, of: q.total };
-});
-
-// "Add to stash value" from the popup: uniques follow poe.ninja, others use your price check.
-ipcMain.handle('stash:addFromPopup', async (_e, target, qty) => {
-  const item = resolveItem(target);
-  if (!item || !stash) return { ok: false, error: 'No item.' };
-  const unique = /unique/i.test(item.rarity || '');
-  let idx = null;
-  try { idx = await stash.refreshPrices(false); } catch (_) { /* offline */ }
-  const p = unique ? stashPrices.lookup(idx, item.name) : null;
-  const div = store.settings.divineRate || null;
-  const worthEx = lastWorth.get(item.id);
-  const entry = { name: item.name, base: item.baseType || null, rarity: item.rarity, qty: qty || 1 };
-  if (p) Object.assign(entry, { priceFrom: 'ninja', div: p.div });
-  else if (worthEx != null && div) Object.assign(entry, { priceFrom: 'trade', div: worthEx / div, note: 'typical price of similar listings' });
-  else Object.assign(entry, { priceFrom: 'manual', div: null });
-  const it = stash.addItem(entry);
-  return { ok: true, item: it, priced: it.div != null, basis: entry.priceFrom };
 });
 
 // ---------- saved searches ----------
@@ -1192,6 +1716,14 @@ ipcMain.handle('saved:alert', (_e, id, on) => {
 });
 ipcMain.handle('alerts:status', () => ({ every: store.settings.alertEvery || 0, lastRun: lastAlertRun, running: alertsRunning }));
 
+// keep notifications alive until they're used, or Windows may drop their click handlers
+const liveNotes = new Set();
+function keepNotification(n) {
+  liveNotes.add(n);
+  const done = () => liveNotes.delete(n);
+  n.on('close', done); n.on('click', () => setTimeout(done, 1000));
+  setTimeout(done, 10 * 60000);
+}
 async function runAlerts(force) {
   const every = Number(store.settings.alertEvery) || 0;
   if (alertsRunning || (!force && (!every || Date.now() - lastAlertRun < every * 60000))) return;
@@ -1201,8 +1733,10 @@ async function runAlerts(force) {
   try {
     await refreshDivineRate(false);
     for (const s of list) {
-      const r = await runSearch(s.league, JSON.parse(JSON.stringify(s.body)), `alert ${s.name}`);
+      if (searchWait() > 0 || searchLog.filter((t) => Date.now() - t < 60000).length > 6) { log('alerts: leaving the searches to you for now'); break; }
+      const r = await runSearch(s.league, JSON.parse(JSON.stringify(s.body)), `alert ${s.name}`, { maxWait: 0 });
       if (!r.ok) { log(`alert ${s.name}: ${r.error}`); if (r.rateLimited) break; continue; }
+      if (!Array.isArray(r.ids)) { log(`alert ${s.name}: the trade site search couldn't be read in the app`); continue; }
       const prev = Array.isArray(s.lastIds) ? s.lastIds : null;
       const fresh = prev ? r.ids.filter((x) => !prev.includes(x)) : [];
       s.lastIds = r.ids.slice(0, 100); s.lastTotal = r.total; s.lastRun = Date.now();
@@ -1225,6 +1759,7 @@ async function runAlerts(force) {
             const rr = await runSearch(s.league, JSON.parse(JSON.stringify(s.body)), `alert open ${s.name}`);
             if (rr.ok) await openIfAny(rr, { item: { itemClass: s.itemClass, name: s.itemName, slot: require('./core/slots').slotForClass(s.itemClass) }, mode: s.mode, title: s.name, body: s.body, searchKey: s.searchKey, note: `${fresh.length} new since the last check.` });
           });
+          keepNotification(n);
           n.show();
         }
         notifySettings('saved:changed');
@@ -1237,33 +1772,93 @@ async function runAlerts(force) {
 ipcMain.handle('alerts:run', async () => { await runAlerts(true); return { lastRun: lastAlertRun }; });
 
 // ---------- pathofexile.com account (optional) ----------
-async function signedIn() {
+// pathofexile.com gives every visitor a POESESSID cookie, signed in or not, so the cookie alone
+// proves nothing (that made the sign-in window close at once). Ask the site itself: the account
+// page answers normally when you're signed in and redirects to /login when you're not.
+// (backup check: a signed-in page has a log-out link)
+const CHECK_JS = `(async () => {
   try {
-    const c = await session.fromPartition(POE_PARTITION).cookies.get({ url: trade.BASE, name: 'POESESSID' });
-    return c.length > 0;
+    const r = await fetch('/my-account', { redirect: 'manual', credentials: 'include' });
+    if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400)) return { type: 'opaqueredirect', status: r.status };
+    if (r.status === 200 && !/\\/login/.test(r.url)) return { type: r.type, status: 200, url: r.url };
+    const h = await fetch('/', { credentials: 'include' }).then((x) => x.text());
+    return /href="[^"]*\\/logout/i.test(h) ? { type: 'basic', status: 200, url: '/' } : { type: 'none', status: r.status };
+  } catch (e) { return { error: String(e) }; }
+})()`;
+async function checkIn(wc) {
+  try {
+    const r = await Promise.race([wc.executeJavaScript(CHECK_JS, true), new Promise((res) => setTimeout(() => res({ error: 'timeout' }), 10000))]);
+    return !!r && !r.error && r.type !== 'opaqueredirect' && r.status === 200 && !/\/login/.test(r.url || '');
   } catch (_) { return false; }
 }
-ipcMain.handle('account:status', async () => ({ signedIn: await signedIn() }));
+let signedCache = { at: 0, v: false };
+async function signedIn(force) {
+  try {
+    const c = await session.fromPartition(POE_PARTITION).cookies.get({ url: trade.BASE, name: 'POESESSID' });
+    if (!c.length) { signedCache = { at: Date.now(), v: false }; return false; }
+  } catch (_) { return false; }
+  if (!force && Date.now() - signedCache.at < 10 * 60000) return signedCache.v;
+  try {
+    if (!tradeWin || tradeWin.isDestroyed()) tradeWin = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, partition: POE_PARTITION } });
+    if (!tradeWin.webContents.getURL().startsWith(trade.BASE)) {
+      await Promise.race([tradeWin.loadURL(`${trade.BASE}/trade2`), new Promise((_, rej) => setTimeout(() => rej(new Error('page load timed out')), 15000))]);
+    }
+    signedCache = { at: Date.now(), v: await checkIn(tradeWin.webContents) };
+  } catch (err) { log('sign-in check: ' + (err.message || err)); signedCache = { at: Date.now(), v: false }; }
+  return signedCache.v;
+}
+ipcMain.handle('account:status', async () => ({ signedIn: await signedIn(true) }));
 ipcMain.handle('account:signin', async () => {
   const w = new BrowserWindow({ width: 980, height: 820, title: 'Sign in to pathofexile.com', icon: ICON, autoHideMenuBar: true, webPreferences: { partition: POE_PARTITION, sandbox: true, contextIsolation: true } });
   w.loadURL(`${trade.BASE}/login`);
   return new Promise((resolve) => {
+    let busy = false; let done = false;
+    const finish = async (v) => { if (done) return; done = true; clearInterval(t); signedCache = { at: Date.now(), v }; if (v) log('signed in to pathofexile.com'); notifySettings('settings:changed'); resolve({ signedIn: v }); };
+    // only check once you've left the login page (after submitting it), and keep the window open until it's real
     const t = setInterval(async () => {
-      if (await signedIn()) { clearInterval(t); log('signed in to pathofexile.com'); if (!w.isDestroyed()) w.close(); notifySettings('settings:changed'); resolve({ signedIn: true }); }
+      if (busy || w.isDestroyed()) return;
+      const url = w.webContents.getURL();
+      if (!url.startsWith(trade.BASE) || /\/login/i.test(url) || w.webContents.isLoading()) return;
+      busy = true;
+      const ok = await checkIn(w.webContents);
+      busy = false;
+      if (ok) { await finish(true); if (!w.isDestroyed()) w.close(); }
     }, 1500);
-    w.on('closed', async () => { clearInterval(t); resolve({ signedIn: await signedIn() }); });
+    w.on('closed', async () => { if (!done) await finish(await signedIn(true)); });
   });
 });
 ipcMain.handle('account:signout', async () => {
   await session.fromPartition(POE_PARTITION).clearStorageData();
+  signedCache = { at: Date.now(), v: false };
   log('signed out of pathofexile.com');
   return { signedIn: false };
+});
+// Open the trade site on this one listing: same search, narrowed to the seller's account,
+// so it's at the top of the page with the site's own Travel to Hideout / whisper buttons.
+function listingUrl(l) {
+  const st = resultsState;
+  if (!st || !st.r) return null;
+  if (!l || !l.account || !st.r.body) return st.r.url;
+  const body = JSON.parse(JSON.stringify(st.r.body));
+  const q = body.query || (body.query = {});
+  q.filters = q.filters || {};
+  const tf = q.filters.trade_filters || (q.filters.trade_filters = { filters: {} });
+  tf.filters = tf.filters || {};
+  tf.filters.account = { input: l.account };
+  return trade.prefilledUrl(st.r.league, body);
+}
+ipcMain.handle('trade:openListing', (_e, listingId) => {
+  const l = resultsState && resultsState.listings.find((x) => x.id === listingId);
+  const url = listingUrl(l);
+  if (!url) return { ok: false };
+  shell.openExternal(url);
+  return { ok: true, exact: !!(l && l.account) };
 });
 // Instant Buyout: ask the trade site to take you to the seller's hideout (needs sign-in).
 ipcMain.handle('trade:hideout', async (_e, listingId) => {
   const l = resultsState && resultsState.listings.find((x) => x.id === listingId);
   if (!l || !l.hideoutToken) return { ok: false, error: 'This listing has no hideout token – use Buy on trade site.' };
-  if (!(await signedIn())) return { ok: false, error: 'Sign in first (Options → Trade site account).' };
+  if (!(await signedIn())) return { ok: false, needSignIn: true, error: 'Sign in to pathofexile.com first – it only takes you to hideouts for a signed-in account.' };
   try {
     if (!tradeWin || tradeWin.isDestroyed()) tradeWin = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, partition: POE_PARTITION } });
     if (!tradeWin.webContents.getURL().startsWith(trade.BASE)) await tradeWin.loadURL(`${trade.BASE}/trade2/search/poe2/${encodeURIComponent(resultsState.r.league)}`);
@@ -1281,7 +1876,9 @@ function applyLoginItem() {
   try {
     const openAtLogin = !!store.settings.startWithWindows;
     const args = app.isPackaged ? ['--hidden'] : [app.getAppPath(), '--hidden'];
-    app.setLoginItemSettings({ openAtLogin, path: process.execPath, args });
+    // the portable .exe runs from a temporary copy: start the real file instead
+    const portable = process.env.PORTABLE_EXECUTABLE_FILE;
+    app.setLoginItemSettings({ openAtLogin, path: portable || process.execPath, args });
   } catch (err) { log('login item: ' + err.message); }
 }
 
@@ -1289,11 +1886,30 @@ function applyLoginItem() {
 
 function openSettings() {
   if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); return; }
+  // reopen where you left it (e.g. maximized on your second monitor)
+  const saved = store.settings.settingsBounds;
+  const onScreen = saved && screen.getAllDisplays().some((d) => {
+    const a = d.workArea; return saved.x >= a.x - 50 && saved.y >= a.y - 50 && saved.x < a.x + a.width - 100 && saved.y < a.y + a.height - 100;
+  });
   settingsWin = new BrowserWindow({
-    width: 900, height: 720, title: 'PoE2 Upgrade Checker', icon: ICON, autoHideMenuBar: true,
+    width: onScreen ? saved.width : 1240, height: onScreen ? saved.height : 860, ...(onScreen ? { x: saved.x, y: saved.y } : {}),
+    minWidth: 640, minHeight: 480,
+    title: 'PoE2 Upgrade Checker', icon: ICON, autoHideMenuBar: true,
     backgroundColor: '#14110f',
     webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
+  if (onScreen && store.settings.settingsMaximized) settingsWin.maximize();
+  let bt = null;
+  const remember = () => {
+    clearTimeout(bt);
+    bt = setTimeout(() => {
+      if (!settingsWin || settingsWin.isDestroyed()) return;
+      const max = settingsWin.isMaximized();
+      store.setSetting('settingsMaximized', max);
+      if (!max && !settingsWin.isMinimized()) store.setSetting('settingsBounds', settingsWin.getBounds());
+    }, 400);
+  };
+  settingsWin.on('move', remember); settingsWin.on('resize', remember); settingsWin.on('maximize', remember); settingsWin.on('unmaximize', remember);
   settingsWin.loadFile(path.join(__dirname, 'ui', 'settings.html'));
 }
 
@@ -1319,6 +1935,7 @@ function setupUpdater() {
     try {
       const n = new Notification({ title: `PoE2 Upgrade Checker ${i.version} is ready`, body: 'Click to restart and update now, or it installs next time you quit.', icon: ICON });
       n.on('click', () => autoUpdater.quitAndInstall(true, true));
+      keepNotification(n);
       n.show();
     } catch (_) { /* ignore */ }
   });
@@ -1339,12 +1956,10 @@ function buildTrayMenu() {
   const paused = !!store.settings.paused;
   tray.setToolTip(paused ? 'PoE2 Upgrade Checker (paused)' : 'PoE2 Upgrade Checker');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: hotkeyStatus.ok ? `Hotkey: ${hotkeyStatus.accelerator}` : 'Hotkey not set (see Options)', enabled: false },
+    { label: hotkeyStatus.ok ? `Hotkey: ${hotkeyStatus.accelerator}` : 'Hotkey not set (see Settings)', enabled: false },
     { label: `Character: ${(store.listProfiles().find((p) => p.active) || {}).name || '—'}`, enabled: false },
     { label: `Show / hide results${resultsHotkey ? ` (${resultsHotkey})` : ''}`, click: toggleResults, enabled: !!resultsState },
     ...(upd.state === 'ready' ? [{ label: `Restart to update to ${upd.version}`, click: () => autoUpdater && autoUpdater.quitAndInstall(true, true) }] : []),
-    { label: `Scan stash tab${store.settings.stashHotkey === '' ? '' : ` (${store.settings.stashHotkey || 'Ctrl+Shift+S'})`}`, click: () => { if (stash) stash.scan().then((r) => showResult({ kind: 'stash', ...r, divineRate: store.settings.divineRate || null })); } },
-    { label: 'Stash value…', click: () => openTab('stash') },
     { label: 'Settings && gear…', click: openSettings },
     { label: 'Open log', click: () => { log('log opened'); shell.openPath(logFile); } },
     { label: paused ? 'Resume watching' : 'Pause watching', click: () => { store.setSetting('paused', !paused); buildTrayMenu(); } },
@@ -1357,6 +1972,8 @@ app.on('second-instance', openSettings);
 
 app.whenReady().then(() => {
   store = new Store(app.getPath('userData'));
+  store.onError = (err) => log('could not save settings: ' + err.message);
+  if (store.loadError) setTimeout(() => log(`settings file couldn't be read (${store.loadError}); a copy was kept as poe2-upgrade-checker.json.unreadable-*`), 0);
   // Don't pop up for whatever happened to be on the clipboard at launch.
   try { lastClip = clipboard.readText(); } catch (_) { lastClip = ''; }
 
@@ -1367,20 +1984,22 @@ app.whenReady().then(() => {
   log(`started v${app.getVersion()} on ${process.platform}`);
   keys = new KeySender(log, app.getPath('userData'));
   keys.start();
+  // one-time: old letter defaults clash with WASD movement -> F-keys
+  if (!store.settings.hotkeyMigrated) {
+    if (!store.settings.hotkey || store.settings.hotkey === 'Ctrl+D') { store.setSetting('hotkey', DEFAULT_HOTKEY); log('hotkey: moved from Ctrl+D to F2 (D is a movement key)'); }
+    store.setSetting('hotkeyMigrated', true);
+  }
+  // older resistance records: pin them to the gear worn now so later swaps move the totals
+  if (store.settings.resists && !store.settings.resists.gear) {
+    store.setSetting('resists', { ...store.settings.resists, gear: resLib.gearRes(store.equipped), source: store.settings.resists.source || 'pob' });
+  }
+  // the gear-score profile used to default to the Djinn summoner: keep it for people already using it
+  if (!store.settings.build) store.setSetting('build', store.settings.wizardDone || Object.keys(store.equipped || {}).length ? 'djinn-varashta' : gearLib.DEFAULT_BUILD);
+  pobSync(); // the engine itself starts on first use
+  process.on('uncaughtException', (err) => log('error: ' + (err && err.stack || err)));
+  process.on('unhandledRejection', (err) => log('error (promise): ' + (err && err.stack || err)));
   registerHotkey();
   registerResultsHotkey();
-  stash = stashLib.create({
-    store, log, getJson, ipcMain, globalShortcut, desktopCapturer, screen, nativeImage, app,
-    ninjaLeague,
-    tradeLeague: async () => pickLeague(await loadTradeData(false)),
-    runSearch, fetchListings,
-    rates: () => ({ ...(store.settings.currencyRates || {}), ...(store.settings.divineRate ? { divine: store.settings.divineRate } : {}) }),
-    priceInEx: listingLib.priceInEx, formatPrice: listingLib.formatPrice, clean: listingLib.clean,
-    beforeCapture: async () => { if (popup && popup.isVisible()) { hidePopup(); await new Promise((r) => setTimeout(r, 120)); } },
-    showToast: (payload) => showResult(payload),
-    changed: () => { notifySettings('stash:changed'); },
-  });
-  stash.registerHotkey();
   buildTrayMenu();
   setInterval(pollClipboard, 250);
   setInterval(watchCursor, 200);
@@ -1395,4 +2014,4 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', (e) => { /* keep running in the tray */ });
-app.on('will-quit', () => { globalShortcut.unregisterAll(); if (keys) keys.stop(); if (stash) stash.stop(); });
+app.on('will-quit', () => { globalShortcut.unregisterAll(); if (keys) keys.stop(); if (pobEng) pobEng.kill(); });

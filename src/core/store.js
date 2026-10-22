@@ -1,5 +1,7 @@
 'use strict';
 
+const DEFAULT_BUILD = 'life-res'; // same as gearscore.DEFAULT_BUILD
+
 // Tiny JSON-file store for equipped gear, stat weights and seen stats.
 
 const fs = require('fs');
@@ -28,15 +30,25 @@ class Store {
     this.dir = dir;
     fs.mkdirSync(dir, { recursive: true });
     this.file = path.join(dir, 'poe2-upgrade-checker.json');
-    this.data = { weights: { ...DEFAULT_WEIGHTS }, equipped: {}, seenStats: {}, settings: { autoHideSeconds: 12, paused: false, hotkey: 'Ctrl+D', watchClipboard: true, advancedCopy: false, autoRate: true, status: 'available' } };
-    try {
-      const loaded = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      this.data = {
-        ...this.data,
-        ...loaded,
-        settings: { ...this.data.settings, ...(loaded.settings || {}) },
-      };
-    } catch (_) { /* first run or unreadable file: keep defaults */ }
+    this.data = { weights: { ...DEFAULT_WEIGHTS }, equipped: {}, seenStats: {}, settings: { autoHideSeconds: 12, paused: false, hotkey: 'F2', watchClipboard: true, advancedCopy: false, autoRate: true, status: 'available' } };
+    // never start from defaults over a file that's only temporarily unreadable (antivirus at login):
+    // retry, then keep the broken file aside instead of overwriting everyone's gear and settings
+    if (fs.existsSync(this.file)) {
+      let loaded = null; let lastErr = null;
+      for (let i = 0; i < 5 && !loaded; i++) {
+        try { loaded = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch (err) {
+          lastErr = err;
+          const until = Date.now() + 200; while (Date.now() < until) { /* short wait before retrying */ }
+        }
+      }
+      if (!loaded && fs.existsSync(this.file + '.tmp')) { try { loaded = JSON.parse(fs.readFileSync(this.file + '.tmp', 'utf8')); } catch (_) { /* no */ } }
+      if (loaded) {
+        this.data = { ...this.data, ...loaded, settings: { ...this.data.settings, ...(loaded.settings || {}) } };
+      } else {
+        try { fs.copyFileSync(this.file, `${this.file}.unreadable-${Date.now()}`); } catch (_) { /* ignore */ }
+        this.loadError = lastErr ? lastErr.message : 'unreadable';
+      }
+    }
     // Older versions kept advanced-copy notes in stat names; tidy saved items.
     const fixKey = (k) => (typeof k === 'string' ? k.replace(/\s+[—–-]+\s*Unscalable Value\s*$/i, '') : k);
     for (const it of Object.values(this.data.equipped || {})) {
@@ -67,7 +79,7 @@ class Store {
     const s = this.data.settings;
     return {
       equipped: this.data.equipped, weights: this.data.weights,
-      ignoreStats: s.ignoreStats || [], build: s.build || 'djinn-varashta', buildTweaks: s.buildTweaks || {}, resists: s.resists || null,
+      ignoreStats: s.ignoreStats || [], build: s.build || DEFAULT_BUILD, buildTweaks: s.buildTweaks || {}, resists: s.resists || null,
     };
   }
 
@@ -84,7 +96,7 @@ class Store {
     this.data.equipped = next.equipped || {};
     this.data.weights = next.weights || { ...DEFAULT_WEIGHTS };
     Object.assign(this.data.settings, {
-      ignoreStats: next.ignoreStats || [], build: next.build || 'djinn-varashta', buildTweaks: next.buildTweaks || {}, resists: next.resists || null,
+      ignoreStats: next.ignoreStats || [], build: next.build || DEFAULT_BUILD, buildTweaks: next.buildTweaks || {}, resists: next.resists || null,
     });
     this.save();
     return true;
@@ -92,7 +104,7 @@ class Store {
 
   createProfile(name, copyCurrent) {
     const id = 'p' + Date.now().toString(36);
-    const base = copyCurrent ? JSON.parse(JSON.stringify(this.snapshot())) : { equipped: {}, weights: { ...DEFAULT_WEIGHTS }, ignoreStats: [], build: this.data.settings.build || 'djinn-varashta', buildTweaks: {}, resists: null };
+    const base = copyCurrent ? JSON.parse(JSON.stringify(this.snapshot())) : { equipped: {}, weights: { ...DEFAULT_WEIGHTS }, ignoreStats: [], build: this.data.settings.build || DEFAULT_BUILD, buildTweaks: {}, resists: null };
     this.data.profiles[id] = { name: name || 'New character', ...base };
     this.switchProfile(id);
     return id;
@@ -117,8 +129,16 @@ class Store {
       Object.assign(this.data.profiles[this.data.activeProfile], this.snapshot());
     }
     const tmp = this.file + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
-    fs.renameSync(tmp, this.file);
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+      // Windows: the indexer or antivirus can hold the file for a moment
+      for (let i = 0; ; i++) {
+        try { fs.renameSync(tmp, this.file); break; } catch (err) {
+          if (i >= 4) throw err;
+          const until = Date.now() + 50 * (i + 1); while (Date.now() < until) { /* wait */ }
+        }
+      }
+    } catch (err) { if (this.onError) this.onError(err); }
   }
 
   get weights() { return this.data.weights; }

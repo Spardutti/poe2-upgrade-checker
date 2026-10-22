@@ -17,6 +17,19 @@ function clean(text) {
     .trim();
 }
 
+// A mod line can be a plain string or (newer trade API) an object like
+// { description: "+39% to [Lightning|Lightning] Resistance", ... }.
+function modText(m) {
+  if (m == null) return '';
+  if (typeof m === 'string') return clean(m);
+  if (typeof m !== 'object') return clean(String(m));
+  let t = m.description || m.text || m.line || m.mod || m.name || '';
+  if (typeof t !== 'string') t = '';
+  const vals = Array.isArray(m.values) ? m.values.map((v) => (Array.isArray(v) ? v[0] : v)) : [];
+  if (/\{\d\}/.test(t) && vals.length) t = t.replace(/\{(\d)\}/g, (all, i) => (vals[i] != null ? vals[i] : all));
+  return clean(t);
+}
+
 function propLine(p) {
   if (!p || !p.name) return null;
   const name = clean(p.name);
@@ -54,7 +67,7 @@ function listingToItem(result, itemClass) {
   if (props.length) blocks.push(props.join('\n'));
   if (it.ilvl) blocks.push(`Item Level: ${it.ilvl}`);
   for (const [field, tag] of MOD_GROUPS) {
-    const mods = (it[field] || []).map(clean).filter(Boolean);
+    const mods = (it[field] || []).map(modText).filter(Boolean);
     if (mods.length) blocks.push(mods.map((m) => (tag ? `${m} ${tag}` : m)).join('\n'));
   }
   if (it.corrupted) blocks.push('Corrupted');
@@ -99,4 +112,4 @@ function summarise(result, itemClass, rates) {
   };
 }
 
-module.exports = { clean, listingToItem, priceInEx, formatPrice, summarise };
+module.exports = { clean, modText, listingToItem, priceInEx, formatPrice, summarise };

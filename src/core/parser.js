@@ -82,6 +82,37 @@ function avgRanges(str) {
   return total;
 }
 
+// Mageblood's Mage's Legacies: each is a fixed always-on bonus (named after a PoE1 flask).
+// Values from the community wikis (exiletown, urgametips) – the item text names the Legacy only.
+// A Legacy you have twice applies once, but every duplicate raises the effect of all of them
+// by the belt's "increased effect per duplicate" roll.
+const LEGACY_LINE = /^Legacy of (Amethyst|Basalt|Bismuth|Diamond|Gold|Granite|Jade|Quicksilver|Ruby|Sapphire|Silver|Stibnite|Sulphur|Topaz)$/i;
+const LEGACIES = {
+  amethyst: [['#% to Chaos Resistance', 45]],
+  basalt: [['#% increased Armour', 150]],
+  bismuth: [['#% to all Elemental Resistances', 45]],
+  diamond: [['#% increased Critical Hit Chance', 75]],
+  gold: [['#% increased Rarity of Items found', 45]],
+  granite: [['# to Armour', 2000]],
+  jade: [['# to Evasion Rating', 2000]],
+  quicksilver: [['#% increased Movement Speed', 30]],
+  ruby: [['#% to Fire Resistance', 60], ['#% to Maximum Fire Resistance', 5]],
+  sapphire: [['#% to Cold Resistance', 60], ['#% to Maximum Cold Resistance', 5]],
+  silver: [['#% increased Skill Speed', 30]],
+  stibnite: [['#% increased Evasion Rating', 150]],
+  sulphur: [['#% increased Damage', 60]],
+  topaz: [['#% to Lightning Resistance', 60], ['#% to Maximum Lightning Resistance', 5]],
+};
+function applyLegacies(item, names, add) {
+  const dupKey = Object.keys(item.stats).find((k) => /increased effect per duplicate Mage's Legacy/i.test(k));
+  const perDup = dupKey ? Number(item.stats[dupKey]) || 0 : 0;
+  const unique = [...new Set(names)];
+  const dups = names.length - unique.length;
+  const mult = 1 + (perDup / 100) * dups;
+  item.legacies = { names: unique, duplicates: dups, effect: mult };
+  for (const n of unique) for (const [k, v] of LEGACIES[n] || []) add(k, Math.round(v * mult * 10) / 10);
+}
+
 function parseItem(raw) {
   if (typeof raw !== 'string') return null;
   const text = raw.replace(/\r\n?/g, '\n').trim();
@@ -97,6 +128,7 @@ function parseItem(raw) {
 
   const header = blocks[0] || [];
   const item = {
+    raw: text, // the game's own text, for Path of Building
     itemClass: null, rarity: null, name: null, baseType: null,
     slot: null, twoHanded: false, itemLevel: null, requiredLevel: null,
     corrupted: false, unidentified: false, stats: {}, lines: [],
@@ -111,6 +143,11 @@ function parseItem(raw) {
   }
   item.name = names[0] || null;
   item.baseType = names[1] || names[0] || null;
+  // a magic item's only name line includes its affixes ("Hale Gold Ring of the Whelpling"), and
+  // normal items can be "Superior …": neither is a base type the trade site knows
+  const rarLower = String(item.rarity || '').toLowerCase();
+  if (!names[1] && rarLower === 'magic') item.baseType = null;
+  if (item.baseType && rarLower === 'normal') item.baseType = item.baseType.replace(/^Superior /, '');
   item.slot = slotForClass(item.itemClass);
   item.twoHanded = isTwoHanded(item.itemClass);
 
@@ -124,20 +161,30 @@ function parseItem(raw) {
   // are used, so we can say how many are still open for crafting.
   let prefixes = 0; let suffixes = 0; let sawHeaders = false;
 
+  const legacies = []; // Mageblood: "Legacy of Bismuth" lines
+
   // Weapon damage bits, collected from the property block.
   let phys = 0, ele = 0, chaos = 0, aps = 0, crit = 0;
 
   blocks.slice(1).forEach((block) => {
+    // in advanced text the header line says what kind of mod follows; the line itself has no tag
+    let headerTag = null;
     block.forEach((line) => {
       // Advanced (Ctrl+Alt+C) descriptor lines like { Prefix Modifier "Hale" (Tier: 3) }
       if (line.startsWith('{')) {
         sawHeaders = true;
         if (/Prefix Modifier/i.test(line)) prefixes++;
         else if (/Suffix Modifier/i.test(line)) suffixes++;
+        headerTag = /Implicit Modifier/i.test(line) ? 'implicit'
+          : /Enchant/i.test(line) ? 'enchant'
+          : /Rune Modifier|Augment/i.test(line) ? 'rune'
+          : /Fractured/i.test(line) ? 'fractured'
+          : /Desecrated/i.test(line) ? 'desecrated'
+          : 'explicit';
         return;
       }
       // Advanced text puts mod ranges in brackets: +89(80-99) to maximum Life
-      const clean = line.replace(/\((-?\d+(?:\.\d+)?)[-–](\d+(?:\.\d+)?)\)/g, '')
+      const clean = line.replace(/\((-?\d+(?:\.\d+)?)[-–](-?\d+(?:\.\d+)?)\)/g, '')
         .replace(/\s+[—–-]+\s*Unscalable Value\s*$/i, ''); // advanced-copy note
 
       let m;
@@ -175,8 +222,14 @@ function parseItem(raw) {
       }
 
       const tagMatch = clean.match(TAG);
-      const tag = tagMatch ? tagMatch[1].toLowerCase() : 'explicit';
+      const tag = tagMatch ? tagMatch[1].toLowerCase() : (headerTag || 'explicit');
       const modText = clean.replace(TAG, '').replace(TAG, '').trim();
+      const leg = modText.match(LEGACY_LINE);
+      if (leg) {
+        legacies.push(leg[1].toLowerCase());
+        item.lines.push({ text: line, key: null, value: null, tag });
+        return;
+      }
       const stat = modToStat(modText);
       if (!stat) {
         // flavour text / keyword mods with no numbers - keep a flag stat for keyword mods
@@ -190,9 +243,11 @@ function parseItem(raw) {
     });
   });
 
+  if (legacies.length) applyLegacies(item, legacies, add);
+
   const rar = String(item.rarity || '').toLowerCase();
   if (sawHeaders && (rar === 'rare' || rar === 'magic')) {
-    const max = rar === 'rare' ? 3 : 1;
+    const max = rar === 'rare' ? (item.slot === 'Jewel' ? 2 : 3) : 1; // rare jewels: 2 prefixes, 2 suffixes
     item.affixes = {
       known: true, prefixes, suffixes,
       openPrefix: item.corrupted ? 0 : Math.max(0, max - prefixes),
@@ -215,4 +270,4 @@ function parseItem(raw) {
   return item;
 }
 
-module.exports = { parseItem, modToStat, expand };
+module.exports = { parseItem, modToStat, expand, LEGACIES };

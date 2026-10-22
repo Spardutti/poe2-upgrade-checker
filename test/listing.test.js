@@ -58,3 +58,15 @@ test('currency rates from poe.ninja', () => {
   const r2 = currencyRatesInExalts({ lines: [{ id: 'divine', primaryValue: 30 }, { id: 'exalted', primaryValue: 0.2 }] });
   assert.equal(r2.divine, 150);
 });
+
+test('mods sent as objects ({ description }) are read', () => {
+  const r = { id: 'x', listing: { price: { amount: 1, currency: 'divine' }, account: { name: 'A' } }, item: {
+    rarity: 'Rare', name: 'Empyrean Knot', typeLine: 'Iron Ring', ilvl: 82,
+    implicitMods: [{ description: 'Adds 1 to 4 [Physical|Physical] Damage to Attacks', hash: 'implicit.stat_3032590688' }],
+    explicitMods: [{ description: '+56 to maximum [Mana|Mana]' }, { description: "Minions deal 21% increased Damage if you've Hit Recently" }],
+  } };
+  const s = L.summarise(r, 'Rings', { divine: 700 });
+  assert.strictEqual(s.item.stats['# to maximum Mana'], 56);
+  assert.ok(s.item.lines.some((l) => l.tag === 'implicit' && /Adds 1 to 4 Physical Damage/.test(l.text)));
+  assert.ok(!s.item.listingText.includes('[object Object]'));
+});

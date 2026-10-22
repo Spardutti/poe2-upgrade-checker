@@ -81,8 +81,10 @@ test('buildQuery', () => {
 
 test('budget price filter', () => {
   assert.deepEqual(T.priceFilter({ max: 20, currency: 'divine' }), { max: 20, option: 'divine' });
-  assert.deepEqual(T.priceFilter({ max: 20, currency: 'divine', divineRate: 150 }), { max: 3000 });
-  assert.deepEqual(T.priceFilter({ max: 500, currency: 'exalted' }), { max: 500 });
+  // never the site's own "exalted equivalent" for divines: its divine rate is far off the market
+  assert.deepEqual(T.priceFilter({ max: 20, currency: 'divine', divineRate: 150 }), { max: 20, option: 'divine' });
+  assert.deepEqual(T.priceFilter({ max: 1.5, currency: 'divine', divineRate: 700 }), { max: 1050, option: 'exalted' });
+  assert.deepEqual(T.priceFilter({ max: 500, currency: 'exalted' }), { max: 500, option: 'exalted' });
   assert.equal(T.priceFilter({ max: '', currency: 'divine' }), null);
   assert.equal(T.priceFilter(null), null);
   const { body } = T.buildQuery([], { itemClass: 'Helmets', statIndex: idx, filtersData: FILTERS });
@@ -93,9 +95,10 @@ test('budget price filter', () => {
 });
 
 test('budget with a minimum price', () => {
-  assert.deepEqual(T.priceFilter({ min: 5, max: 20, currency: 'divine', divineRate: 150 }), { min: 750, max: 3000 });
+  assert.deepEqual(T.priceFilter({ min: 5, max: 20, currency: 'divine', divineRate: 150 }), { min: 5, max: 20, option: 'divine' });
+  assert.deepEqual(T.priceFilter({ min: 10, currency: 'divine', divineRate: 694 }), { min: 10, option: 'divine' });
   assert.deepEqual(T.priceFilter({ min: 5, currency: 'divine' }), { min: 5, option: 'divine' });
-  assert.deepEqual(T.priceFilter({ min: 50, max: '', currency: 'exalted' }), { min: 50 });
+  assert.deepEqual(T.priceFilter({ min: 50, max: '', currency: 'exalted' }), { min: 50, option: 'exalted' });
   assert.deepEqual(T.priceFilter({ min: 30, max: 10, currency: 'chaos' }), { min: 10, max: 30, option: 'chaos' });
   assert.equal(T.budgetLabel({ min: 5, max: 20, currency: 'divine', divineRate: 150 }), '5–20 div');
   assert.equal(T.budgetLabel({ min: 5, currency: 'divine', divineRate: 150 }), '≥ 5 div');
@@ -249,4 +252,121 @@ test('craftable bases query', () => {
   assert.equal(b.stats[1].type, 'count');
   assert.equal(b.stats[1].filters.length, 2);
   assert.deepEqual(b.filters.equipment_filters.filters.es, { min: 360 });
+});
+
+test('"Better for my build": weighted by gear score, implicit and explicit both count, base ES as a minimum', () => {
+  const { parseItem } = require('../src/core/parser');
+  const gear = require('../src/core/gearscore');
+  const stats = { result: [
+    { id: 'explicit', entries: [
+      { id: 'explicit.minion_dmg', text: 'Minions deal #% increased Damage', type: 'explicit' },
+      { id: 'explicit.minion_crit', text: 'Minions have #% increased Critical Hit Chance', type: 'explicit' },
+      { id: 'explicit.ally_crit', text: 'Allies in your Presence have #% increased Critical Hit Chance', type: 'explicit' },
+      { id: 'explicit.mana', text: '+# to maximum Mana', type: 'explicit' },
+      { id: 'explicit.int', text: '+# to Intelligence', type: 'explicit' },
+      { id: 'explicit.phys', text: 'Adds # to # Physical Damage to Attacks', type: 'explicit' },
+    ] },
+    { id: 'implicit', entries: [{ id: 'implicit.mana', text: '+# to maximum Mana', type: 'implicit' }] },
+    { id: 'pseudo', entries: [{ id: 'pseudo.pseudo_total_mana', text: '+# total maximum Mana', type: 'pseudo' }] },
+  ] };
+  const ix = T.buildStatIndex(stats);
+  const ring = parseItem('Item Class: Rings\nRarity: Rare\nPlague Circle\nIron Ring\n--------\nItem Level: 80\n--------\n+175 to maximum Mana\nMinions deal 27% increased Damage\nMinions have 44% increased Critical Hit Chance\n+20 to Intelligence');
+  const weights = gear.searchWeights('Ring', { build: 'djinn-varashta' });
+  const q = T.buildGearQuery(ring, { weights, statIndex: ix, status: 'available' });
+  const g = q.body.query.stats[0];
+  assert.strictEqual(g.type, 'weight');
+  const ids = g.filters.map((f) => f.id);
+  for (const id of ['explicit.minion_dmg', 'explicit.minion_crit', 'explicit.ally_crit', 'explicit.mana', 'implicit.mana', 'explicit.int']) assert.ok(ids.includes(id), id);
+  assert.ok(!ids.includes('pseudo.pseudo_total_mana'), 'pseudo would double count');
+  assert.ok(!ids.includes('explicit.phys'), 'useless stats left out');
+  // current = sum of value * weight; min is a bit above it
+  assert.ok(g.value.min > q.current && g.value.min <= Math.ceil(q.current * 1.03));
+  const close = T.buildGearQuery(ring, { weights, statIndex: ix, share: 0.9 });
+  assert.ok(close.body.query.stats[0].value.min < q.current);
+
+  const gloves = parseItem('Item Class: Gloves\nRarity: Rare\nDoom Vise\nSirenscale Gloves\n--------\nEnergy Shield: 280\n--------\nItem Level: 80\n--------\n+33 to maximum Life');
+  const q2 = T.buildGearQuery(gloves, { weights: gear.searchWeights('Gloves', { build: 'djinn-varashta' }), statIndex: ix, baseShare: 0.85 });
+  assert.strictEqual(q2.body.query.filters.equipment_filters.filters.es.min, Math.floor(280 * 0.85));
+});
+
+test('If you equip it: resistances against the cap, Spirit and overall score', () => {
+  const { parseItem } = require('../src/core/parser');
+  const { changeIfEquipped } = require('../src/core/character');
+  const eq = {
+    'Ring 1': parseItem('Item Class: Rings\nRarity: Rare\nA\nIron Ring\n--------\n+40% to Cold Resistance\n+50 to maximum Mana'),
+    Amulet: parseItem('Item Class: Amulets\nRarity: Rare\nB\nSolar Amulet\n--------\n+12 to Spirit (implicit)\n--------\n+30% to Fire Resistance'),
+  };
+  const ring = parseItem('Item Class: Rings\nRarity: Rare\nC\nIron Ring\n--------\n+10% to Cold Resistance\n+90 to maximum Mana\n+20% to Fire Resistance');
+  const ch = changeIfEquipped(eq, ring, ['Ring 1'], { resists: { fire: 70, cold: 80, lightning: 75, chaos: 0, cap: 75 }, gearScore: (it) => (it === ring ? 60 : 40) });
+  const cold = ch.res.find((r) => r.el === 'cold');
+  assert.deepStrictEqual([cold.from, cold.to, cold.under], [80, 50, true]);
+  const fire = ch.res.find((r) => r.el === 'fire');
+  assert.deepStrictEqual([fire.from, fire.to, fire.under], [70, 90, false]);
+  assert.ok(ch.warnings.some((w) => /Cold res drops below the cap/.test(w)));
+  assert.deepStrictEqual(ch.lines.find((l) => l.label === 'Mana'), { label: 'Mana', from: 50, to: 90, delta: 40 });
+  assert.deepStrictEqual(ch.overall, { from: 40, to: 50, delta: 10 });
+});
+
+test('"Better for my build" needs 2 of the slot\'s key stats, so one big minor roll can\'t carry junk', () => {
+  const { parseItem } = require('../src/core/parser');
+  const gear = require('../src/core/gearscore');
+  const stats = { result: [{ id: 'explicit', entries: [
+    { id: 'explicit.es_pct', text: '#% increased maximum Energy Shield', type: 'explicit' },
+    { id: 'explicit.minion_dmg', text: 'Minions deal #% increased Damage', type: 'explicit' },
+    { id: 'explicit.minion_dmg_hit', text: "Minions deal #% increased Damage if you've Hit Recently", type: 'explicit' },
+    { id: 'explicit.minion_speed', text: 'Minions have #% increased Attack Speed', type: 'explicit' },
+    { id: 'explicit.int', text: '+# to Intelligence', type: 'explicit' },
+  ] }] };
+  const ix = T.buildStatIndex(stats);
+  const jewel = parseItem('Item Class: Jewels\nRarity: Rare\nHonour Stone\nSapphire\n--------\nItem Level: 80\n--------\n12% increased maximum Energy Shield\nMinions deal 14% increased Damage\n+8 to Intelligence');
+  const q = T.buildGearQuery(jewel, { weights: gear.searchWeights('Jewel', { build: 'djinn-varashta' }), statIndex: ix });
+  const count = q.body.query.stats.find((g) => g.type === 'count');
+  assert.ok(count, 'count group');
+  assert.strictEqual(count.value.min, 2);
+  assert.ok(count.filters.some((f) => f.id === 'explicit.es_pct') && count.filters.some((f) => f.id === 'explicit.minion_dmg'));
+  assert.ok(!count.filters.some((f) => f.id === 'explicit.minion_dmg_hit'), 'conditional versions are not key stats');
+  const w = q.body.query.stats[0].filters;
+  assert.ok(w.find((f) => f.id === 'explicit.minion_dmg_hit').value.weight < w.find((f) => f.id === 'explicit.minion_dmg').value.weight, 'conditional weighs less');
+  assert.deepStrictEqual(q.body.sort, { 'statgroup.0': 'desc' });
+});
+
+test('resistances follow gear swaps and flag thin margins', () => {
+  const R = require('../src/core/resists');
+  const ch = require('../src/core/character');
+  const g = (o) => ({ stats: o });
+  const eq = { Gloves: g({ '#% to Cold Resistance': 45, '#% to Lightning Resistance': 39 }), Boots: g({ '#% to Cold Resistance': 37 }) };
+  const rec = R.snapshot({ fire: 78, cold: 112, lightning: 122, chaos: 11 }, eq, 'pob');
+  assert.strictEqual(R.live(rec, eq).lightning, 122);
+  const after = { ...eq, Gloves: g({ '#% to Cold Resistance': 29 }) };
+  const L = R.live(rec, after);
+  assert.strictEqual(L.lightning, 83); assert.strictEqual(L.cold, 96);
+  const r = ch.changeIfEquipped(eq, g({ '#% to Cold Resistance': 29 }), ['Gloves'], { resists: R.live(rec, eq) });
+  assert.ok(r.warnings.some((w) => /Lightning res would be only 8% over/.test(w)));
+  assert.ok(!r.warnings.some((w) => /Cold/.test(w)));
+});
+
+test('gear query can shrink for the trade site filter limit', () => {
+  const { parseItem } = require('../src/core/parser');
+  const gear = require('../src/core/gearscore');
+  const stats = { result: [{ id: 'explicit', entries: [
+    { id: 'explicit.es_pct', text: '#% increased maximum Energy Shield', type: 'explicit' },
+    { id: 'implicit.es_pct', text: '#% increased maximum Energy Shield', type: 'implicit' },
+    { id: 'explicit.minion_dmg', text: 'Minions deal #% increased Damage', type: 'explicit' },
+    { id: 'explicit.minion_dmg_hit', text: "Minions deal #% increased Damage if you've Hit Recently", type: 'explicit' },
+    { id: 'explicit.minion_speed', text: 'Minions have #% increased Attack Speed', type: 'explicit' },
+    { id: 'explicit.int', text: '+# to Intelligence', type: 'explicit' },
+  ] }] };
+  const ix = T.buildStatIndex(stats);
+  const jewel = parseItem('Item Class: Jewels\nRarity: Rare\nHonour Stone\nSapphire\n--------\nItem Level: 80\n--------\n12% increased maximum Energy Shield\nMinions deal 14% increased Damage\n+8 to Intelligence');
+  const w = gear.searchWeights('Jewel', { build: 'djinn-varashta' });
+  const n = (q) => q.body.query.stats.reduce((t, g) => t + g.filters.length, 0);
+  const big = T.buildGearQuery(jewel, { weights: w, statIndex: ix });
+  const mid = T.buildGearQuery(jewel, { weights: w, statIndex: ix, explicitOnly: true, maxFilters: 3, coreShare: 0 });
+  const small = T.buildGearQuery(jewel, { weights: w, statIndex: ix, countOnly: true, explicitOnly: true });
+  assert.ok(n(mid) <= 3 && n(mid) < n(big), `${n(mid)} vs ${n(big)}`);
+  assert.ok(!mid.body.query.stats[0].filters.some((f) => f.id.startsWith('implicit.')));
+  assert.strictEqual(small.body.query.stats.length, 1);
+  assert.strictEqual(small.body.query.stats[0].type, 'count');
+  assert.ok(small.countOnly && n(small) <= 5);
+  assert.deepStrictEqual(small.body.sort, { price: 'asc' });
 });
