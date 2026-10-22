@@ -193,6 +193,10 @@ Searches show their listings in a **results window** (always on top) instead of 
 - **Searches pace themselves** to the trade site's rate limits (read from its replies), so you don't get locked out for a minute.
 - **Settings → Startup:** start with Windows (quietly in the tray), and choose whether the main window opens on start.
 
+## Support
+
+Questions, bugs or ideas: email **[support@poe2upgrade.com](mailto:support@poe2upgrade.com)** or [open an issue](https://github.com/ets-public/poe2-upgrade-checker/issues). If F2 or a verdict looks wrong, attach the log (Tray → Open log) and, for a verdict, your pobb.in link.
+
 ## Hotkey & troubleshooting
 
 - Change the hotkey under **Settings → Hotkeys**. Click the box, press your keys, then click Save.
