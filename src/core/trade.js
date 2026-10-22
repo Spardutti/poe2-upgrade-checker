@@ -94,6 +94,35 @@ function matchStat(key, statIndex, opts) {
   return { kind: 'stat', id: best.id, text: best.text, type: best.type };
 }
 
+// Which "(Local)" stats really are local depends on the item: on weapons the attack stats
+// (accuracy, attack speed, crit, added damage, culling strike) apply to the weapon itself; on
+// armour pieces, shields and foci the defence stats (armour, evasion, ES, ward, block) do. On
+// anything else (gloves accuracy/attack speed, quivers, jewellery) the mod is global.
+const ARMOUR_CLASSES = ['helmets', 'body armours', 'gloves', 'boots', 'shields', 'foci', 'bucklers'];
+const WEAPON_CLASS = /\b(mace|sword|axe|bow|crossbow|quarterstaff|quarterstaves|staff|staves|warstaff|warstaves|wand|sceptre|spear|flail|dagger|claw|talisman)s?\b/i;
+const WEAPON_LOCAL = /Accuracy Rating|Attack Speed|Critical (Hit|Strike) Chance|Culling Strike|^Adds # to # \w+ Damage$|Physical Damage$|Reload Time/i;
+const DEFENCE_LOCAL = /Armour|Evasion|Energy Shield|Runic Ward|\bWard\b|Block/i;
+function itemKind(itemClass) {
+  const c = String(itemClass || '').toLowerCase().trim();
+  if (!c) return null;
+  if (ARMOUR_CLASSES.includes(c)) return 'armour';
+  if (c === 'quivers') return 'other';
+  if (WEAPON_CLASS.test(c)) return 'weapon';
+  return 'other';
+}
+// opts.preferLocal (the caller's "this is an armour/weapon piece") refined by the item class
+function localFor(key, itemClass, preferLocal) {
+  if (!preferLocal) return false;
+  const kind = itemKind(itemClass);
+  if (!kind) return true; // class unknown: keep the caller's choice
+  if (kind === 'weapon') return WEAPON_LOCAL.test(key);
+  if (kind === 'armour') return DEFENCE_LOCAL.test(key) && !/Recharge|Allies|Minion/i.test(key);
+  return false;
+}
+
+// Stats where a smaller (or negative) value is the better one.
+const LOWER_BETTER = /Attribute Requirements|Mana Cost|Life Cost|Cost of Skills|Charges? (used|consumed)|Reservation(?! Efficiency)|Reload Time/i;
+
 // 'exclude' rules: listings that have any of these stats are left out.
 function addExcludeGroup(query, rules, statIndex) {
   const ids = [];
@@ -135,21 +164,27 @@ function buildQuery(picks, opts) {
   const equipment = {};
   const unmatched = [];
   for (const p of picks) {
-    let m = p.id ? { kind: 'stat', id: p.id, type: p.idType } : matchStat(p.key, opts.statIndex, { preferLocal: opts.preferLocal });
+    const preferLocal = localFor(p.key, opts.itemClass, opts.preferLocal);
+    let m = p.id ? { kind: 'stat', id: p.id, type: p.idType } : matchStat(p.key, opts.statIndex, { preferLocal });
     if (!p.id && m && m.kind === 'stat' && m.type !== 'pseudo' && p.source) {
       const type = p.source === 'implicit' ? 'implicit' : p.source === 'socket' ? 'augment' : 'explicit';
-      m = matchStat(p.key, opts.statIndex, { preferLocal: opts.preferLocal, type }) || m;
+      m = matchStat(p.key, opts.statIndex, { preferLocal, type }) || m;
     }
     if (!m) { unmatched.push(p.key); continue; }
     const value = {};
     if (p.min !== '' && p.min != null && Number.isFinite(Number(p.min))) value.min = Number(p.min);
     if (p.max !== '' && p.max != null && Number.isFinite(Number(p.max))) value.max = Number(p.max);
-    if (m.kind === 'equipment') equipment[m.id] = value;
+    if (m.kind === 'equipment') {
+      if (value.min != null && !(value.min > 0)) delete value.min; // "at least 0 DPS" means nothing
+      if (Object.keys(value).length) equipment[m.id] = value;
+    }
     else statFilters.push({ id: m.id, value, disabled: false });
   }
 
   const filters = {};
-  if (!opts.matchBase) {
+  // "same base type" needs a base name; magic items have none, so keep the item class then
+  const byBase = !!(opts.matchBase && opts.baseType);
+  if (!byBase) {
     const cat = categoryFor(opts.itemClass, opts.filtersData);
     if (cat) filters.type_filters = { filters: { category: { option: cat } } };
   }
@@ -160,7 +195,7 @@ function buildQuery(picks, opts) {
     stats: [{ type: 'and', filters: statFilters }],
     filters,
   };
-  if (opts.matchBase && opts.baseType) query.type = opts.baseType;
+  if (byBase) query.type = opts.baseType;
   if (!statFilters.length) query.stats = [];
   const excluded = addExcludeGroup(query, opts.ignoreRules, opts.statIndex);
 
@@ -187,7 +222,7 @@ function buildUpgradeQuery(item, weights, opts) {
       }
       continue;
     }
-    const m = matchStat(key, opts.statIndex, { preferLocal: opts.preferLocal });
+    const m = matchStat(key, opts.statIndex, { preferLocal: localFor(key, opts.itemClass || item.itemClass, opts.preferLocal) });
     if (!m) { if (item.stats[key]) unmatched.push(key); continue; }
     weightFilters.push({ id: m.id, value: { weight: w }, disabled: false });
     current += (natural[key] || 0) * w;
@@ -318,7 +353,14 @@ function statSources(item) {
     const source = SOCKET_TAGS.includes(l.tag) ? 'socket' : l.tag === 'implicit' ? 'implicit' : 'mod';
     for (const [k, v] of expand(l.key, l.value)) put(k, v, source);
   }
-  for (const [key, value] of Object.entries(item.stats || {})) if (key.startsWith('[')) put(key, value, 'base');
+  // stats with no mod line of their own (Mageblood's Legacies): count them as mods
+  const fromLines = new Map();
+  for (const x of acc.values()) fromLines.set(x.key, (fromLines.get(x.key) || 0) + x.value);
+  for (const [key, value] of Object.entries(item.stats || {})) {
+    if (key.startsWith('[')) { put(key, value, 'base'); continue; }
+    const rest = value - (fromLines.get(key) || 0);
+    if (Math.abs(rest) > 0.01) put(key, rest, 'mod');
+  }
   return Array.from(acc.values()).map((x) => ({ ...x, value: Math.round(x.value * 100) / 100 }));
 }
 
@@ -374,17 +416,21 @@ function buildSimilarQuery(item, opts) {
       continue;
     }
     if (source === 'socket') { skipped.push(key); continue; }
-    const m = matchStat(key, opts.statIndex, { preferLocal: opts.preferLocal });
+    const preferLocal = localFor(key, item.itemClass, opts.preferLocal);
+    const m = matchStat(key, opts.statIndex, { preferLocal });
     if (!m) { unmatched.push(key); continue; }
     if (m.type === 'pseudo') { pseudoTotals.set(m.id, (pseudoTotals.get(m.id) || 0) + value); continue; }
-    const typed = matchStat(key, opts.statIndex, { preferLocal: opts.preferLocal, type: source === 'implicit' ? 'implicit' : 'explicit' }) || m;
+    const typed = matchStat(key, opts.statIndex, { preferLocal, type: source === 'implicit' ? 'implicit' : 'explicit' }) || m;
     const existing = filters.find((f) => f.id === typed.id);
     if (existing) { existing._v += value; continue; }
-    filters.push({ id: typed.id, _v: value });
+    filters.push({ id: typed.id, _v: value, key });
   }
-  for (const [id, v] of pseudoTotals) filters.push({ id, _v: v });
+  for (const [id, v] of pseudoTotals) filters.push({ id, _v: v, key: id });
   const round = (x) => Math.round(x * 100) / 100;
-  const statFilters = filters.map((f) => {
+  // A downside (-10% to Chaos Resistance, +attribute requirements) isn't something a better item
+  // needs to have: only keep a stat in the direction that is good for it.
+  const wanted = filters.filter((f) => (LOWER_BETTER.test(f.key) ? f._v < 0 : f._v > 0));
+  const statFilters = wanted.map((f) => {
     const v = {};
     if (f._v > 0) v.min = round(f._v >= 3 ? Math.floor(f._v * level.tol) : f._v * level.tol);
     else if (f._v < 0) v.max = round(f._v * level.tol);
@@ -395,7 +441,10 @@ function buildSimilarQuery(item, opts) {
 
   const n = statFilters.length;
   const lastLevel = (opts.level || 0) >= RELAX.length - 1;
-  let need = Math.max(1, n - level.drop(n));
+  // a price check compares like with like: every stat at first, then at most one missing
+  // (a looser match is a different, usually cheaper item)
+  const drop = opts.forPrice ? Math.min(1, (opts.level || 0) === 0 ? 0 : level.drop(n)) : level.drop(n);
+  let need = Math.max(1, n - drop);
   if (unique && lastLevel) need = 0; // last try for a unique: just the name
   const qf = {};
   if (!unique) {
@@ -403,8 +452,17 @@ function buildSimilarQuery(item, opts) {
     if (cat) qf.type_filters = { filters: { category: { option: cat } } };
   }
   if (Object.keys(equipment).length) qf.equipment_filters = { filters: equipment };
+  if (opts.forPrice) {
+    // same rarity (a magic or normal base isn't priced like a rare) and the same corruption state
+    const rar = String(item.rarity || '').toLowerCase();
+    if (!unique && ['rare', 'magic', 'normal'].includes(rar)) {
+      qf.type_filters = qf.type_filters || { filters: {} };
+      qf.type_filters.filters.rarity = { option: rar };
+    }
+    qf.misc_filters = { filters: { corrupted: { option: item.corrupted ? 'true' : 'false' } } };
+  }
   const query = {
-    status: { option: statusOpt(opts.status) },
+    status: { option: opts.forPrice ? 'available' : statusOpt(opts.status) },
     stats: n && need > 0 ? [{ type: 'count', value: { min: need }, filters: statFilters }] : [],
     filters: qf,
   };
@@ -427,7 +485,7 @@ function buildCraftQuery(item, opts) {
   const filters = [];
   const unmatched = [];
   for (const t of opts.top || []) {
-    const m = matchStat(t.key, opts.statIndex, { preferLocal: opts.preferLocal });
+    const m = matchStat(t.key, opts.statIndex, { preferLocal: localFor(t.key, item.itemClass, opts.preferLocal) });
     if (!m || m.kind !== 'stat') { unmatched.push(t.key); continue; }
     const min = t.cap >= 5 ? Math.floor(t.cap * 0.55) : Math.max(1, Math.floor(t.cap * 0.5));
     filters.push({ id: m.id, value: { min }, disabled: false });
@@ -471,8 +529,9 @@ function priceFilter(budget) {
   // divine-priced listings in divines; small budgets (most such items are priced in exalts)
   // in exalts at the market rate.
   if (currency === 'divine' && max != null && max <= 2 && Number.isFinite(rate) && rate > 0) {
-    if (min != null) out.min = Math.ceil(min * rate);
-    out.max = Math.floor(max * rate);
+    // round both ends the same way so min <= max, and a tiny max is still at least 1 ex
+    out.max = Math.max(1, Math.round(max * rate));
+    if (min != null) out.min = Math.min(out.max, Math.max(1, Math.round(min * rate)));
     out.option = 'exalted';
     return out;
   }
@@ -484,7 +543,7 @@ function priceFilter(budget) {
 
 function applyBudget(body, budget) {
   const price = priceFilter(budget);
-  if (!price) return body;
+  if (!price || !body || !body.query) return body;
   body.query.filters = body.query.filters || {};
   body.query.filters.trade_filters = { filters: { price } };
   return body;
@@ -512,6 +571,6 @@ function prefilledUrl(league, body) {
 }
 
 module.exports = {
-  BASE, EQUIPMENT_FILTERS, CURRENCIES, priceFilter, applyBudget, budgetLabel, norm, buildStatIndex, matchStat, categoryFor, buildQuery, buildUpgradeQuery, buildGearQuery, buildSimilarQuery, buildCraftQuery, statSources, baseWithoutSockets, RELAX, STATUSES, statusOpt,
+  BASE, EQUIPMENT_FILTERS, localFor, LOWER_BETTER, CURRENCIES, priceFilter, applyBudget, budgetLabel, norm, buildStatIndex, matchStat, categoryFor, buildQuery, buildUpgradeQuery, buildGearQuery, buildSimilarQuery, buildCraftQuery, statSources, baseWithoutSockets, RELAX, STATUSES, statusOpt,
   searchUrl, resultsUrl, prefilledUrl,
 };

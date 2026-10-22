@@ -5,9 +5,21 @@ const root = document.getElementById('root');
 // hidden, which is what stopped the popup from ever showing a second time.
 const report = () => window.api.resize(Math.ceil(root.getBoundingClientRect().height) + 8);
 
+// A re-render of the same item (settings changed, Path of Building answered) keeps
+// what you had open: More ▾ and any search message. A new item starts fresh.
+let shownId = null;
+let expanded = false;
 window.api.onResult((r) => {
+  const id = r && r.item ? r.item.id || r.item.name : null;
+  const same = id && id === shownId;
+  const msg = same ? root.querySelector('#findMsg') : null;
+  const msgHtml = msg ? msg.innerHTML : '';
+  if (!same) expanded = false;
+  shownId = id;
   try {
-    window.renderComparison(root, r, { closable: true, onResize: report });
+    window.renderComparison(root, r, { closable: true, onResize: report, expanded, onToggle: (open) => { expanded = open; } });
+    const m2 = root.querySelector('#findMsg');
+    if (m2 && msgHtml) m2.innerHTML = msgHtml;
   } catch (err) {
     root.innerHTML = '<div class="card"><div class="note"></div></div>';
     root.querySelector('.note').textContent = 'Popup error: ' + err.message;

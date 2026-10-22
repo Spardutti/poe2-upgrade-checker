@@ -119,13 +119,13 @@ function gearScore(item, opts) {
   if (!build || !item || !item.slot) return null;
   const slot = slotName(item.slot);
   if (['Charm', 'Life Flask', 'Mana Flask'].includes(slot)) {
-    return { score: null, grade: '–', unrated: 'type', slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions: [], wasted: [], missing: [] };
+    return { score: null, grade: '–', unrated: 'type', slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions: [], penalties: [], wasted: [], missing: [] };
   }
   if (item.unidentified) {
-    return { score: null, grade: '–', unrated: 'unidentified', slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions: [], wasted: [], missing: [] };
+    return { score: null, grade: '–', unrated: 'unidentified', slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions: [], penalties: [], wasted: [], missing: [] };
   }
   if (/unique/i.test(item.rarity || '')) {
-    return { score: null, grade: '–', unique: true, slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions: [], wasted: [], missing: [] };
+    return { score: null, grade: '–', unique: true, slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions: [], penalties: [], wasted: [], missing: [] };
   }
   const ignore = opts.ignore || (() => false);
   const entries = build.stats.filter((e) => pick(e.imp, slot) * ((opts.tweaks && opts.tweaks[e.label] != null) ? Number(opts.tweaks[e.label]) : 1) > 0);
@@ -153,9 +153,19 @@ function gearScore(item, opts) {
   const wasted = [];
   const used = new Set();
   const usedQ = new Map();
+  const penalties = [];
   for (const x of statSources(item)) {
-    if (!(x.value > 0)) continue;
+    if (!Number.isFinite(x.value) || x.value === 0) continue;
     if (ignore(x.key)) continue;
+    if (x.value < 0) {
+      // a downside on a stat the build wants ("-20% to Chaos Resistance") costs points
+      const e = usable.find((en) => en.test.test(x.key));
+      if (!e) continue;
+      const cap = pick(e.cap, slot) || 1;
+      const points = impOf(e) * Math.max(-1, x.value / cap) * (COND.test(x.key) ? 0.6 : 1);
+      penalties.push({ key: x.key, label: e.label, value: x.value, points: Math.round(points * 10) / 10, source: x.source });
+      continue;
+    }
     const e = usable.find((en) => en.test.test(x.key));
     if (!e) {
       const capped = entries.find((en) => en.res && en.test.test(x.key) && !usable.includes(en));
@@ -191,7 +201,7 @@ function gearScore(item, opts) {
     contributions.push({ key: x.key, label: e.label, value: x.value, quality: Math.round(quality * 100), points: Math.round(points * 10) / 10, source: x.source });
   }
   contributions.sort((a, b) => b.points - a.points);
-  const total = contributions.reduce((a, c) => a + c.points, 0);
+  const total = contributions.reduce((a, c) => a + c.points, 0) + penalties.reduce((a, c) => a + c.points, 0);
   const score = Math.max(0, Math.min(100, Math.round((100 * total) / ideal)));
   const missing = usable
     .filter((e) => !used.has(e))
@@ -199,7 +209,7 @@ function gearScore(item, opts) {
     .slice(0, 3)
     .filter((e) => impOf(e) >= 5)
     .map((e) => e.label);
-  return { score, grade: grade(score), slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions, wasted, missing, ideal: Math.round(ideal * 10) / 10, resNote: resNotes.join(' ') || null };
+  return { score, grade: grade(score), slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions, penalties, wasted, missing, ideal: Math.round(ideal * 10) / 10, resNote: resNotes.join(' ') || null };
 }
 
 // Is this stat something the build wants on this slot? (used to colour the

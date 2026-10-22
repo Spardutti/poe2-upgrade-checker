@@ -18,8 +18,9 @@
   const POB_SLOT = { Weapon: 'Weapon 1', Offhand: 'Weapon 2' };
 
   let busy = false;
+  let again = null; // a render asked for while one runs: do it straight after, not never
   async function render(refresh) {
-    if (busy) return;
+    if (busy) { again = again || !!refresh; return; }
     busy = true;
     const body = $('#charBody');
     try {
@@ -36,7 +37,10 @@
       body.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => document.querySelector(`.tabs button[data-tab="${b.dataset.goto}"]`).click()));
     } catch (err) {
       body.innerHTML = `<div class="card-p">Couldn't load your character: ${esc(err.message || err)}</div>`;
-    } finally { busy = false; }
+    } finally {
+      busy = false;
+      if (again !== null) { const r = again; again = null; render(r); }
+    }
   }
 
   function resBars(list, ci) {
@@ -160,7 +164,10 @@
     })) + (s.sockets && s.sockets.length ? `<h4 class="small">Jewel sockets on your tree</h4>${table(s.sockets.map((j) => row(j.label, j.jewel ? esc(j.jewel) : '<span class="neg">empty</span>')))}` : '')
       + '<div class="row"><button class="link" data-goto="gear">Change gear on My gear →</button></div>');
 
-    return `${hero}<div class="grid g-cards">${minionCard}${offence}${defence}${res}${maxHit}${resources}${misc}${gear}</div><div class="grid g-2 g-even"><div class="col">${skills}</div><div class="col">${tree}</div></div>`;
+    // three groups of related cards, each stacked without gaps: what you deal, what you survive,
+    // what you wear and how you're built
+    const stack = (cls, title, parts) => { const inner = parts.filter(Boolean).join(''); return inner ? `<section class="char-stack ${cls}"><h4 class="char-group">${esc(title)}</h4>${inner}</section>` : ''; };
+    return `${hero}<div class="char-cols">${stack('s-off', 'Offence', [minionCard, offence, skills])}${stack('s-def', 'Defence', [defence, res, maxHit, resources])}${stack('s-build', 'Gear & build', [gear, misc || tree ? `<div class="char-sub">${misc}${tree}</div>` : ''])}</div>`;
   }
 
   function noPobHtml(d, st) {

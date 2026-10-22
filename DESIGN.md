@@ -12,7 +12,8 @@ All of it lives in [`src/ui/style.css`](src/ui/style.css), which the popup, the 
 | `--abyss` | `#0a0c10` | Panel fill |
 | `--night` | `#13202e` | Moonlit atmosphere, only inside gradients (page tops, sidebar) |
 | `--iron` / `--iron-hi` / `--iron-lo` | `#2c3038` / `#474c55` / `#16191e` | Frame lines, button edges / bevel highlight / row rules |
-| `--bronze` | `#7a6545` | Inner frame line, nav text, table headers, links |
+| `--bronze` | `#7a6545` | Inner frame line and other bronze lines/borders (never small text: only 3.5:1 on black) |
+| `--bronze-text` | `#9c845b` | Bronze text: sidebar nav and character label, table headers, links (`button.link`), `summary`, `h4.small`, `.char-group` (5.5:1 on `--abyss`, 5.7:1 on `--void`, 4.6:1 on `--night`) |
 | `--gold` / `--gold-hi` | `#c9a463` / `#f1e4c2` | Filigree, the selected thing, focus / top of the heading gradient |
 | `--stone` | `#b6b6b6` | Body text |
 | `--bone` | `#e2e0db` | Values and strong text |
@@ -43,7 +44,7 @@ All of it lives in [`src/ui/style.css`](src/ui/style.css), which the popup, the 
 | Blood (`.primary`, `.find`) | Red gradient with a gold edge | The one main action of a view: Find upgrades in the popup, Better for my build, Import |
 | Gilded (`.primary.gilded`) | Iron with a gold edge and gold text | The main action on each of many repeated items: Travel to hideout / Copy whisper on result cards, Run on saved searches |
 | Iron (default) | Dark gradient, iron edge, gold on hover | Everything else |
-| Link (`.link`) | Bronze underlined text | Small asides: "on trade site ↗", "why?" |
+| Link (`.link`) | Bronze underlined text (`--bronze-text`) | Small asides: "on trade site ↗", "why?" |
 
 ## Rules
 

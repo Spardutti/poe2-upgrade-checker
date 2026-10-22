@@ -342,3 +342,30 @@ test('re-copying the same item does not move your resistance totals', () => {
   const ruby = { name: 'X', stats: { '#% to Maximum Fire Resistance': 5 } };
   assert.strictEqual(R.live(R.snapshot({ fire: 80 }, {}, 'game'), { Belt: ruby }).caps.fire, 80);
 });
+
+test('reminder text and unique flavour text are not stats', () => {
+  const adv = parseItem(['Item Class: Body Armours', 'Rarity: Rare', 'Grim Coat', "Expert Hexer's Robe", '--------', 'Energy Shield: 300', '--------',
+    '{ Suffix Modifier "of the Ice" (Tier: 1) }', '+2% to Maximum Cold Resistance', '(Maximum Resistances cannot be raised above 90%)',
+    '{ Prefix Modifier "Tough" }', '+40 to maximum Life', '(reminder text that runs', 'over 2 lines)'].join('\n'));
+  assert.deepEqual(Object.keys(adv.stats).sort(), ['# to maximum Life', '#% to Maximum Cold Resistance', '[Base] Energy Shield']);
+  const helm = parseItem(['Item Class: Helmets', 'Rarity: Unique', 'Crown of Eyes', 'Velvet Cap', '--------', 'Energy Shield: 60', '--------', '+20 to maximum Mana',
+    'Increases and Reductions to Spell damage also apply to Attacks', '--------', 'An eye for an eye', 'and 1000 more for the rest', '--------', 'Corrupted'].join('\n'));
+  assert.deepEqual(Object.keys(helm.stats).sort(), ['# to maximum Mana', '[Base] Energy Shield']);
+  assert.equal(helm.corrupted, true);
+  // a unique's last mod block (no flavour, e.g. from the trade site) is kept
+  const amu = parseItem(['Item Class: Amulets', 'Rarity: Unique', 'X', 'Gold Amulet', '--------', '+15 to Dexterity (implicit)', '--------', '+100 to maximum Life', 'Cannot be Frozen'].join('\n'));
+  assert.equal(amu.stats['# to maximum Life'], 100);
+  // Mageblood with flavour text still gets its Legacies
+  const mb = parseItem(['Item Class: Belts', 'Rarity: Unique', 'Mageblood', 'Rawhide Belt', '--------', 'Has 3 Charm Slots (implicit)', '--------', 'Legacy of Ruby', '--------', 'Rivers of power flow', 'through the veins of the ancient Vaal.'].join('\n'));
+  assert.equal(mb.stats['#% to Fire Resistance'], 60);
+});
+
+test('gear score: a downside on a wanted stat costs points', () => {
+  const { gearScore } = require('../src/core/gearscore');
+  const mk = (chaos) => parseItem(['Item Class: Body Armours', 'Rarity: Rare', 'A', 'B', '--------', 'Armour: 500', '--------', '+80 to maximum Life', '+30% to Fire Resistance', ...(chaos ? [chaos] : [])].join('\n'));
+  const none = gearScore(mk(null), {}); const neg = gearScore(mk('-20% to Chaos Resistance'), {});
+  assert.ok(neg.score < none.score, `${neg.score} < ${none.score}`);
+  assert.equal(neg.penalties[0].label, 'Chaos res');
+  assert.ok(neg.penalties[0].points < 0);
+  assert.ok(gearScore(mk('-500% to Chaos Resistance'), {}).score >= 0);
+});

@@ -11,6 +11,7 @@
   };
 
   function label(key, diff) {
+    key = String(key).replace(/^\[Base\]\s*/, '').replace(/\s*\(Local\)\s*$/i, ''); // internal tags, not game text
     if (!key.includes('#')) return `${fmt(diff)} ${key}`;
     let first = true;
     // "+# to x" style keys: put the signed diff in the first #, leave other #s as "…"
@@ -57,7 +58,10 @@
       else t += ' Untick a stat or lower some minimums.';
     } else {
       t = `${res.inApp ? 'Showing in the results window' : res.opened ? 'Opened in your browser' : 'Search ready'} (${where})${res.total != null ? ` – ${res.total} listing${res.total === 1 ? '' : 's'}` : ''}.`;
-      if (res.mode === 'price' && res.summary) t = `Worth about ${res.summary.typical} (cheapest ${res.summary.cheapest}, ${res.total} similar listed). `;
+      if (res.mode === 'price' && res.summary) {
+        const sm = res.summary;
+        t = `${sm.verdict || ''} ${sm.cheapest && sm.typical ? `Cheapest ${sm.cheapest}. ` : ''}${res.total} similar listed.${sm.notes && sm.notes.length ? ` Note: ${sm.notes.join('; ')}.` : ''}`;
+      }
       if (res.mode === 'price' && res.level > 0) t += ` Compared with ${res.levelLabel}.`;
       if (res.mode === 'craft' && res.keyStats) t += ` Rare bases with ${res.keyStats.join(' + ')} and an open affix to craft.`;
       if (res.mode === 'similar' && res.of) {
@@ -137,7 +141,7 @@
     const dl = (label, d) => (d ? `<span class="cc ${d.delta > 0 ? 'pos' : 'neg'}">${label} ${n(d.from)} → <b>${n(d.to)}</b></span>` : '');
     const dmgName = p.dpsKey === 'MinionDPS' ? 'Minion DPS' : 'DPS';
     const head = `<span class="pob-tag" title="Calculated by Path of Building with your build">PoB</span>
-      <span class="pob-main">${dmgName} ${pc(p.dps && p.dps.pct)} · Effective HP ${pc(p.ehp && p.ehp.pct)}${p.resFirst && p.resGain ? ` · <span title="Resistance points toward your cap (Priorities: cap resistances first)">res toward cap <b class="${p.resGain > 0 ? 'pos' : 'neg'}">${p.resGain > 0 ? '+' : '−'}${Math.abs(p.resGain)}</b></span>` : ''}</span>`;
+      <span class="pob-main">${p.noDamage ? `<span class="dim" title="Your main skill in Path of Building deals no damage. Set your damage skill as the main skill in PoB and import again.">no damage to compare</span>` : `${dmgName} ${pc(p.dps && p.dps.pct)}`} · Effective HP ${pc(p.ehp && p.ehp.pct)}${p.resFirst && p.resGain ? ` · <span title="Resistance points toward your cap (Priorities: cap resistances first)">res toward cap <b class="${p.resGain > 0 ? 'pos' : 'neg'}">${p.resGain > 0 ? '+' : '−'}${Math.abs(p.resGain)}</b></span>` : ''}</span>`;
     const res = (p.res || []).filter((r) => r.capped !== r.wasCapped || !r.capped || Math.round(r.from) !== Math.round(r.to)).map((r) => {
       const bad = r.wasCapped && !r.capped; const good = !r.wasCapped && r.capped;
       return `<span class="cc ${bad || (!r.capped && r.to < r.from) ? 'neg warn' : good || r.to > r.from ? 'pos' : 'dim'}">${esc(r.el)} res ${Math.round(r.from)}% → <b>${Math.round(r.to)}%</b>${bad ? ' ⚠ off the cap' : good ? ' ✓ capped' : !r.capped ? ' (under cap)' : ''}</span>`;
@@ -179,8 +183,12 @@
           <span class="vchip up">SMALL UPGRADE</span> +3 to +5 ·
           <span class="vchip same">SIDEGRADE</span> within 2 ·
           <span class="vchip down">DOWNGRADE</span> −3 or worse ·
-          <span class="vchip risky">UPGRADE, BUT…</span> better, but it costs Spirit, drops a resistance below the cap, or loses minion levels.</li>
-        <li><b>It isn't a damage calculator.</b> It doesn't know your passive tree or skill gems. Check <b>If you equip it</b> under each listing for what changes on your character${opts.where ? `, and tune what each stat is worth on the ${opts.where}` : ''}.</li>
+          <span class="vchip risky">UPGRADE, BUT…</span> better, but it costs Spirit, drops a resistance below the cap, or loses minion levels ·
+          <span class="vchip down">LOSES RESISTANCE</span> a resistance drops off the cap, or further under it ·
+          <span class="vchip down">LOSES DAMAGE</span> your damage drops (when <i>Never lose damage</i> is on); both go to the bottom of the results.</li>
+        ${opts.pobOn
+    ? `<li><b>The verdicts use your whole build.</b> Path of Building knows your passive tree, skill gems and Configuration, so the verdict and the PoB line under each listing show the real change to your damage, effective HP and resistances${opts.where ? `. The gear score is tuned on the ${opts.where}` : ''}.</li>`
+    : `<li><b>It isn't a damage calculator.</b> It doesn't know your passive tree or skill gems. Check <b>If you equip it</b> under each listing for what changes on your character${opts.where ? `, and tune what each stat is worth on the ${opts.where}` : ''}. Add your Path of Building build on My gear for exact verdicts.</li>`}
       </ul></div>`;
   };
 

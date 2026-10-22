@@ -205,8 +205,9 @@ Searches show their listings in a **results window** (always on top) instead of 
 
 For PoE2 running through **Steam with Proton** (or Lutris/Heroic) on desktop Linux: Ubuntu, Fedora, Arch, Bazzite and so on, on X11 or Wayland.
 
-1. Download **`PoE2-Upgrade-Checker-x.y.z.AppImage`** from the [latest release](https://github.com/ets-public/poe2-upgrade-checker/releases/latest).
-2. Make it executable and run it: right-click → Properties → *Allow executing as program*, or `chmod +x PoE2-Upgrade-Checker-*.AppImage && ./PoE2-Upgrade-Checker-*.AppImage`. It **updates itself** like the Windows installer.
+1. Download **`PoE2-Upgrade-Checker.AppImage`** from the [latest release](https://github.com/ets-public/poe2-upgrade-checker/releases/latest) and put it where you want to keep it (e.g. `~/Applications`).
+2. Make it executable and run it: right-click → Properties → *Allow executing as program*, or `chmod +x PoE2-Upgrade-Checker.AppImage && ./PoE2-Upgrade-Checker.AppImage`. It **updates itself** like the Windows installer, in place: the file keeps its name, so shortcuts and *Start with your desktop* keep working.
+   - Had a version-named file from 0.4.1 or older (`PoE2-Upgrade-Checker-0.4.1.AppImage`)? Its next update renames it to `PoE2-Upgrade-Checker.AppImage` once: start it from the new name (that also fixes the autostart entry) and update any shortcut you made.
    - Some distros need FUSE for AppImages (e.g. `sudo apt install libfuse2` on Ubuntu 22.04+).
 3. In PoE2 use **Windowed Fullscreen**, hover an item and press **F2**.
 

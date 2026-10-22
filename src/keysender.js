@@ -164,7 +164,12 @@ X.XSetInputFocus.argtypes = [c_void_p, Window, c_int, c_ulong]
 X.XRaiseWindow.argtypes = [c_void_p, Window]
 
 KC = lambda sym: X.XKeysymToKeycode(d, sym)
-CTRL, ALT, SHIFT, C = KC(0xffe3), KC(0xffe9), KC(0xffe1), KC(0x0063)
+CTRL, ALT, C = KC(0xffe3), KC(0xffe9), KC(0x0063)
+def codes(*syms):
+    return [k for k in dict.fromkeys(KC(s) for s in syms) if k]
+SHIFTS = codes(0xffe1, 0xffe2)                                   # Shift_L, Shift_R
+ALTGR = codes(0xfe03)                                            # ISO_Level3_Shift (AltGr)
+ALTS = [k for k in codes(0xffe9, 0xffea) if k not in ALTGR]      # Alt_L, Alt_R
 GAME_HINTS = ('pathofexile', 'steam_app_2694490')  # PoE2's window class under Proton (Steam app 2694490)
 
 def prop(w, name):
@@ -243,9 +248,10 @@ def held(code):
     return (ord(km[code // 8]) >> (code % 8)) & 1
 
 MODS = set(KC(k) for k in (0xffe1, 0xffe2, 0xffe3, 0xffe4, 0xffe9, 0xffea, 0xffeb, 0xffec, 0xfe03))
-def wait_hotkey_released(timeout=1.5):
+def wait_hotkey_released(timeout=4.0):
     # X11 grabs the whole keyboard while the hotkey is held down: keys sent meanwhile go to this app,
-    # not the game. Wait until only modifiers (or nothing) are down.
+    # not the game. Wait until only modifiers (or nothing) are down (a slow release of the hotkey is
+    # normal, so give it a few seconds before giving up).
     end = time.time() + timeout
     while time.time() < end:
         km = (ctypes.c_char * 32)(); X.XQueryKeymap(d, km)
@@ -275,9 +281,12 @@ def prepare(app_pid, nudge):
     return 'fg=%s;over=%s%s' % (fg_name, under_name, extra)
 
 def copy(advanced):
-    if held(SHIFT): key(SHIFT, False)
-    alt = held(ALT)
-    if alt and not advanced: key(ALT, False)
+    for k in SHIFTS + ALTGR:                       # let go of Shift (either) and AltGr
+        if held(k): key(k, False)
+    alts = [k for k in ALTS if held(k)]
+    alt = bool(alts)
+    if alt and not advanced:                       # let go of Alt (from an Alt+ hotkey); advanced copy keeps it
+        for k in alts: key(k, False)
     key(CTRL, True); time.sleep(0.015)
     if advanced and not alt: key(ALT, True); time.sleep(0.015)
     key(C, True); time.sleep(0.04); key(C, False); time.sleep(0.015)
@@ -368,7 +377,10 @@ class KeySender {
     if (!this.supported) return false;
     if (this.mode === 'xdotool') {
       return new Promise((resolve) => {
-        const p = spawn('xdotool', ['key', '--clearmodifiers', advanced ? 'ctrl+alt+c' : 'ctrl+c'], { stdio: 'ignore' });
+        // X11 grabs the keyboard while the hotkey is still held, so a key sent meanwhile goes to this
+        // app, not the game: wait a moment for the hotkey to be let go (xdotool can't tell us when),
+        // then send it with any held modifiers (Shift/Alt from the hotkey) cleared
+        const p = spawn('xdotool', ['sleep', '0.35', 'key', '--clearmodifiers', advanced ? 'ctrl+alt+c' : 'ctrl+c'], { stdio: 'ignore' });
         p.on('error', () => resolve(false)); p.on('exit', (c) => resolve(c === 0 ? 'fg=?;over=?' : false));
       });
     }
@@ -378,7 +390,8 @@ class KeySender {
     for (let t = 0; !this.ready && this.proc && t < 6000; t += 50) await new Promise((r) => setTimeout(r, 50));
     if (!this.ready || !this.proc) { this.log('keysender: not ready'); return false; }
     return new Promise((resolve) => {
-      const t = setTimeout(() => { this.log('keysender: no answer'); resolve(false); }, 2500);
+      // Linux: the helper first waits (up to 4 s) for the hotkey to be let go
+      const t = setTimeout(() => { this.log('keysender: no answer'); resolve(false); }, this.mode === 'python' ? 5500 : 2500);
       this.waiters.push((ok) => { clearTimeout(t); resolve(ok); });
       try { this.proc.stdin.write(`${advanced ? 'advanced' : 'copy'} ${process.pid}${opts.nudge ? ' nudge' : ''}\n`); } catch (_) { clearTimeout(t); resolve(false); }
     });
@@ -387,6 +400,7 @@ class KeySender {
   // Linux without Python's X11/XTest access: xdotool if it's installed, else nothing (you press
   // Ctrl+C yourself and the app reads the clipboard)
   fallbackLinux(why) {
+    if (/ENOENT/.test(String(why))) why = "python3 isn't installed";
     try { require('child_process').execFileSync('xdotool', ['--version'], { stdio: 'ignore' }); this.mode = 'xdotool'; this.log('keysender: using xdotool (' + why + ')'); } catch (_) {
       this.mode = 'none'; this.supported = false;
       this.unavailable = `Can't send Ctrl+C to the game here (${why}). Press Ctrl+C on the item yourself – the app reads it from the clipboard – or install xdotool.`;

@@ -54,7 +54,7 @@ jobs:
               if (on) out.push(l);
             }
             const notes = out.join("\n").trim() || "Fixes and improvements.";
-            const head = "## Download\n\n- **`PoE2-Upgrade-Checker-Setup-" + v + ".exe`**: installs for your user (no admin) and **updates itself**. Recommended.\n- `PoE2-Upgrade-Checker-Portable-" + v + ".exe`: no install, no auto-update.\n\nWindows may say the app is unrecognised (it isn\x27t code-signed): click *More info → Run anyway*. In PoE2, use **Windowed Fullscreen**.\n\n**Linux (experimental):** `PoE2-Upgrade-Checker-" + v + ".AppImage` for the game under Steam/Proton. `chmod +x` it and run it. See the README\x27s Linux section.\n\n## What\x27s new\n\n";
+            const head = "## Download\n\n- **`PoE2-Upgrade-Checker-Setup-" + v + ".exe`**: installs for your user (no admin) and **updates itself**. Recommended.\n- `PoE2-Upgrade-Checker-Portable-" + v + ".exe`: no install, no auto-update.\n\nWindows may say the app is unrecognised (it isn\x27t code-signed): click *More info → Run anyway*. In PoE2, use **Windowed Fullscreen**.\n\n**Linux (experimental):** `PoE2-Upgrade-Checker.AppImage` for the game under Steam/Proton. `chmod +x` it and run it; it updates itself in place. See the README\x27s Linux section.\n\n## What\x27s new\n\n";
             fs.writeFileSync("notes.md", head + notes + "\n\nFull guide: [README](https://github.com/" + process.env.GITHUB_REPOSITORY + "#readme)\n");
           ' "$VER"
           gh release edit "v$VER" --title "$VER" --notes-file notes.md

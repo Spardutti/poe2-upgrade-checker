@@ -100,3 +100,17 @@ test('an item that costs a big part of your minion damage is LOSES DAMAGE, even 
   // switched off: back to the old score-based verdict
   assert.notStrictEqual(V.judge(base, after, { ignoreChaos: true, priorities: { keepDmg: false } }).verdict, 'dmgloss');
 });
+
+test('pob verdict: no damage now, the new item adds minion damage: counts it, same number both sides', () => {
+  const V = require('../src/core/pobverdict');
+  const j = V.judge({ FullDPS: 0, MinionDPS: 0, TotalDPS: 0, TotalEHP: 1000 }, { FullDPS: 0, MinionDPS: 5000, TotalDPS: 0, TotalEHP: 1000 });
+  assert.strictEqual(j.dpsKey, 'MinionDPS');
+  assert.ok(j.score > 0);
+  assert.strictEqual(j.noDamage, false);
+});
+
+test('pob verdict: a main skill with no damage on both sides is flagged', () => {
+  const V = require('../src/core/pobverdict');
+  const j = V.judge({ TotalDPS: 0, TotalEHP: 1000 }, { TotalDPS: 0, TotalEHP: 1100 });
+  assert.strictEqual(j.noDamage, true);
+});

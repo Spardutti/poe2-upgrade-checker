@@ -48,7 +48,10 @@ function judge(before, after, opts = {}) {
   if (!before || !after) return null;
   const pr = { ...DEFAULT_PRIORITIES, ...(opts.priorities || {}) };
   const wDmg = opts.damageWeight == null ? 0.6 : opts.damageWeight;
-  const key = dpsKey(before);
+  // the number this build is judged on: from your gear now, or from the new item when you do no damage
+  // now (e.g. your weapon can't use the skill), so both sides are always the same number
+  const kb = dpsKey(before);
+  const key = dpsOf(before, kb) > 0 ? kb : dpsKey(after);
   const dpsA = dpsOf(before, key); const dpsB = dpsOf(after, key);
   // from no damage to some (e.g. your weapon couldn't use the skill): count it as a big gain
   let dpsPct = pct(dpsA, dpsB);
@@ -102,6 +105,7 @@ function judge(before, after, opts = {}) {
     resGain: Math.round(resGain), resFirst: !!pr.resFirst, resLoss, resCapped, dmgLoss,
     // for sorting: 2 caps a resistance you're short of, 1 adds toward the cap, 0 no change, -1 loses resistance or damage
     resRank: resLoss.length || dmgLoss ? -1 : resCapped.length ? 2 : resGain > 0 ? 1 : 0,
+    noDamage: !(dpsA > 0) && !(dpsB > 0), // PoB's main skill deals no damage: damage changes can't be judged
     dpsKey: key, dps: { from: dpsA, to: dpsB, pct: dpsPct == null ? null : Math.round(dpsPct * 10) / 10 },
     ehp: { from: n(before.TotalEHP), to: n(after.TotalEHP), pct: ehpPct == null ? null : Math.round(ehpPct * 10) / 10 },
     es: delta('EnergyShield'), life: delta('Life'), mana: delta('Mana'), spirit: delta('Spirit'), spiritFree: delta('SpiritUnreserved'),

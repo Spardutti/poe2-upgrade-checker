@@ -61,8 +61,8 @@ dofile("HeadlessWrapper.lua")
 starting = false
 io.read = rawRead
 local dkjson = require("dkjson")
-if not build or (__mainObject__ and __mainObject__.promptMsg) then
-  local msg = tostring(__mainObject__ and __mainObject__.promptMsg or table.concat(recent, "\n"))
+if not build or (mainObject and mainObject.promptMsg) then
+  local msg = tostring(mainObject and mainObject.promptMsg or table.concat(recent, "\n"))
   msg = msg:gsub("%^%d", ""):gsub("%^x%x%x%x%x%x%x", "")
   out:write("@@", dkjson.encode({ ready = false, error = msg }), "\n"); out:flush()
   os.exit(1)
@@ -105,11 +105,18 @@ local function makeItem(text)
   return nil
 end
 
+-- a build set to weapon set II keeps its active weapons in PoB's "Weapon 1 Swap"/"Weapon 2 Swap" slots
+local function pobSlot(name)
+  local set = build.itemsTab.activeItemSet
+  if name and name:match("^Weapon [12]$") and set and set.useSecondWeaponSet then return name .. " Swap" end
+  return name
+end
+
 local SLOTS = { "Weapon 1", "Weapon 2", "Helmet", "Body Armour", "Gloves", "Boots", "Amulet", "Ring 1", "Ring 2", "Belt" }
 local function gearNames()
   local g = {}
   for _, name in ipairs(SLOTS) do
-    local slot = build.itemsTab.slots[name]
+    local slot = build.itemsTab.slots[pobSlot(name)]
     local it = slot and slot.selItemId and build.itemsTab.items[slot.selItemId]
     if it then g[name] = it.title or it.name end
   end
@@ -121,7 +128,7 @@ local function equip(list)
   local done = {}
   for _, e in ipairs(list or {}) do
     local item = makeItem(e.text)
-    local slot = build.itemsTab.slots[e.slot]
+    local slot = build.itemsTab.slots[pobSlot(e.slot)]
     if item and slot then
       build.itemsTab:AddItem(item, true)
       slot:SetSelItemId(item.id)
@@ -273,7 +280,17 @@ local function evalItems(items)
         if #multi == 0 then return { ok = false, error = "You have no allocated jewel socket this jewel fits" } end
         return { ok = true, slot = slot, before = pick(base), multi = multi }
       end
-      local new_ = calcFunc({ repSlotName = slot, repItem = item })
+      local pslot = pobSlot(slot)
+      -- PoB empties the offhand itself for most two-handers, but not crossbows or quarterstaves
+      local off, offId
+      local info = item.base and data.weaponTypeInfo[item.base.type]
+      if pslot:match("^Weapon 1") and info and not info.oneHand and (item.base.type == "Crossbow" or item.base.type == "Warstaff" or item.base.type == "Fishing Rod") then
+        off = build.itemsTab.slots[pslot:gsub("^Weapon 1", "Weapon 2")]
+        if off then offId = off.selItemId; off.selItemId = 0 end
+      end
+      local okc, new_ = pcall(calcFunc, { repSlotName = pslot, repItem = item })
+      if off then off.selItemId = offId end
+      if not okc then error(new_) end
       return { ok = true, slot = slot, before = pick(base), after = pick(new_) }
     end)
     res[i] = ok and r or { ok = false, error = tostring(r) }
@@ -286,7 +303,7 @@ end
 -- effective HP, then builds a weighted trade search from that.
 --   req: { slot = "Gloves", weights = { {stat="MinionCombinedDPS", weightMult=0.6}, ... }, maxPrice, maxPriceType }
 local function genQuery(req)
-  local slot = build.itemsTab.slots[req.slot]
+  local slot = build.itemsTab.slots[pobSlot(req.slot)]
   if not slot then return { ok = false, error = "unknown slot " .. tostring(req.slot) } end
   local gen = new("TradeQueryGenerator", { itemsTab = build.itemsTab })
   local result, err
@@ -322,7 +339,22 @@ while true do
   local id = req and req.id
   local ok, res = pcall(function()
     if req.cmd == "load" then
-      loadBuildFromXML(req.xml, req.name or "build")
+      local xml = tostring(req.xml or "")
+      if not xml:match("^%s*<%?xml[^>]*>%s*<PathOfBuilding2[%s>]") and not xml:match("^%s*<PathOfBuilding2[%s>]") then
+        if xml:match("<PathOfBuilding[%s>]") then return { ok = false, error = "That's a Path of Building build for Path of Exile 1. Export it from Path of Building 2 (PoE2) instead." } end
+        return { ok = false, error = "That isn't a Path of Building 2 build." }
+      end
+      -- PoB's XML reader quietly accepts a cut-off export as an empty character
+      if not xml:match("</PathOfBuilding2>%s*$") then return { ok = false, error = "That build looks cut off (the export code wasn't copied whole). Copy it again from Path of Building 2." } end
+      if mainObject then mainObject.promptMsg = nil end
+      loadBuildFromXML(xml, req.name or "build")
+      local msg = mainObject and mainObject.promptMsg
+      if msg then
+        mainObject.promptMsg = nil
+        msg = tostring(msg):gsub("%^%d", ""):gsub("%^x%x%x%x%x%x%x", "")
+        return { ok = false, error = "Path of Building couldn't load this build: " .. msg }
+      end
+      if not (build and build.spec and build.calcsTab and build.calcsTab.mainOutput) then return { ok = false, error = "Path of Building couldn't load this build." } end
       return summary()
     elseif req.cmd == "equip" then
       local done = equip(req.items)

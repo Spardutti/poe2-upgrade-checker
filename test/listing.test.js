@@ -70,3 +70,17 @@ test('mods sent as objects ({ description }) are read', () => {
   assert.ok(s.item.lines.some((l) => l.tag === 'implicit' && /Adds 1 to 4 Physical Damage/.test(l.text)));
   assert.ok(!s.item.listingText.includes('[object Object]'));
 });
+
+test('multi-line mod strings, odd mod fields and bad prices', () => {
+  const it = L.listingToItem({ item: { typeLine: 'Ruby Ring', explicitMods: ['+10% to Fire Resistance\n+10% to Cold Resistance', 5, null], implicitMods: 'nope', properties: 'x' } }, 'Rings');
+  assert.equal(it.stats['#% to Fire Resistance'], 10);
+  assert.equal(it.stats['#% to Cold Resistance'], 10);
+  assert.equal(Object.keys(it.stats).length, 2);
+  for (const amount of ['', null, undefined, 'abc', 0]) {
+    const s = L.summarise({ item: { typeLine: 'Ruby Ring' }, listing: { price: { amount, currency: 'divine' } } }, 'Rings', { divine: 300 });
+    assert.equal(s.priceText, 'no price', String(amount));
+    assert.equal(s.priceEx, null);
+    assert.equal(s.price, null);
+  }
+  assert.equal(L.formatPrice({ amount: 2, currency: 'Divine' }), '2 div');
+});

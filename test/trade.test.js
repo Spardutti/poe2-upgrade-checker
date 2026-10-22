@@ -370,3 +370,62 @@ test('gear query can shrink for the trade site filter limit', () => {
   assert.ok(small.countOnly && n(small) <= 5);
   assert.deepStrictEqual(small.body.sort, { price: 'asc' });
 });
+
+// --- review fixes ---
+const LSTATS = { result: [{ id: 'explicit', label: 'Explicit', entries: [
+  { id: 'explicit.acc', text: '+# to Accuracy Rating', type: 'explicit' },
+  { id: 'explicit.acc_local', text: '+# to Accuracy Rating (Local)', type: 'explicit' },
+  { id: 'explicit.as', text: '#% increased Attack Speed', type: 'explicit' },
+  { id: 'explicit.as_local', text: '#% increased Attack Speed (Local)', type: 'explicit' },
+  { id: 'explicit.ar', text: '#% increased Armour', type: 'explicit' },
+  { id: 'explicit.ar_local', text: '#% increased Armour (Local)', type: 'explicit' },
+  { id: 'explicit.chaos', text: '+#% to Chaos Resistance', type: 'explicit' },
+  { id: 'explicit.life', text: '+# to maximum Life', type: 'explicit' },
+  { id: 'explicit.attr', text: '#% increased Attribute Requirements', type: 'explicit' },
+] }] };
+const lidx = T.buildStatIndex(LSTATS);
+const { parseItem: parseI } = require('../src/core/parser');
+
+test('(Local) stats only where they are local for the item', () => {
+  const ids = (cls, stats) => {
+    const it = parseI(['Item Class: ' + cls, 'Rarity: Rare', 'A', 'B', '--------', ...stats].join('\n'));
+    return T.buildSimilarQuery(it, { statIndex: lidx, preferLocal: true }).body.query.stats[0].filters.map((f) => f.id).sort();
+  };
+  assert.deepEqual(ids('Gloves', ['+150 to Accuracy Rating', '12% increased Attack Speed', '30% increased Armour']), ['explicit.acc', 'explicit.ar_local', 'explicit.as']);
+  assert.deepEqual(ids('Quivers', ['+150 to Accuracy Rating', '12% increased Attack Speed']), ['explicit.acc', 'explicit.as']);
+  assert.deepEqual(ids('Bows', ['+150 to Accuracy Rating', '12% increased Attack Speed']), ['explicit.acc_local', 'explicit.as_local']);
+  assert.deepEqual(ids('Helmets', ['+150 to Accuracy Rating', '30% increased Armour']), ['explicit.acc', 'explicit.ar_local']);
+  // buildQuery uses the item class it is given
+  const q = T.buildQuery([{ key: '# to Accuracy Rating', min: 100 }], { itemClass: 'Gloves', statIndex: lidx, preferLocal: true });
+  assert.equal(q.body.query.stats[0].filters[0].id, 'explicit.acc');
+  assert.equal(T.localFor('# to Accuracy Rating', null, true), true); // unknown class: caller decides
+});
+
+test('"same stats or better" leaves out downsides', () => {
+  const it = parseI(['Item Class: Body Armours', 'Rarity: Rare', 'A', 'B', '--------', '+80 to maximum Life', '-10% to Chaos Resistance', '10% increased Attribute Requirements'].join('\n'));
+  const f = T.buildSimilarQuery(it, { statIndex: lidx }).body.query.stats[0].filters;
+  assert.deepEqual(f.map((x) => x.id).sort(), ['explicit.life']);
+  const it2 = parseI(['Item Class: Body Armours', 'Rarity: Rare', 'A', 'B', '--------', '+80 to maximum Life', '15% reduced Attribute Requirements'].join('\n'));
+  const f2 = T.buildSimilarQuery(it2, { statIndex: lidx }).body.query.stats[0].filters;
+  assert.deepEqual(f2.find((x) => x.id === 'explicit.attr').value, { max: -15 });
+});
+
+test('small divine budgets in exalts keep min <= max and max >= 1', () => {
+  assert.deepEqual(T.priceFilter({ min: 1, max: 1, currency: 'divine', divineRate: 312.7 }), { min: 313, max: 313, option: 'exalted' });
+  assert.deepEqual(T.priceFilter({ min: 0.5, max: 0.5, currency: 'divine', divineRate: 300.5 }), { min: 150, max: 150, option: 'exalted' });
+  assert.deepEqual(T.priceFilter({ max: 0.001, currency: 'divine', divineRate: 300 }), { max: 1, option: 'exalted' });
+});
+
+test('"same base type" without a base name falls back to the item class', () => {
+  const q = T.buildQuery([], { itemClass: 'Helmets', baseType: null, matchBase: true, statIndex: idx, filtersData: FILTERS }).body.query;
+  assert.equal(q.type, undefined);
+  assert.equal(q.filters.type_filters.filters.category.option, 'armour.helmet');
+});
+
+test('Mageblood Legacies are in statSources', () => {
+  const mb = parseI(['Item Class: Belts', 'Rarity: Unique', 'Mageblood', 'Rawhide Belt', '--------', 'Has 3 Charm Slots (implicit)', '--------', 'Legacy of Ruby', 'Legacy of Topaz'].join('\n'));
+  const src = T.statSources(mb);
+  assert.equal(src.find((x) => x.key === '#% to Fire Resistance').value, 60);
+  assert.equal(src.find((x) => x.key === '#% to Lightning Resistance').source, 'mod');
+  assert.equal(src.find((x) => x.key === 'Has # Charm Slots').source, 'implicit');
+});

@@ -33,7 +33,9 @@ function fetchPob() {
     return;
   }
   try { execFileSync('git', ['--version'], { stdio: 'ignore' }); } catch (_) {
-    console.error('Git is needed to download Path of Building: https://git-scm.com/download/win');
+    console.error(process.platform === 'win32' ? 'Git is needed to download Path of Building: https://git-scm.com/download/win'
+      : process.platform === 'darwin' ? 'Git is needed to download Path of Building: run xcode-select --install (or see https://git-scm.com/download/mac).'
+        : 'Git is needed to download Path of Building: install it with your package manager (e.g. sudo apt install git).');
     process.exit(1);
   }
   fs.rmSync(DEST, { recursive: true, force: true });

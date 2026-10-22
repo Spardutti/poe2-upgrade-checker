@@ -9,6 +9,7 @@ document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('cli
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + b.dataset.tab));
 }));
 
+let accountAt = 0; // when the sign-in status was last checked
 async function load() {
   state = await window.api.getState();
   renderSlots();
@@ -47,8 +48,10 @@ async function load() {
     ? `In game: hover an item and press <b>${esc(hs.accelerator)}</b>.<br>You can close this window; the app keeps running in the tray.`
     : `<span class="note">Hotkey isn't working: ${esc(hs.error || 'not registered')} – change it in Settings.</span>`;
   renderPob(false);
-  renderAccount();
+  if (Date.now() - accountAt > 30000) renderAccount(); // not on every change: it asks the trade site
   renderModeHints();
+  const le = $('#loadError');
+  if (le) { le.classList.toggle('hidden', !state.loadError); if (state.loadError) le.textContent = `Your settings file couldn't be read (${state.loadError}), so the app started with defaults. The old file was kept next to it as poe2-upgrade-checker.json.unreadable-…`; }
 }
 
 function summary(item) {
@@ -148,7 +151,14 @@ async function ensureTradeInfo(force) {
 }
 
 async function fillFindSlots(selected) {
-  recent = await window.api.recentItems();
+  // the same item copied several times shows once (the newest copy)
+  const all = await window.api.recentItems();
+  const texts = await Promise.all(all.map(async (r) => {
+    if (r.text != null) return r.text;
+    try { const f = await window.api.findRows({ itemId: r.id }); return f && f.item ? (f.item.lines || []).map((l) => l.text).join('\n') : ''; } catch (_) { return ''; }
+  }));
+  const seen = new Set();
+  recent = all.filter((r, i) => { const k = `${r.name}|${r.itemClass}|${texts[i]}`; if (seen.has(k)) return false; seen.add(k); return true; });
   const opts = state.slots.filter((s) => state.equipped[s])
     .map((s) => `<option value="${esc(s)}">Equipped ${esc(s)} – ${esc(state.equipped[s].name)}</option>`);
   recent.forEach((r, i) => opts.push(`<option value="item:${esc(r.id)}">${i === 0 ? 'Just copied' : 'Copied'}: ${esc(r.name)} (${esc(r.itemClass)})</option>`));
@@ -317,6 +327,7 @@ $('#importW').addEventListener('click', async () => {
 
 $('#testBtn').addEventListener('click', async () => {
   const text = $('#testText').value;
+  if (state && state.pobOn) $('#testResult').innerHTML = '<div class="card"><div class="note"><span class="spinner"></span> Checking with Path of Building…</div></div>';
   const r = await window.api.evaluateText(text);
   window.renderComparison($('#testResult'), r, { itemText: text, onChange: () => { load(); $('#testBtn').click(); } });
 });
@@ -346,8 +357,15 @@ function toAccelerator(e) {
   if (!parts.length && !/^F\d/.test(key)) return null; // plain letters would block typing everywhere
   return [...parts, key].join('+');
 }
-$('#hotkey').addEventListener('keydown', (e) => {
+// Tab / Shift+Tab move on as usual; Esc puts the saved key back and leaves the box
+function captureKeys(e, inp, saved, msg) {
+  if (e.key === 'Tab' && !e.ctrlKey && !e.altKey) return true;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.value = saved(); if (msg) msg.textContent = ''; inp.blur(); return true; }
   e.preventDefault();
+  return false;
+}
+$('#hotkey').addEventListener('keydown', (e) => {
+  if (captureKeys(e, $('#hotkey'), () => (state && state.settings.hotkey) || 'F2', $('#hotkeyMsg'))) return;
   const acc = toAccelerator(e);
   if (acc) { $('#hotkey').value = acc; $('#hotkeyMsg').textContent = 'Click Save to use it.'; }
   else if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) $('#hotkeyMsg').textContent = 'Use a modifier (Ctrl/Alt) plus a key, or an F-key.';
@@ -595,14 +613,16 @@ $('#buildSel').addEventListener('change', async () => { await window.api.setSett
 }));
 $('#colorblind').addEventListener('change', async () => { await window.api.setSetting('colorblind', $('#colorblind').checked); document.body.classList.toggle('cb', $('#colorblind').checked); });
 $('#resultsHotkey').addEventListener('keydown', (e) => {
-  e.preventDefault();
+  if (captureKeys(e, $('#resultsHotkey'), () => (state && state.settings.resultsHotkey) || 'Ctrl+Shift+D', $('#resultsHotkeyMsg'))) return;
   const acc = toAccelerator(e);
   if (acc) { $('#resultsHotkey').value = acc; $('#resultsHotkeyMsg').textContent = 'Click Save to use it.'; }
 });
 $('#resultsHotkeySave').addEventListener('click', async () => {
   await window.api.setSetting('resultsHotkey', $('#resultsHotkey').value.trim());
   const st = await window.api.getState();
-  $('#resultsHotkeyMsg').textContent = st.resultsHotkeyOk === false ? `Saved, but ${$('#resultsHotkey').value.trim()} couldn't be registered – another app may use it.` : 'Saved.';
+  const k = $('#resultsHotkey').value.trim();
+  const clash = k.toLowerCase() === String(st.settings.hotkey || 'F2').toLowerCase();
+  $('#resultsHotkeyMsg').textContent = clash ? `${k} is your item hotkey – pick a different key for the results window.` : st.resultsHotkeyOk === false ? `Saved, but ${k} couldn't be registered – another app may use it.` : 'Saved.';
 });
 document.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => document.querySelector(`.tabs button[data-tab="${b.dataset.goto}"]`).click()));
 window.api.onSettingsTab((tab) => {
@@ -643,9 +663,9 @@ const WIZ = [
       <p class="help"><b>Game setting:</b> set PoE2 to <b>Windowed Fullscreen</b> (Options → Graphics), or the popup can't show over the game.</p>`,
   },
   {
-    title: '1. Your build',
+    title: 'Your build',
     body: () => `<p><b>Best:</b> paste your <b>Path of Building</b> export (PoB2: Import/Export Build → Generate) or a pobb.in link. The app then judges every item with Path of Building's own calculations for <i>your</i> build – any class, any skill – and loads your gear.</p>
-      <div class="row"><input id="wizPob" class="grow" placeholder="https://pobb.in/…  or  eNrt…"><button id="wizPobBtn" class="primary">Import</button></div><div class="note" id="wizPobMsg"></div>
+      <div class="row"><input id="wizPob" class="grow" placeholder="https://pobb.in/…  or  eNrt…"><button id="wizPobBtn" class="primary gilded">Import</button></div><div class="note" id="wizPobMsg"></div>
       <p class="help">No PoB? Pick the closest profile for a rough gear score instead, and save your gear in the next steps:</p>
       <div class="row"><select id="wizBuild">${(state.builds || []).map((b) => `<option value="${esc(b.id)}" ${b.id === (state.settings.build || state.defaultBuild) ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}<option value="off">None – score by my own stat weights</option></select></div>
       <p class="help" id="wizBuildHelp"></p>`,
@@ -657,19 +677,19 @@ const WIZ = [
     },
   },
   {
-    title: '2. Your hotkey',
+    title: 'Your hotkey',
     body: () => `<p>Your check-item hotkey is <b>${esc((state.hotkeyStatus && state.hotkeyStatus.accelerator) || state.settings.hotkey || 'F2')}</b>${state.hotkeyStatus && state.hotkeyStatus.ok ? ' and it\'s working.' : ' – <span class="note">it isn\'t registered, change it in Settings.</span>'}</p>
       <p>Where should the popup appear?</p><div class="row"><select id="wizPos"><option value="cursor">Next to the mouse</option><option value="left">Left side of the screen</option><option value="right">Right side of the screen</option><option value="top">Top of the screen</option></select> <button id="wizTest">Show a test popup</button></div>
       <p class="help">If it covers the game's item tooltip, pick a side of the screen.</p>`,
     after: () => { $('#wizPos').value = state.settings.popupPosition || 'cursor'; $('#wizPos').addEventListener('change', async () => { await window.api.setSetting('popupPosition', $('#wizPos').value); }); $('#wizTest').addEventListener('click', () => window.api.testPopup()); },
   },
   {
-    title: '3. Your gear',
+    title: 'Your gear',
     body: () => `<p>${Object.keys(state.equipped || {}).length ? `You have <b>${Object.keys(state.equipped).length}</b> items saved.` : 'Save what you\'re wearing so the app can compare.'} In game, hover each equipped item, press the hotkey and click <b>Set as …</b> in the popup. Items you copy in game replace Path of Building's, so the app uses exactly what you wear.</p>
       <p class="help">The <b>My gear</b> tab shows a checklist. Also type your resistances from the character sheet there.</p>`,
   },
   {
-    title: "4. You're set",
+    title: "You're set",
     body: () => `<p>Try it: hover an item in game and press the hotkey.</p>
       <ul><li><b>Find upgrades</b> searches the trade site and shows listings scored for your build.</li><li><b>What's it worth?</b> prices loot.</li><li>Set your price range and stats to ignore on the <b>Find upgrades</b> page.</li></ul>`,
   },
@@ -678,13 +698,25 @@ function renderWiz() {
   const st = WIZ[wizStep];
   $('#wizTitle').textContent = st.title;
   $('#wizBody').innerHTML = st.body();
-  $('#wizStep').textContent = `${wizStep + 1} / ${WIZ.length}`;
+  $('#wizStep').textContent = `Step ${wizStep + 1} of ${WIZ.length}`;
   $('#wizBack').disabled = wizStep === 0;
   $('#wizNext').textContent = wizStep === WIZ.length - 1 ? 'Done' : 'Next';
   if (st.after) st.after();
 }
-function openWizard() { wizStep = 0; $('#wizard').classList.remove('hidden'); renderWiz(); }
-async function closeWizard() { $('#wizard').classList.add('hidden'); await window.api.setSetting('wizardDone', true); load(); }
+function openWizard() {
+  wizStep = 0; wizOpener = document.activeElement;
+  $('#wizard').classList.remove('hidden'); renderWiz();
+  const first = $('#wizBody').querySelector('input, select, textarea') || $('#wizNext');
+  first.focus();
+}
+let wizOpener = null;
+async function closeWizard() {
+  if ($('#wizard').classList.contains('hidden')) return;
+  $('#wizard').classList.add('hidden');
+  if (wizOpener && wizOpener.isConnected && wizOpener !== document.body) wizOpener.focus();
+  await window.api.setSetting('wizardDone', true); load();
+}
+$('#wizard').__cancel = closeWizard;
 $('#wizNext').addEventListener('click', () => { if (wizStep === WIZ.length - 1) closeWizard(); else { wizStep++; renderWiz(); } });
 $('#wizBack').addEventListener('click', () => { if (wizStep > 0) { wizStep--; renderWiz(); } });
 $('#wizClose').addEventListener('click', closeWizard);
@@ -696,13 +728,23 @@ async function renderProfiles() {
   const list = state.profiles || [];
   $('#profileSel').innerHTML = list.map((p) => `<option value="${esc(p.id)}" ${p.active ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
   $('#profileDelete').disabled = list.length < 2;
+  // switched character (here, from the tray or by creating one): drop the last one's PoB code and message
+  const act = (list.find((p) => p.active) || {}).id;
+  if (lastProfileId && act && act !== lastProfileId) clearPobBox();
+  lastProfileId = act || lastProfileId;
 }
-$('#profileSel').addEventListener('change', async () => { await window.api.switchProfile($('#profileSel').value); await load(); });
+let lastProfileId = null;
+// a PoB code or import message belongs to the character it was typed for
+function clearPobBox() { $('#pobInput').value = ''; $('#pobMsg').textContent = ''; }
+$('#profileSel').addEventListener('change', async () => { await window.api.switchProfile($('#profileSel').value); clearPobBox(); await load(); });
 $('#profileNew').addEventListener('click', async () => {
-  const name = await askText('Name for the new character', 'e.g. Witch league starter');
+  const name = await askText('Name for the new character', '', 'e.g. Witch league starter');
   if (!name) return;
-  const copy = await askYesNo('Start from a copy of this character\'s settings (build, weights, ignored stats)? Gear is copied too – you can replace it.');
-  await window.api.createProfile(name, copy);
+  const how = await askChoice(`<h2>New character: ${esc(name)}</h2><p>Copy this character's build, weights, ignored stats and gear (you can replace the gear), or start empty?</p>`,
+    [{ label: 'Copy this character', value: 'copy', cls: 'primary' }, { label: 'Start empty', value: 'empty' }, { label: 'Cancel', value: null }]);
+  if (!how) return;
+  await window.api.createProfile(name, how === 'copy');
+  clearPobBox();
   await load();
 });
 $('#profileRename').addEventListener('click', async () => {
@@ -712,24 +754,53 @@ $('#profileRename').addEventListener('click', async () => {
 });
 $('#profileDelete').addEventListener('click', async () => {
   const cur = (state.profiles || []).find((p) => p.active);
-  if (cur && await askYesNo(`Delete "${cur.name}" and its saved gear? This can't be undone.`)) { await window.api.deleteProfile(cur.id); await load(); }
+  if (cur && await askYesNo(`Delete "${cur.name}" and its saved gear? This can't be undone.`, 'Delete')) { await window.api.deleteProfile(cur.id); clearPobBox(); await load(); }
 });
 
-// tiny in-page dialogs (window.prompt isn't available in Electron)
-function dialog(html, onOk) {
+// tiny in-page dialogs (window.prompt isn't available in Electron).
+// buttons: [{ label, value, cls }]; a value that is a function gets the dialog element.
+// The first input (or button) gets focus, Tab stays inside, Esc = cancel (null).
+function dialog(html, buttons) {
   return new Promise((resolve) => {
+    const opener = document.activeElement;
     const m = document.createElement('div');
     m.className = 'modal';
-    m.innerHTML = `<div class="modal-box wizard-box">${html}<div class="row wiz-nav"><span class="grow"></span><button data-no>Cancel</button><button class="primary" data-ok>OK</button></div></div>`;
+    m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+    m.innerHTML = `<div class="modal-box wizard-box">${html}<div class="row wiz-nav"><span class="grow"></span>${buttons.map((b, i) => `<button data-btn="${i}" class="${esc(b.cls || '')}">${esc(b.label)}</button>`).join('')}</div></div>`;
     document.body.appendChild(m);
-    const done = (v) => { m.remove(); resolve(v); };
-    m.querySelector('[data-no]').addEventListener('click', () => done(null));
-    m.querySelector('[data-ok]').addEventListener('click', () => done(onOk(m)));
-    const inp = m.querySelector('input'); if (inp) { inp.focus(); inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') done(onOk(m)); if (e.key === 'Escape') done(null); }); }
+    const done = (v) => { m.remove(); if (opener && opener.isConnected && opener !== document.body) opener.focus(); resolve(v); };
+    const pick = (b) => done(typeof b.value === 'function' ? b.value(m) : b.value);
+    m.__cancel = () => done(null);
+    m.querySelectorAll('[data-btn]').forEach((el) => el.addEventListener('click', () => pick(buttons[Number(el.dataset.btn)])));
+    const ok = buttons.find((b) => /primary/.test(b.cls || ''));
+    const inp = m.querySelector('input');
+    if (inp) { inp.focus(); inp.select(); if (ok) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') pick(ok); }); } else m.querySelector('[data-btn]').focus();
   });
 }
-function askText(title, value) { return dialog(`<h2>${esc(title)}</h2><input class="grow wide" value="${esc(value || '')}">`, (m) => m.querySelector('input').value.trim() || null); }
-function askYesNo(text) { return dialog(`<p>${esc(text)}</p>`, () => true).then((v) => !!v); }
+function askText(title, value, placeholder) {
+  return dialog(`<h2>${esc(title)}</h2><input class="grow wide" value="${esc(value || '')}" placeholder="${esc(placeholder || '')}">`,
+    [{ label: 'Cancel', value: null }, { label: 'OK', cls: 'primary', value: (m) => m.querySelector('input').value.trim() || null }]);
+}
+function askYesNo(text, okLabel) { return dialog(`<p>${esc(text)}</p>`, [{ label: 'Cancel', value: null }, { label: okLabel || 'OK', cls: 'primary', value: true }]).then((v) => !!v); }
+function askChoice(html, buttons) { return dialog(html, buttons); }
+
+// every open dialog (this file's, the setup guide, the stat database): Esc closes the top one, Tab stays inside it
+const FOCUSABLE = 'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])';
+function topModal() { return [...document.querySelectorAll('.modal')].filter((m) => !m.classList.contains('hidden')).pop() || null; }
+document.addEventListener('keydown', (e) => {
+  const m = topModal();
+  if (!m) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (m.__cancel) m.__cancel(); else m.classList.add('hidden');
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const f = [...m.querySelectorAll(FOCUSABLE)].filter((x) => !x.disabled && x.getClientRects().length);
+  if (!f.length) { e.preventDefault(); return; }
+  const i = f.indexOf(document.activeElement);
+  if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); } else if (!e.shiftKey && (i === -1 || i === f.length - 1)) { e.preventDefault(); f[0].focus(); }
+}, true);
 
 // ---------- Path of Building ----------
 $('#pobImport').addEventListener('click', async () => {
@@ -785,7 +856,7 @@ function renderPriorities() {
   $('#prSpirit').checked = !!p.spirit; $('#prAttrs').checked = !!p.attrs; $('#prDmg').checked = !!p.keepDmg;
   $('#prNote').textContent = p.resFirst
     ? 'Resistances first: each resistance point an item adds toward your cap counts +0.5% on its score (losing them costs the same), and Find upgrades searches for the resistances you still need.'
-    : 'Resistances count through effective HP like everything else.';
+    : 'Resistances count through effective HP like everything else. An item that drops a resistance off the cap is still marked LOSES RESISTANCE.';
 }
 ['#prRes', '#prChaos', '#prDmg', '#prSpirit', '#prAttrs'].forEach((id) => $(id).addEventListener('change', async () => {
   state.priorities = await window.api.setPriorities({ resFirst: $('#prRes').checked, chaos: $('#prChaos').checked, keepDmg: $('#prDmg').checked, spirit: $('#prSpirit').checked, attrs: $('#prAttrs').checked });
@@ -844,6 +915,7 @@ $('#alertEvery').addEventListener('change', async () => { await window.api.setSe
 
 // ---------- account ----------
 async function renderAccount() {
+  accountAt = Date.now();
   const st = await window.api.accountStatus();
   $('#signStatus').textContent = st.signedIn ? 'Signed in.' : 'Not signed in.';
   $('#signOut').disabled = !st.signedIn;
@@ -858,7 +930,9 @@ async function renderUpdate(st) {
   const v = `Version ${st.current}`;
   const msg = {
     dev: `${v}. Running from source (start.bat), so updates don't apply – pull the new files instead.`,
-    portable: `${v}. The portable .exe can't update itself – install the Setup version from the releases page to get updates.`,
+    portable: state && state.platform === 'linux'
+      ? `${v}. Only the AppImage updates itself – download PoE2-Upgrade-Checker.AppImage from the releases page to get updates.`
+      : `${v}. The portable .exe can't update itself – install the Setup version from the releases page to get updates.`,
     unavailable: `${v}. The updater isn't installed in this copy.`,
     idle: `${v}.`,
     checking: `${v}. Checking…`,

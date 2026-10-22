@@ -113,6 +113,13 @@ function convertItem(raw, slot) {
 }
 
 function parsePob(xml) {
+  xml = String(xml || '');
+  // a Path of Exile 1 build (or anything else) would load as an empty character and judge nothing
+  if (!/<PathOfBuilding2[\s>]/.test(xml)) {
+    if (/<PathOfBuilding[\s>]/.test(xml)) throw new Error("That's a Path of Building build for Path of Exile 1. Export it from Path of Building 2 (PoE2) instead.");
+    throw new Error("That isn't a Path of Building 2 build. In Path of Building 2, use Import/Export Build → Generate, then Copy.");
+  }
+  if (!/<\/PathOfBuilding2>\s*$/.test(xml)) throw new Error("That build looks cut off (the export code wasn't copied whole). Copy it again from Path of Building 2.");
   const items = {};
   for (const m of xml.matchAll(/<Item\b([^>]*)>([\s\S]*?)<\/Item>/g)) {
     const id = attr(m[1], 'id');

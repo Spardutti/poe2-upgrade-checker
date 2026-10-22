@@ -19,21 +19,25 @@ function clean(text) {
 
 // A mod line can be a plain string or (newer trade API) an object like
 // { description: "+39% to [Lightning|Lightning] Resistance", ... }.
-function modText(m) {
+function rawModText(m) {
   if (m == null) return '';
-  if (typeof m === 'string') return clean(m);
-  if (typeof m !== 'object') return clean(String(m));
+  if (typeof m === 'string') return m;
+  if (typeof m !== 'object') return ''; // a bare number etc. isn't a mod line
   let t = m.description || m.text || m.line || m.mod || m.name || '';
   if (typeof t !== 'string') t = '';
   const vals = Array.isArray(m.values) ? m.values.map((v) => (Array.isArray(v) ? v[0] : v)) : [];
   if (/\{\d\}/.test(t) && vals.length) t = t.replace(/\{(\d)\}/g, (all, i) => (vals[i] != null ? vals[i] : all));
-  return clean(t);
+  return t;
 }
+function modText(m) { return clean(rawModText(m)); }
+// One trade-site mod string can hold several lines ("+10% to Fire Resistance\n+10% to Cold Resistance").
+function modLines(m) { return rawModText(m).split(/\r?\n/).map(clean).filter(Boolean); }
+const arr = (v) => (Array.isArray(v) ? v : []);
 
 function propLine(p) {
   if (!p || !p.name) return null;
   const name = clean(p.name);
-  const vals = (p.values || []).map((v) => clean(Array.isArray(v) ? v[0] : v)).filter(Boolean);
+  const vals = arr(p.values).map((v) => clean(Array.isArray(v) ? v[0] : v)).filter(Boolean);
   if (!vals.length) return null;
   if (name.includes('{0}')) return vals.reduce((s, v, i) => s.replace(`{${i}}`, v), name);
   return `${name}: ${vals.join(', ')}`;
@@ -63,11 +67,11 @@ function listingToItem(result, itemClass) {
   if (name) lines.push(name);
   if (base) lines.push(base);
   const blocks = [lines.join('\n')];
-  const props = (it.properties || []).map(propLine).filter(Boolean);
+  const props = arr(it.properties).map(propLine).filter(Boolean);
   if (props.length) blocks.push(props.join('\n'));
   if (it.ilvl) blocks.push(`Item Level: ${it.ilvl}`);
   for (const [field, tag] of MOD_GROUPS) {
-    const mods = (it[field] || []).map(modText).filter(Boolean);
+    const mods = arr(it[field]).flatMap(modLines);
     if (mods.length) blocks.push(mods.map((m) => (tag ? `${m} ${tag}` : m)).join('\n'));
   }
   if (it.corrupted) blocks.push('Corrupted');
@@ -78,18 +82,29 @@ function listingToItem(result, itemClass) {
   return item;
 }
 
+// A listing price we can use: a positive amount and a currency. Anything else is "no price"
+// (an empty amount must not read as free).
+function validPrice(price) {
+  if (!price || typeof price !== 'object' || !price.currency) return false;
+  const a = price.amount;
+  if (a == null || (typeof a === 'string' && !a.trim()) || typeof a === 'boolean') return false;
+  const n = Number(a);
+  return Number.isFinite(n) && n > 0;
+}
+
 // Price in exalted orbs using { currencyId: exaltsEach } rates.
 function priceInEx(price, rates) {
-  if (!price || !Number.isFinite(Number(price.amount))) return null;
+  if (!validPrice(price)) return null;
   const cur = String(price.currency || '').toLowerCase();
   const r = (rates && rates[cur]) || (cur === 'exalted' || cur === 'exalt' ? 1 : null);
   return r ? Number(price.amount) * r : null;
 }
 
 function formatPrice(price) {
-  if (!price) return 'no price';
+  if (!validPrice(price)) return 'no price';
   const names = { divine: 'div', exalted: 'ex', chaos: 'chaos', mirror: 'mirror', annul: 'annul', regal: 'regal', alch: 'alch', vaal: 'vaal' };
-  return `${Number(price.amount)} ${names[price.currency] || price.currency}`;
+  const cur = String(price.currency);
+  return `${Number(price.amount)} ${names[cur.toLowerCase()] || cur}`;
 }
 
 function summarise(result, itemClass, rates) {
@@ -99,7 +114,7 @@ function summarise(result, itemClass, rates) {
   return {
     id: result && result.id,
     item,
-    price: listing.price || null,
+    price: validPrice(listing.price) ? listing.price : null,
     priceText: formatPrice(listing.price),
     priceEx: priceInEx(listing.price, rates),
     seller: acct.lastCharacterName || acct.name || '',
@@ -112,4 +127,4 @@ function summarise(result, itemClass, rates) {
   };
 }
 
-module.exports = { clean, modText, listingToItem, priceInEx, formatPrice, summarise };
+module.exports = { clean, modText, modLines, validPrice, listingToItem, priceInEx, formatPrice, summarise };

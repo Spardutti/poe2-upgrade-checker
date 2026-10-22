@@ -10,6 +10,7 @@ const rates = require('./core/rates');
 const ignoreLib = require('./core/ignore');
 const catalogLib = require('./core/catalog');
 const listingLib = require('./core/listing');
+const priceLib = require('./core/price');
 const { suggestWeights } = require('./core/autoweights');
 const gearLib = require('./core/gearscore');
 const characterLib = require('./core/character');
@@ -142,10 +143,11 @@ async function pobJudge(list) {
     for (const sl of slots) { const ps = pobVerdict.SLOT_TO_POB[sl]; if (ps) { req.push({ slot: ps, text }); idx.push([i, sl]); } }
   });
   const per = list.map(() => []);
+  const errs = list.map(() => null);
   if (req.length) {
     const res = await pobEngine().evalItems(req);
     res.forEach((r, k) => {
-      if (!r || !r.ok) return;
+      if (!r || !r.ok) { if (r && r.error && !errs[idx[k][0]]) errs[idx[k][0]] = String(r.error); return; }
       if (r.multi) {
         // a jewel that's already in one of your sockets is only compared with itself there
         const nm = list[idx[k][0]].item && list[idx[k][0]].item.name;
@@ -160,8 +162,18 @@ async function pobJudge(list) {
       if (j) { j.slot = idx[k][1]; per[idx[k][0]].push(j); }
     });
   }
-  return per.map((arr) => pobVerdict.best(arr));
+  const out = per.map((arr) => pobVerdict.best(arr));
+  out.errors = errs; // why PoB couldn't judge an item, when it said
+  return out;
 }
+// can Path of Building judge this item? (charms and flasks use the gear score)
+function pobCanJudge(item, slot) {
+  if (!item) return false;
+  if (item.slot === 'Jewel' || /^Jewel \d$/.test(slot || '')) return true;
+  const group = item.slot && SLOT_GROUPS[item.slot];
+  return !!(pobVerdict.SLOT_TO_POB[slot] || (group && group.every((g) => pobVerdict.SLOT_TO_POB[g])) || pobVerdict.SLOT_TO_POB[item.slot]);
+}
+const pobErrorOf = (res, i) => (res && res.errors && res.errors[i]) || 'Path of Building could not read this item.';
 // Path of Building's own weighted trade search for a slot ("Trader"), trimmed to what the trade
 // site accepts; every listing it finds is then checked exactly with your build.
 const pobQueries = new Map(); // slot|weights -> { at, r }
@@ -210,7 +222,8 @@ async function pobSearch(item, slot, league, budget, opts) {
     const st = (info && (info.stats || {})) || {};
     const short = ['Fire', 'Cold', 'Lightning', ...(pr.chaos && !pobCI() ? ['Chaos'] : [])].filter((El) => {
       const v = Number(st[`${El}Resist`]); const tot = Number(st[`${El}ResistTotal`]);
-      return Number.isFinite(v) && v < 75 - 0.5 && !(tot > v + 0.5);
+      const max = Number(st[`${El}ResistMax`]) || 75; // your real cap (e.g. raised by passives)
+      return Number.isFinite(v) && v < max - 0.5 && !(tot > v + 0.5);
     });
     if (short.length) {
       const re = new RegExp(`^\\+?#% to (all Elemental Resistances|(${short.join('|')})( and (Fire|Cold|Lightning|Chaos))? Resistances?|(Fire|Cold|Lightning|Chaos) and (${short.join('|')}) Resistances)$`, 'i');
@@ -445,7 +458,7 @@ function placePopupNearCursor(height) {
   const cursor = screen.getCursorScreenPoint();
   const area = screen.getDisplayNearestPoint(cursor).workArea;
   const w = popupWidth();
-  const h = Math.max(120, Math.min(height || 300, area.height - 20));
+  const h = Math.max(120, Math.min((height || 300) * uiScale(), area.height - 20));
   const pos = store.settings.popupPosition || 'cursor';
   let x; let y;
   if (pos === 'left') { x = area.x + 16; y = area.y + Math.round(area.height * 0.12); }
@@ -503,30 +516,37 @@ function revealPopup(height) {
     popup.setAlwaysOnTop(true, 'screen-saver');
     awaySince = 0;
   } else if (height) {
+    // the renderer reports CSS pixels; the window is zoomed by uiScale. Keep it on screen.
     const b = popup.getBounds();
-    popup.setBounds({ ...b, height: Math.round(Math.min(Math.max(height, 120), 900)) });
+    const area = screen.getDisplayMatching(b).workArea;
+    const h = Math.round(Math.min(Math.max(height * uiScale(), 120), area.height - 8));
+    const y = Math.max(area.y + 4, Math.min(b.y, area.y + area.height - h - 4));
+    popup.setBounds({ ...b, y, height: h });
   }
   if (!popupHovered) scheduleHide((store.settings.autoHideSeconds || 12) * 1000);
 }
 
 let popupItem = null;
+let popupSeq = 0; // bumped by every new render; a late PoB answer for an older one is dropped
 function showResult(result) {
+  const seq = ++popupSeq;
   popupItem = result && result.item ? recentItems.get(result.item.id) || result.item : null;
   if (!popup) createPopup();
   pendingShow = true; // every new copy re-positions the popup at the cursor
-  const withPob = result && result.ok && !result.isEquipped && result.item && pobOn();
+  const withPob = result && result.ok && !result.isEquipped && result.item && pobOn() && pobCanJudge(result.item, result.targetSlot);
   if (withPob) result.pobPending = true;
   const send = () => popup && popup.webContents.send('popup:result', serialise(result));
   if (popup.webContents.isLoading()) popup.webContents.once('did-finish-load', send);
   else send();
   if (withPob) {
     const item = popupItem;
-    pobJudge([{ item: result.item.raw ? result.item : (item || result.item), slot: result.targetSlot }]).then(([j]) => {
+    pobJudge([{ item: result.item.raw ? result.item : (item || result.item), slot: result.targetSlot }]).then((res) => {
+      const j = res[0];
       result.pobPending = false;
-      if (!j) result.pobError = 'Path of Building could not read this item.';
+      if (!j) result.pobError = pobErrorOf(res, 0);
       else applyPob(result, j);
     }).catch((err) => { result.pobPending = false; result.pobError = err.message; log('pob: ' + err.message); })
-      .then(() => { if (popupItem === item && popup && !popup.isDestroyed() && popup.isVisible()) popup.webContents.send('popup:result', serialise(result)); });
+      .then(() => { if (seq === popupSeq && popupItem === item && popup && !popup.isDestroyed() && popup.isVisible()) popup.webContents.send('popup:result', serialise(result)); });
   }
   // Renderer replies with its height via popup:resize; show anyway if it doesn't.
   clearTimeout(showFallback);
@@ -610,9 +630,10 @@ function noItemReason(sent, text) {
   const isMe = (n) => n && (n === 'self' || n.toLowerCase() === me || /^electron$/i.test(n));
   const hk = store.settings.hotkey || DEFAULT_HOTKEY;
   if (/game-admin/.test(s)) return 'Path of Exile 2 is running as administrator, so Windows blocks the Ctrl+C this app sends it. Start the game normally (not "Run as administrator"), or start this app as administrator too.';
+  if (/hotkey-held/.test(s) && !text) return `${hk} was still held down when the copy was sent, so the game didn't see it. Tap ${hk} (press and let go quickly) while hovering the item.`;
   if (isMe(over)) return `Your mouse was over this app's window, not the game. Hover the item in game, then press ${hk}.`;
   if (/refocus-failed/.test(s) || (fg && !isGame(fg) && fg !== '?')) {
-    return `Path of Exile 2 wasn't the active window${fg && fg !== '?' ? ` (${fg} was)` : ''}, so the copy went there. Click once in the game, then press ${hk} again.`;
+    return `Path of Exile 2 wasn't the active window${fg && fg !== '?' ? ` (${isMe(fg) ? 'this app' : fg} was)` : ''}, so the copy went there. Click once in the game, then press ${hk} again.`;
   }
   if (over && !isGame(over) && over !== '?') return `Your mouse wasn't over the game (it was over ${over}). Hover the item in game, then press ${hk}.`;
   if (text) return 'That wasn\'t an item (the game copied something else). Hover an item so its tooltip shows, then press the hotkey.';
@@ -671,7 +692,10 @@ async function onHotkey() {
 const DEFAULT_HOTKEY = 'F2';
 // keys that move your character or are common skill keys in PoE2
 function gameKeyWarning(accel) {
-  const k = String(accel || '').split('+').pop();
+  const parts = String(accel || '').split('+');
+  const k = parts.pop();
+  if (parts.some((m) => /^(ctrl|control|alt|cmdorctrl|commandorcontrol)$/i.test(m))) return null; // Ctrl/Alt + key doesn't move you
+
   if (/^[WASD]$/i.test(k)) return `${k.toUpperCase()} is a movement key (WASD) in PoE2, so the game will also act on it. An F-key (e.g. F2) works best.`;
   if (/^[QERTF]$/i.test(k)) return `${k.toUpperCase()} is often a skill key in PoE2, so the game may also act on it. An F-key (e.g. F2) works best.`;
   return null;
@@ -690,8 +714,10 @@ function registerHotkey(accel) {
   return hotkeyStatus;
 }
 
+const sameKey = (a, b) => String(a || '').toLowerCase().replace(/control/g, 'ctrl') === String(b || '').toLowerCase().replace(/control/g, 'ctrl');
 ipcMain.handle('hotkey:set', (_e, accel) => {
   const prev = store.settings.hotkey || DEFAULT_HOTKEY;
+  if (sameKey(accel, store.settings.resultsHotkey || 'Ctrl+Shift+D')) return { ok: false, accelerator: prev, error: `${accel} already opens the results window. Pick a different key.` };
   const st = registerHotkey(accel);
   if (st.ok) store.setSetting('hotkey', accel);
   else registerHotkey(prev); // put the old one back
@@ -735,13 +761,19 @@ function resolveSlotOf(item) {
 function refreshAll() {
   if (popupItem && popup && popup.isVisible()) {
     const r = evaluate(popupItem);
-    popup.webContents.send('popup:result', serialise(r));
+    const seq = ++popupSeq;
+    const withPob = r && r.ok && !r.isEquipped && pobOn() && pobCanJudge(popupItem, r.targetSlot);
+    if (withPob) r.pobPending = true;
+    popup.webContents.send('popup:result', serialise({ ...r, keepState: true }));
     // and Path of Building again (settings like priorities change its verdict)
-    if (r && r.ok && !r.isEquipped && pobOn()) {
+    if (withPob) {
       const item = popupItem;
-      pobJudge([{ item, slot: r.targetSlot }]).then(([j]) => {
-        if (j && popupItem === item && popup && !popup.isDestroyed() && popup.isVisible()) popup.webContents.send('popup:result', serialise(applyPob(r, j)));
-      }).catch((err) => log('pob: ' + err.message));
+      pobJudge([{ item, slot: r.targetSlot }]).then((res) => {
+        const j = res[0];
+        r.pobPending = false;
+        if (j) applyPob(r, j); else r.pobError = pobErrorOf(res, 0);
+      }).catch((err) => { r.pobPending = false; r.pobError = err.message; log('pob: ' + err.message); })
+        .then(() => { if (seq === popupSeq && popupItem === item && popup && !popup.isDestroyed() && popup.isVisible()) popup.webContents.send('popup:result', serialise({ ...r, keepState: true })); });
     }
   }
   if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('settings:changed');
@@ -893,6 +925,7 @@ function pobSummary(info) {
     }
   }
   const dk = pobVerdict.dpsKey(st);
+  if (!(pobVerdict.dpsOf(st, dk) > 0)) mismatch.push(`your main skill in Path of Building${info.mainSkill ? ` (${info.mainSkill})` : ''} deals no damage, so damage changes can't be judged – set your damage skill as the main skill in PoB (or tick "Include in Full DPS" on your damage skills) and import again`);
   return {
     ok: true, className: info.className, ascendancy: info.ascendancy, level: info.level, mainSkill: info.mainSkill,
     dps: pobVerdict.dpsOf(st, dk), dpsKey: dk, ehp: st.TotalEHP, es: st.EnergyShield, life: st.Life, spirit: st.Spirit, spiritFree: st.SpiritUnreserved,
@@ -911,6 +944,7 @@ ipcMain.handle('pob:sheet', async (_e, refresh) => {
   if (!out.on) return out;
   if (!refresh && pobLastSheet.has(key) && pobLastSheet.get(key).gen === pobSheetGen) return { ...out, sheet: pobLastSheet.get(key).sheet, at: pobLastSheet.get(key).at };
   try {
+    if (refresh) pobEngine().resetFailure(); // you pressed Refresh: try again now
     await pobEngine().ensureLoaded();
     const sheet = await pobEngine().sheet();
     sheet.overridden = (pobEngine().info() || {}).equipped || [];
@@ -926,6 +960,7 @@ ipcMain.handle('pob:status', async (_e, load) => {
   const eng = pobEngine();
   const out = { available: eng.available(), hasBuild: !!pobXml(), on: pobOn(), enabled: store.settings.usePob !== false };
   if (load && pobOn()) {
+    eng.resetFailure();
     try { out.summary = pobSummary(await eng.ensureLoaded()); } catch (err) { out.error = err.message; }
   } else if (eng.info()) out.summary = pobSummary(eng.info());
   // keep showing the last good summary while the engine reloads after a gear change
@@ -942,7 +977,7 @@ ipcMain.handle('priorities:set', (_e, p) => {
   refreshAll();
   return pobPriorities();
 });
-ipcMain.handle('pob:enable', (_e, on) => { store.setSetting('usePob', !!on); if (on) pobSync(); refreshAll(); return pobOn(); });
+ipcMain.handle('pob:enable', (_e, on) => { store.setSetting('usePob', !!on); if (on) { pobEngine().resetFailure(); pobSync(); } refreshAll(); return pobOn(); });
 
 ipcMain.handle('ignore:set', (_e, rules) => {
   store.setSetting('ignoreStats', ignoreLib.cleanRules(rules));
@@ -952,7 +987,7 @@ ipcMain.handle('ignore:set', (_e, rules) => {
 });
 
 ipcMain.handle('state:get', () => JSON.parse(JSON.stringify({
-  platform: process.platform, dataDir: app.getPath('userData'),
+  platform: process.platform, dataDir: app.getPath('userData'), loadError: store.loadError || null,
   defaultBuild: gearLib.DEFAULT_BUILD,
   pobOn: pobOn(),
   resultsHotkeyOk: !!resultsHotkey,
@@ -980,7 +1015,12 @@ ipcMain.handle('evaluate:text', (_e, text) => {
   store.noteStats(item);
   remember(item);
   notifySettings('item:copied', { id: item.id, name: item.name });
-  return serialise(evaluate(item));
+  const r = evaluate(item);
+  // the same Path of Building verdict the popup gives, so "Check an item" agrees with it
+  if (!(r && r.ok && !r.isEquipped && pobOn() && pobCanJudge(item, r.targetSlot))) return serialise(r);
+  return pobJudge([{ item, slot: r.targetSlot }]).then((res) => { if (res[0]) applyPob(r, res[0]); else r.pobError = pobErrorOf(res, 0); })
+    .catch((err) => { r.pobError = err.message; log('pob: ' + err.message); })
+    .then(() => serialise(r));
 });
 
 ipcMain.on('open:settings', () => openSettings());
@@ -1414,9 +1454,11 @@ function bringUpResults() {
 async function showResults(r, ctx) {
   resultsState = { r, ctx, listings: [], next: 0, signedIn: await signedIn() };
   try {
-    await loadMoreListings(20);
+    await loadMoreListings(ctx.mode === 'price' ? 40 : 20); // a price needs more than one page
   } catch (err) {
     log('could not load listings, opening the browser instead: ' + (err.message || err));
+    // an open results window still shows the last search: say this one failed, don't leave it looking current
+    if (resultsWin && !resultsWin.isDestroyed()) resultsWin.webContents.send('results:data', { ...resultsPayload(), listings: [], error: `Couldn't load the listings (${err.message || err}) – opened the search in your browser instead.` });
     return false;
   }
   if (!resultsWin || resultsWin.isDestroyed()) createResultsWindow();
@@ -1430,6 +1472,7 @@ async function showResults(r, ctx) {
 ipcMain.handle('results:more', async () => {
   if (!resultsState) return null;
   try { await loadMoreListings(10); } catch (err) { return { error: err.message || String(err) }; }
+  if (resultsState.ctx.mode === 'price') resultsState.ctx.priceSummary = priceSummary(resultsState.listings, resultsState.ctx.priceLeague);
   return resultsPayload();
 });
 ipcMain.handle('results:rescore', async () => {
@@ -1451,6 +1494,7 @@ function toggleResults() {
 let resultsHotkey = null;
 function registerResultsHotkey() {
   const want = store.settings.resultsHotkey || 'Ctrl+Shift+D';
+  if (sameKey(want, hotkeyStatus.accelerator || store.settings.hotkey || DEFAULT_HOTKEY)) { log(`results hotkey ${want}: same as the copy hotkey, not registered`); if (resultsHotkey) { try { globalShortcut.unregister(resultsHotkey); } catch (_) { /* ignore */ } } resultsHotkey = null; return; }
   if (resultsHotkey) { try { globalShortcut.unregister(resultsHotkey); } catch (_) { /* ignore */ } resultsHotkey = null; }
   try { if (globalShortcut.register(want, toggleResults)) resultsHotkey = want; } catch (_) { /* ignore */ }
   log(`results hotkey ${want}: ${resultsHotkey ? 'registered' : 'FAILED'}`);
@@ -1491,7 +1535,9 @@ async function ninjaLeague() {
 
 async function refreshDivineRate(force) {
   if (store.settings.autoRate === false) return { ok: true, auto: false, rate: store.settings.divineRate || null };
-  const fresh = store.settings.divineRateAt && Date.now() - store.settings.divineRateAt < HOUR;
+  let fresh = store.settings.divineRateAt && Date.now() - store.settings.divineRateAt < HOUR;
+  // a rate from another league (e.g. Standard while you play the new one) is far off: fetch again
+  if (fresh && store.settings.divineRateLeague) { try { fresh = store.settings.divineRateLeague === await ninjaLeague(); } catch (_) { /* keep it */ } }
   if (!force && fresh && store.settings.divineRate) {
     return { ok: true, auto: true, rate: store.settings.divineRate, at: store.settings.divineRateAt, league: store.settings.divineRateLeague };
   }
@@ -1668,17 +1714,43 @@ ipcMain.handle('trade:quick', async (_e, target, mode, extra) => {
 function fmtEx(ex) {
   if (ex == null) return '?';
   const div = store.settings.divineRate;
-  if (!div) return `${Math.round(ex).toLocaleString('en')} ex`;
+  const exText = ex < 10 ? `${Math.round(ex * 10) / 10} ex` : `${Math.round(ex).toLocaleString('en')} ex`;
+  if (!div) return exText;
   if (ex >= div * 0.95) return `${Math.round((ex / div) * 10) / 10} div (${Math.round(ex).toLocaleString('en')} ex)`;
-  return `${Math.round(ex).toLocaleString('en')} ex (${Math.round((ex / div) * 100) / 100} div)`;
+  if (ex / div < 0.05) return exText; // "0.01 div" says nothing
+  return `${exText} (${Math.round((ex / div) * 100) / 100} div)`;
 }
 
-function priceSummary(listings) {
-  const prices = listings.map((x) => x.priceEx).filter((v) => v != null).sort((a, b) => a - b);
-  if (!prices.length) return null;
-  const firstTen = prices.slice(0, 10);
-  const median = firstTen[Math.floor((firstTen.length - 1) / 2)];
-  return { cheapest: fmtEx(prices[0]), typical: fmtEx(median), count: prices.length, cheapestEx: prices[0], typicalEx: median };
+// the price verdict, with everything that makes it less certain said out loud
+function priceSummary(listings, league) {
+  const s = priceLib.priceStats(listings);
+  if (!s) return null;
+  const pl = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  const notes = [];
+  const rate = store.settings.divineRate;
+  if (s.unconvertible) notes.push(`${pl(s.unconvertible, 'listing is', 'listings are')} priced in ${rate ? 'a currency' : 'divines or a currency'} without a known exalt rate${rate ? '' : " (poe.ninja couldn't be reached)"}, so ${s.unconvertible === 1 ? "it's" : "they're"} left out`);
+  if (rate && store.settings.divineRateAt && Date.now() - store.settings.divineRateAt > 6 * HOUR) notes.push(`the divine rate (${rate} ex) is ${Math.round((Date.now() - store.settings.divineRateAt) / HOUR)} hours old`);
+  if (rate && league && store.settings.divineRateLeague && store.settings.divineRateLeague !== league) notes.push(`the divine rate is from ${store.settings.divineRateLeague}, not ${league}`);
+  if (s.baits) notes.push(`${pl(s.baits, 'listing', 'listings')} far under the rest left out (likely price-fixing bait)`);
+  if (s.stale) notes.push(`${pl(s.stale, 'listing', 'listings')} older than ${priceLib.STALE_DAYS} days left out`);
+  if (s.staleKept) notes.push(`${pl(s.staleKept, 'listing is', 'listings are')} over ${priceLib.STALE_DAYS} days old and may not be a real offer`);
+  if (s.noPrice) notes.push(`${s.noPrice} unpriced`);
+  if (s.spread && !s.few) notes.push('prices vary a lot');
+  const out = {
+    count: s.count, sellers: s.sellers, total: s.total, notes,
+    cheapestEx: s.cheapestEx == null ? null : s.cheapestEx, typicalEx: null, few: !!s.few, unreliable: s.unreliable,
+    cheapest: s.cheapestEx == null ? null : fmtEx(s.cheapestEx), typical: null, range: null,
+  };
+  if (s.unreliable) {
+    out.verdict = `Can't price this reliably: ${s.unconvertible} of the listings are priced in currencies without a known rate.`;
+  } else if (s.few) {
+    out.verdict = s.count ? `Only ${s.count} listed – not enough to judge${s.count ? ` (from ${fmtEx(s.cheapestEx)})` : ''}.` : 'No priced listings.';
+  } else {
+    out.typicalEx = s.typicalEx; out.typical = fmtEx(s.typicalEx);
+    out.range = s.lowEx !== s.highEx ? `${fmtEx(s.lowEx)} – ${fmtEx(s.highEx)}` : null;
+    out.verdict = `Worth about ${out.typical}${out.range ? ` (most ${out.range})` : ''}.`;
+  }
+  return out;
 }
 
 ipcMain.handle('trade:price', async (_e, target) => {
@@ -1691,7 +1763,8 @@ ipcMain.handle('trade:price', async (_e, target) => {
   const armourOrWeapon = ['Weapon', 'Offhand', 'Helmet', 'Body Armour', 'Gloves', 'Boots'].includes(item.slot);
   // Price check looks for close matches to THIS item, without your price range
   // or ignored stats (those are about what you want, not what it's worth).
-  const opts = { statIndex: d.index, filtersData: d.filters, preferLocal: armourOrWeapon, status: store.settings.status };
+  // always "available" listings (instant buyout + in person): offline sellers' prices aren't what it sells for
+  const opts = { statIndex: d.index, filtersData: d.filters, preferLocal: armourOrWeapon, forPrice: true };
   let r = null; let q = null;
   for (let level = 0; level < 3; level++) {
     q = trade.buildSimilarQuery(item, { ...opts, level });
@@ -1710,9 +1783,10 @@ ipcMain.handle('trade:price', async (_e, target) => {
   const shown = r.ids && r.ids.length ? await showResults(r, ctx) : false;
   let summary = null;
   if (shown) {
-    summary = priceSummary(resultsState.listings);
+    summary = priceSummary(resultsState.listings, league);
     resultsState.ctx.priceSummary = summary;
-    if (summary && item.id) lastWorth.set(item.id, summary.typicalEx);
+    resultsState.ctx.priceLeague = league;
+    if (summary && summary.typicalEx != null && item.id) lastWorth.set(item.id, summary.typicalEx);
     if (resultsWin && !resultsWin.isDestroyed()) resultsWin.webContents.send('results:data', resultsPayload());
   } else {
     await shell.openExternal(r.url);
@@ -1948,7 +2022,9 @@ function applyLinuxAutostart() {
     const q = (s) => `"${String(s).replace(/(["\\`$])/g, '\\$1')}"`;
     const exec = app.isPackaged ? `${q(exe)} --hidden` : `${q(exe)} ${q(app.getAppPath())} --hidden`;
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, `[Desktop Entry]\nType=Application\nName=PoE2 Upgrade Checker\nExec=${exec}\nX-GNOME-Autostart-enabled=true\nTerminal=false\n`);
+    // .desktop Exec: quoted args escape " ` $ \ with a backslash, then the value's own escaping doubles backslashes; % is %%
+    const execLine = exec.replace(/\\/g, '\\\\').replace(/%/g, '%%');
+    fs.writeFileSync(file, `[Desktop Entry]\nType=Application\nName=PoE2 Upgrade Checker\nExec=${execLine}\nX-GNOME-Autostart-enabled=true\nTerminal=false\n`);
   } catch (err) { log('autostart: ' + err.message); }
 }
 
@@ -1999,6 +2075,8 @@ function setupUpdater() {
   autoUpdater.on('update-not-available', () => { upd.state = 'latest'; upd.checked = Date.now(); changed(); });
   autoUpdater.on('update-available', (i) => { upd.state = autoUpdater.autoDownload ? 'downloading' : 'available'; upd.version = i.version; upd.checked = Date.now(); changed(); });
   autoUpdater.on('download-progress', (p) => { upd.progress = Math.round(p.percent); notifySettings('update:changed'); });
+  // an AppImage update can land under a new file name: point "start when I log in" at it
+  autoUpdater.on('appimage-filename-updated', (p) => { if (p) { process.env.APPIMAGE = p; applyLinuxAutostart(); } });
   autoUpdater.on('error', (err) => { upd.state = 'error'; upd.error = String(err && err.message || err).split('\n')[0]; changed(); });
   autoUpdater.on('update-downloaded', (i) => {
     upd.state = 'ready'; upd.version = i.version; changed();

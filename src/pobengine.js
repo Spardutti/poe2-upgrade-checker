@@ -56,15 +56,17 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
     ready = new Promise((resolve, reject) => {
       const t0 = Date.now();
       log('pob: starting the Path of Building engine');
-      proc = spawn(h.cmd, h.args, {
+      const me = spawn(h.cmd, h.args, {
         cwd: srcDir, windowsHide: true,
         env: (() => { const rt = path.relative(srcDir, runtimeDir); return { ...process.env, POBHOST_DIR: process.env.POBHOST_DIR || (h.moduleDir ? path.relative(srcDir, h.moduleDir) : rt), POB_LUA_PATH: [path.join(rt, 'lua', '?.lua'), path.join(rt, 'lua', '?', 'init.lua')].join(';') }; })(),
       });
+      proc = me;
       proc.stdin.on('error', (err) => log('pob: ' + err.message));
       let started = false;
       const startTimer = setTimeout(() => { if (!started) { lastError = 'Path of Building took too long to start' + (errTail ? ': ' + errTail.trim().split('\n').slice(-4).join(' | ') : ''); log('pob: ' + lastError); reject(new Error(lastError)); stop(); } }, 90000);
       proc.stdout.setEncoding('utf8');
       proc.stdout.on('data', (chunk) => {
+        if (proc !== me) return;
         buf += chunk;
         let i;
         while ((i = buf.indexOf('\n')) >= 0) {
@@ -84,6 +86,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
       proc.on('exit', (code) => {
         log(`pob: engine stopped (${code})${code || !started ? ': ' + errTail.trim().split('\n').slice(-6).join(' | ') : ''}`);
         if (code && !started) { lastError = errTail.trim().split('\n').slice(-1)[0] || `exit ${code}`; reject(new Error('Path of Building failed to start: ' + lastError)); }
+        if (proc !== me) return; // an engine we already stopped; a new one may be running
         failAll(new Error('The Path of Building engine stopped.'));
         proc = null; ready = null; buf = ''; buildInfo = null;
       });
@@ -92,9 +95,18 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
     return ready;
   }
 
+  // forget the engine straight away, so a request right after starts a new one instead of
+  // writing to one that's quitting
   function stop() {
-    if (proc) { try { proc.stdin.write(JSON.stringify({ cmd: 'quit' }) + '\n'); } catch (_) {} const p = proc; setTimeout(() => { try { p.kill(); } catch (_) {} }, 1500); }
+    if (!proc) return;
+    const p = proc;
+    proc = null; ready = null; buf = ''; buildInfo = null;
+    failAll(new Error('The Path of Building engine stopped.'));
+    try { p.stdin.write(JSON.stringify({ cmd: 'quit' }) + '\n'); } catch (_) {}
+    setTimeout(() => { try { p.kill(); } catch (_) {} }, 1500);
   }
+  // a new build or a manual retry gets a fresh start instead of the 10-minute wait after a failure
+  function resetFailure() { failedAt = 0; }
 
   function touch() {
     clearTimeout(idleTimer);
@@ -122,6 +134,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
   let overrides = [];
   let gen = 0; let infoGen = -1; // which build/gear version is loaded
   function loadBuild(xml, over) {
+    if (xml !== buildXml) failedAt = 0;
     if (xml !== buildXml || over) gen++;
     buildXml = xml;
     if (over) overrides = over;
@@ -141,7 +154,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
     return p;
   }
   // remember a build without starting the engine yet (it loads on first use)
-  function setBuild(xml, over) { buildXml = xml; overrides = over || []; buildInfo = null; gen++; }
+  function setBuild(xml, over) { if (xml !== buildXml) failedAt = 0; buildXml = xml; overrides = over || []; buildInfo = null; gen++; }
   function kill() { if (proc) { try { proc.kill(); } catch (_) {} } }
 
   async function evalItems(items) {
@@ -160,7 +173,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
   }
 
   return {
-    available, start, stop, loadBuild, setBuild, evalItems, makeQuery,
+    available, start, stop, resetFailure, loadBuild, setBuild, evalItems, makeQuery,
     kill, sheet: async () => { if (!buildXml) return null; const r = await request({ cmd: "sheet" }, 60000); if (!r.ok) throw new Error(r.error || "Path of Building could not read the character."); return r; },
     ensureLoaded: async () => {
       if (!buildXml) return null;

@@ -113,6 +113,26 @@ function applyLegacies(item, names, add) {
   for (const n of unique) for (const [k, v] of LEGACIES[n] || []) add(k, Math.round(v * mult * 10) / 10);
 }
 
+// Lines that only carry information: they never hold a mod.
+const META_LINE = /^(Corrupted|Unidentified|Mirrored|Unmodifiable|Sanctified|Twice Corrupted|Note:.*|Sockets:.*|Item Level:.*)$/i;
+// Prose: a flavour-text line starts lower case or with a quote, or ends with punctuation. Mod lines don't.
+const PROSE = /^[a-z"'“‘«]|[.,;:!?"'”’»…]$/;
+
+// A unique's flavour text is its last block of text: plain prose with no mod tags, no advanced-copy
+// headers and no Mage's Legacies, after at least one other block.
+function flavourBlock(blocks, rarity) {
+  if (!/unique/i.test(rarity || '')) return -1;
+  let last = -1; let content = 0;
+  blocks.forEach((b, i) => {
+    if (i === 0) return;
+    if (b.some((l) => !META_LINE.test(l))) { last = i; content++; }
+  });
+  if (last < 0 || content < 2) return -1;
+  const lines = blocks[last].filter((l) => !META_LINE.test(l));
+  if (lines.some((l) => l.startsWith('{') || TAG.test(l) || LEGACY_LINE.test(l) || /^[A-Za-z ]+:\s/.test(l))) return -1;
+  return lines.some((l) => PROSE.test(l)) ? last : -1;
+}
+
 function parseItem(raw) {
   if (typeof raw !== 'string') return null;
   const text = raw.replace(/\r\n?/g, '\n').trim();
@@ -166,10 +186,26 @@ function parseItem(raw) {
   // Weapon damage bits, collected from the property block.
   let phys = 0, ele = 0, chaos = 0, aps = 0, crit = 0;
 
-  blocks.slice(1).forEach((block) => {
+  const flavour = flavourBlock(blocks, item.rarity);
+
+  blocks.slice(1).forEach((block, bi) => {
+    if (bi + 1 === flavour) {
+      // flavour text: keep only the lines that matter (Corrupted etc.)
+      if (block.some((l) => /^Corrupted$/i.test(l))) item.corrupted = true;
+      if (block.some((l) => /^Unidentified$/i.test(l))) item.unidentified = true;
+      return;
+    }
     // in advanced text the header line says what kind of mod follows; the line itself has no tag
     let headerTag = null;
+    let inReminder = false;
     block.forEach((line) => {
+      // reminder text, "(Maximum Resistances cannot be raised above 90%)", is never a mod;
+      // it can run over several lines
+      if (inReminder) { if (/\)\s*$/.test(line)) inReminder = false; return; }
+      if (line.startsWith('(')) {
+        if (!/\)\s*$/.test(line)) inReminder = true;
+        return;
+      }
       // Advanced (Ctrl+Alt+C) descriptor lines like { Prefix Modifier "Hale" (Tier: 3) }
       if (line.startsWith('{')) {
         sawHeaders = true;

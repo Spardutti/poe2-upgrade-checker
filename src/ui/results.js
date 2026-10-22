@@ -39,7 +39,7 @@ function sorted(list) {
     gear: (a, b) => ((b.gear && b.gear.score != null ? b.gear.score : -1) - (a.gear && a.gear.score != null ? a.gear.score : -1)),
     site: () => 0,
   }[mode];
-  let out = list.map((x, i) => ({ ...x, _i: i }));
+  let out = (list || []).map((x, i) => ({ ...x, _i: i }));
   if ($('#onlyUp').checked) out = out.filter((x) => x.compare && (['upgrade', 'small', 'risky', 'new'].includes(x.compare.verdict)));
   return out.sort((a, b) => by(a, b) || a._i - b._i);
 }
@@ -59,7 +59,7 @@ function card(x) {
     return `<span class="chg ${cls}">${esc(label(r.key, r.diff))}</span>`;
   }).join('') : '';
   const loss = c && (c.verdict === 'dmgloss' || c.verdict === 'resloss');
-  const value = x.valuePerDiv != null && c && c.delta > 0 && !loss ? `<span class="value" title="${c && c.scoreMode === 'pob' ? '% better for your build' : gearMode ? 'Gear score points gained' : 'Upgrade score'} per divine spent">${fmt(x.valuePerDiv, 1)} / div</span>` : '';
+  const value = x.valuePerDiv != null && Math.abs(x.valuePerDiv) >= 0.05 && c && c.delta > 0 && !loss ? `<span class="value" title="${c && c.scoreMode === 'pob' ? '% better for your build' : gearMode ? 'Gear score points gained' : 'Upgrade score'} per divine spent">${fmt(x.valuePerDiv, 1)} / div</span>` : '';
   const rr = c ? c.resRank || 0 : 0;
   return `<article class="listing ${rr < 0 ? 'res-loss' : rr === 2 ? 'res-cap-item' : ''}">
     <div class="l-top">
@@ -89,24 +89,34 @@ function card(x) {
 
 function render() {
   if (!data) return;
-  $('#title').textContent = data.title;
+  $('#title').textContent = data.title || 'Trade results';
   $('#gsHelpBtn').textContent = data.pobOn ? 'How are items judged?' : "What's the gear score?";
   $('#hideHint').textContent = `Esc hides${data.resultsHotkey ? ` · ${data.resultsHotkey} reopens` : ''}`;
   const ups = (data.listings || []).filter((x) => x.compare && ['upgrade', 'small', 'risky', 'new'].includes(x.compare.verdict)).length;
   const losing = (data.listings || []).filter((x) => x.compare && x.compare.verdict === 'resloss').length;
   const dmgLosing = (data.listings || []).filter((x) => x.compare && x.compare.pob && x.compare.pob.dmgLoss).length;
   const capping = (data.listings || []).filter((x) => x.compare && x.compare.resRank === 2).length;
-  $('#sub').textContent = `${data.league} · ${data.total} listing${data.total === 1 ? '' : 's'} · showing ${data.shown}${data.listings && data.listings.length ? ` · ${ups} upgrade${ups === 1 ? '' : 's'} for you${capping ? ` · ${capping} cap a resistance` : ''}${losing ? ` · ${losing} lose resistance` : ''}${dmgLosing ? ` · ${dmgLosing} lose damage` : ''}` : ''}${data.divineRate ? ` · 1 div ≈ ${data.divineRate} ex` : ''}`;
+  $('#sub').textContent = data.total == null ? (data.league || '') : `${data.league} · ${data.total} listing${data.total === 1 ? '' : 's'} · showing ${data.shown}${data.listings && data.listings.length ? ` · ${ups} upgrade${ups === 1 ? '' : 's'} for you${capping ? ` · ${capping} cap a resistance` : ''}${losing ? ` · ${losing} lose resistance` : ''}${dmgLosing ? ` · ${dmgLosing} lose damage` : ''}` : ''}${data.divineRate ? ` · 1 div ≈ ${data.divineRate} ex` : ''}`;
   $('#note').textContent = data.note || '';
   if (data.priceSummary) {
     $('#priceBanner').classList.remove('hidden');
-    $('#priceBanner').innerHTML = `Cheapest <b>${esc(data.priceSummary.cheapest)}</b> · typical <b>${esc(data.priceSummary.typical)}</b> <span class="dim">(from ${data.priceSummary.count} priced listings)</span>`;
+    const ps = data.priceSummary;
+    $('#priceBanner').innerHTML = (ps.typical
+      ? `Typical <b>${esc(ps.typical)}</b>${ps.range ? ` · most <b>${esc(ps.range)}</b>` : ''} · cheapest <b>${esc(ps.cheapest)}</b>`
+      : `<b>${esc(ps.verdict || 'No price')}</b>`)
+      + ` <span class="dim">(each seller's cheapest: ${ps.sellers} seller${ps.sellers === 1 ? '' : 's'} in ${ps.total} listings loaded)</span>`
+      + (ps.notes && ps.notes.length ? `<div class="dim small">${esc(ps.notes.join(' · '))}</div>` : '');
   } else $('#priceBanner').classList.add('hidden');
   $('#save').textContent = data.saved ? '★ Saved' : '☆ Save search';
   $('#save').disabled = !!data.saved;
-  const list = sorted(data.listings);
-  $('#list').innerHTML = list.map(card).join('') || '<div class="note">No listings match these filters.</div>';
-  $('#more').classList.toggle('hidden', !data.more);
+  const all = data.listings || [];
+  const list = sorted(all);
+  // a failed search or fetch must not leave the previous search's listings on screen
+  $('#list').innerHTML = data.error ? `<div class="note">${esc(data.error)}</div>`
+    : list.map(card).join('') || `<div class="note">${!all.length && data.total ? 'The listings couldn\'t be loaded. Use Open on trade site to see them in your browser.' : !all.length ? 'Nothing listed.' : 'No listings match these filters.'}</div>`;
+  $('#more').classList.toggle('hidden', !data.more || !!data.error);
+  $('#site').disabled = !data.url;
+  $('#save').classList.toggle('hidden', !!data.error);
   if (window.bindGearWhy) window.bindGearWhy(document);
   document.querySelectorAll('[data-whisper]').forEach((b) => b.addEventListener('click', () => {
     const x = data.listings.find((l) => l.id === b.dataset.whisper);
@@ -133,10 +143,18 @@ function render() {
   }));
 }
 
+// colour-blind palette, same setting as the popup and the app pages
+function applyColorblind() {
+  window.api.getState().then((st) => { document.body.classList.toggle('cb', !!(st && st.settings && st.settings.colorblind)); }).catch(() => {});
+}
+applyColorblind();
+
 window.api.onResults((d) => {
-  data = d;
+  data = d || { error: 'No results.' };
+  applyColorblind();
+  $('#moreMsg').textContent = '';
   // price checks read best cheapest-first; upgrade searches best-upgrade-first
-  $('#sort').value = d.mode === 'price' ? 'price' : d.resFirst ? 'res' : 'upgrade';
+  $('#sort').value = data.mode === 'price' ? 'price' : data.resFirst ? 'res' : 'upgrade';
   render();
   window.scrollTo(0, 0);
 });
@@ -158,7 +176,7 @@ $('#more').addEventListener('click', async () => {
   $('#moreMsg').textContent = '';
   if (d) { data = d; render(); }
 });
-window.api.onChanged(async () => { const d = await window.api.resultsRescore(); if (d) { data = d; render(); } });
+window.api.onChanged(async () => { applyColorblind(); const d = await window.api.resultsRescore(); if (d) { data = d; render(); } });
 
 // Esc hides the results window; bring it back with the results hotkey (Ctrl+Shift+D) or a new search.
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.api.hideResults(); });

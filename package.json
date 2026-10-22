@@ -1,12 +1,12 @@
 {
   "name": "poe2-upgrade-checker",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Free Path of Exile 2 overlay: press F2 on an item to see if it's really an upgrade for your build, judged by Path of Building's own calculations. Finds better gear on the trade site within your budget.",
   "main": "src/main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/core.test.js test/trade.test.js test/rates.test.js test/listing.test.js test/pob.test.js test/pobverdict.test.js",
+    "test": "node --test test/core.test.js test/trade.test.js test/rates.test.js test/listing.test.js test/pob.test.js test/pobverdict.test.js test/price.test.js",
     "pob": "node tools/get-pob.js",
     "dist": "node tools/get-pob.js && npx electron-builder@25.1.8 --win nsis portable --publish never",
     "dist:linux": "node tools/get-pob.js && npx electron-builder@25.1.8 --linux AppImage --publish never"
@@ -27,6 +27,16 @@
       "target": [
         "nsis",
         "portable"
+      ],
+      "extraResources": [
+        {
+          "from": "vendor/pob",
+          "to": "pob",
+          "filter": [
+            "runtime/*.dll",
+            "runtime/pobhost.exe"
+          ]
+        }
       ]
     },
     "portable": {
@@ -41,9 +51,6 @@
           "src/**/*.json",
           "!src/Export/**",
           "runtime/lua/**",
-          "runtime/*.dll",
-          "runtime/pobhost.exe",
-          "runtime/linux/**",
           "LICENSE.md",
           "manifest.xml"
         ]
@@ -76,7 +83,17 @@
         "AppImage"
       ],
       "category": "Game",
-      "artifactName": "PoE2-Upgrade-Checker-${version}.AppImage",
+      "extraResources": [
+        {
+          "from": "vendor/pob",
+          "to": "pob",
+          "filter": [
+            "runtime/linux/**",
+            "!runtime/linux/.version"
+          ]
+        }
+      ],
+      "artifactName": "PoE2-Upgrade-Checker.AppImage",
       "synopsis": "Is this item an upgrade for your PoE2 build?"
     }
   },

@@ -184,7 +184,11 @@ Say 'Uploading to GitHub... (if a sign-in window opens, sign in as ets-public)'
 $push = Run-Git -Soft push -u origin main
 if ($script:GitCode -ne 0) {
   # someone changed GitHub in the meantime: merge once more and retry
-  Pull-Rebase | Out-Null
+  $r = Pull-Rebase
+  if ($script:GitCode -ne 0) {
+    Run-Git -Soft rebase --abort | Out-Null
+    Fail ("Couldn't merge the changes made on GitHub with yours:`n" + ($r -join "`n") + "`nNothing was published.")
+  }
   $push = Run-Git -Soft push -u origin main
   if ($script:GitCode -ne 0) { Fail ("Upload failed:`n" + ($push -join "`n")) }
 }
