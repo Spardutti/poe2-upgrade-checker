@@ -1,19 +1,20 @@
-<p align="center"><img src="docs/banner.svg" alt="PoE2 Upgrade Checker" width="100%"></p>
+<p align="center"><img src="docs/banner.png" alt="PoE2 Upgrade Checker: is it really an upgrade for your build? Path of Building decides." width="100%"></p>
 
 <p align="center">
-  <a href="https://github.com/ets-public/poe2-upgrade-checker/releases/latest"><img alt="Download" src="https://img.shields.io/github/v/release/ets-public/poe2-upgrade-checker?label=download&color=d6a85a&style=for-the-badge"></a>
-  <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%2F%2011-5b4a35?style=for-the-badge">
-  <img alt="Free" src="https://img.shields.io/badge/price-free-6fcf63?style=for-the-badge">
+  <a href="https://github.com/ets-public/poe2-upgrade-checker/releases/latest"><img alt="Download" src="https://img.shields.io/github/v/release/ets-public/poe2-upgrade-checker?label=download&color=8e1a1a&labelColor=0a0c10&style=for-the-badge"></a>
+  <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%2F%2011-2c3038?labelColor=0a0c10&style=for-the-badge">
+  <img alt="Linux" src="https://img.shields.io/badge/Linux-experimental-2c3038?labelColor=0a0c10&style=for-the-badge">
+  <img alt="Free" src="https://img.shields.io/badge/price-free-7a6545?labelColor=0a0c10&style=for-the-badge">
 </p>
 
 **PoE2 Upgrade Checker** is a small overlay that sits in your system tray while you play Path of Exile 2. It answers two questions in game:
 
 | | |
 |---|---|
-| **Is this an upgrade?** Hover an item and press **F2**. With your Path of Building export loaded, the app runs **Path of Building's own calculations** on your build: what the item does to your DPS (or minion DPS), effective HP, resistances and Spirit compared with what you wear. Items that would drop a resistance or cost you damage are flagged in red, never called an upgrade. | <img src="docs/popup.svg" alt="Upgrade popup" width="380"> |
+| **Is this an upgrade?** Hover an item and press **F2**. With your Path of Building export loaded, the app runs **Path of Building's own calculations** on your build: what the item does to your DPS (or minion DPS), effective HP, resistances and Spirit compared with what you wear. Items that would drop a resistance or cost you damage are flagged in red, never called an upgrade. | <img src="docs/popup.png" alt="The popup: Doom Vise is an UPGRADE, +26.8% for your build, and caps your lightning resistance" width="380"> |
 | **Where's a better one?** One click searches the official trade site for upgrades within your budget, weighted by what each stat is worth to your build. Results open in the app, judged against your gear, with *Travel to hideout* and a ready-made whisper. | |
 
-<sub>The picture is an illustration of the app's popup.</sub>
+<sub>Screenshots of the app with a real Path of Building build (a Disciple of Varashta summoner). Trade listings in them are examples.</sub>
 
 ## Download
 
@@ -22,6 +23,8 @@
    - Windows may warn about an unrecognised app because the installer isn't code-signed. Click *More info → Run anyway*.
 2. In PoE2, go to **Options → Graphics** and set **Windowed Fullscreen**, so the overlay can draw over the game.
 3. Hover an item and press **F2**. The first-run guide walks you through adding your Path of Building build and your gear.
+
+**On Linux?** See [Linux (experimental)](#linux-experimental).
 
 ## Features
 
@@ -48,6 +51,22 @@
   - Pin it to the cursor or a screen edge.
   - Text size and colour-blind options.
   - Starts with Windows.
+
+## In pictures
+
+<p align="center"><img src="docs/popup-warnings.png" alt="Two popups: Soul Vise LOSES RESISTANCE (lightning 75% to 38%), and a ring that caps lightning but LOSES DAMAGE (minion DPS down 20%)" width="100%"></p>
+<p align="center"><sub>Items that cost you a resistance or your damage are never called an upgrade.</sub></p>
+
+<table>
+<tr>
+<td width="42%"><img src="docs/results.png" alt="Trade results judged by Path of Building, resistances first"></td>
+<td><img src="docs/character.png" alt="The Character page: minion DPS, effective HP, defences, resistances, biggest hits"><br><br><img src="docs/my-gear.png" alt="My gear with the Path of Building build and priorities"></td>
+</tr>
+<tr>
+<td><sub>Trade results: every listing checked with your build, the ones that cap a resistance first.</sub></td>
+<td><sub>The Character page, and My gear with your build and priorities.</sub></td>
+</tr>
+</table>
 
 ## Fair play and privacy
 
@@ -108,7 +127,9 @@ With your PoB export loaded, every item (in the popup and in trade results) is c
 - **Losing resistance** (off the cap, or further under it) is always its own red **LOSES RESISTANCE** verdict with a banner.
 - **Rings** are tried in both ring slots; the better one counts.
 
-Jewels and anything PoB can't read fall back to the gear score below.
+- **Jewels** are tried in every jewel socket you've allocated on your PoB tree, replacing the jewel there (or in an empty socket); the best socket counts, and the verdict says which one, e.g. "vs Entropy Star (Socket #2)". *Find upgrades* for a jewel uses PoB's jewel search (radius jewels as radius jewels).
+
+Anything PoB can't read falls back to the gear score below.
 
 ## Finding upgrades
 
@@ -176,8 +197,27 @@ Searches show their listings in a **results window** (always on top) instead of 
 - **Show a test popup** checks that the overlay can draw at all.
 - **Open log file** shows what happened on each press. It's also in the tray menu.
 - Nothing happens in game? Check the tray menu says "Hotkey: F2", that PoE2 is in Windowed Fullscreen, and what the log says.
-- If the game misses the first Ctrl+C, the app tries once more automatically.
+- **When F2 finds nothing**, the popup says why, e.g. the game wasn't the active window, the mouse wasn't over the game, or the game runs as administrator (Windows then blocks the app's Ctrl+C; start the game normally).
+- The app takes care of the usual causes itself: if one of its own windows is in front (you clicked the results window), it brings the game back first, and if its popup is under the mouse, it hides it before copying. It still sends only **one** Ctrl+C per press.
 - The popup closes when you move the mouse away from it, when you click ×, or after the time set in Settings. Esc is left to the game.
+
+## Linux (experimental)
+
+For PoE2 running through **Steam with Proton** (or Lutris/Heroic) on desktop Linux: Ubuntu, Fedora, Arch, Bazzite and so on, on X11 or Wayland.
+
+1. Download **`PoE2-Upgrade-Checker-x.y.z.AppImage`** from the [latest release](https://github.com/ets-public/poe2-upgrade-checker/releases/latest).
+2. Make it executable and run it: right-click → Properties → *Allow executing as program*, or `chmod +x PoE2-Upgrade-Checker-*.AppImage && ./PoE2-Upgrade-Checker-*.AppImage`. It **updates itself** like the Windows installer.
+   - Some distros need FUSE for AppImages (e.g. `sudo apt install libfuse2` on Ubuntu 22.04+).
+3. In PoE2 use **Windowed Fullscreen**, hover an item and press **F2**.
+
+How it works on Linux, and what to check if F2 doesn't:
+
+- **Path of Building** runs inside the app as on Windows (a bundled LuaJIT), so verdicts are the same.
+- **Sending Ctrl+C to the game** uses X11's XTest through the `python3` that comes with almost every distro – nothing to install. The game runs under Proton as an X11 window, so this also works on **Wayland** desktops (through XWayland). If `python3` or the X11 libraries are missing, the app uses `xdotool` if it's installed; otherwise press **Ctrl+C** on the item yourself – the app picks it up from the clipboard.
+- **The F2 hotkey** works while the game (or another X11 window) is focused. On some Wayland desktops global hotkeys don't reach native Wayland windows; in game that doesn't matter.
+- The app runs as an X11 app (XWayland on Wayland) so it can put the popup next to the mouse.
+- **Steam Deck:** desktop mode works like any Linux desktop; gaming mode doesn't allow other windows over the game.
+- Not working for you? Please [open an issue](https://github.com/ets-public/poe2-upgrade-checker/issues) with your distro, desktop (GNOME, KDE…), X11 or Wayland, and the log (tray → Open log file). It's in `~/.config/poe2-upgrade-checker`.
 
 ## Notes / limits
 
@@ -185,14 +225,15 @@ Searches show their listings in a **results window** (always on top) instead of 
 - Flasks and charms can be saved but aren't scored.
 - The *Never lose damage* and Spirit/attribute checks need Path of Building; the gear score fallback doesn't have them.
 - Two-handers are compared against your weapon plus offhand together.
-- Your data lives in `%APPDATA%\poe2-upgrade-checker`.
+- Your data lives in `%APPDATA%\poe2-upgrade-checker` (Linux: `~/.config/poe2-upgrade-checker`).
 
 ## Dev
 
 - `test-build.bat` builds a local portable test .exe (no release) and checks the PoB engine starts (`tools/pob-smoke.js`).
+- The look is **Wraeclast Iron**; colours, type, components and rules are in [DESIGN.md](DESIGN.md).
 - `npm test` runs the parser, scorer, trade-query, listing, PoB import and PoB verdict tests.
 - `node tools/get-pob.js` downloads the pinned Path of Building into `vendor/pob` and builds `pobhost.exe` (a small host for PoB's LuaJIT, compiled with the C# compiler that ships with Windows). The build scripts run it for you.
-- `build-exe.bat` (or `npm run dist`) builds the installer and the portable .exe locally, without publishing.
+- `build-exe.bat` (or `npm run dist`) builds the installer and the portable .exe locally, without publishing. On Linux, `npm run dist:linux` builds the AppImage (needs git, gcc and make for the Path of Building engine).
 - **Releasing a new version:** double-click `release.bat`. You need [Git for Windows](https://git-scm.com/download/win) installed once. The script then does everything else:
   1. It picks the next version and asks you to confirm with Enter.
   2. It turns *Unreleased* in `CHANGELOG.md` into this version's release notes.
@@ -204,5 +245,6 @@ Searches show their listings in a **results window** (always on top) instead of 
 ## Credits
 
 - Calculations: [Path of Building Community (PoE2)](https://github.com/PathOfBuildingCommunity/PathOfBuilding-PoE2) (MIT), bundled unmodified and run headless.
+- Fonts: [Cinzel](https://github.com/NDISCOVER/Cinzel) and [Alegreya Sans](https://github.com/huertatipografica/Alegreya-Sans), both under the SIL Open Font License (bundled in `assets/fonts`).
 - Prices: [poe.ninja](https://poe.ninja). Trade data: the official [Path of Exile trade site](https://www.pathofexile.com/trade2).
 - Path of Exile is a trademark of Grinding Gear Games. This project isn't affiliated with or endorsed by them.

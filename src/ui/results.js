@@ -80,8 +80,8 @@ function card(x) {
     ${c && c.pob && window.pobBlock ? window.pobBlock(c.pob) : c && window.characterBlock ? window.characterBlock(c.character, { risks: c.risks }) : ''}
     <details><summary>Item mods</summary>${mods}</details>
     <div class="actions">
-      ${x.instant && x.hideoutToken ? `<button class="primary" data-hideout="${esc(x.id)}" title="${data.signedIn ? 'Asks the trade site to take you to the seller\'s hideout, straight from here' : 'Takes you to the seller\'s hideout from here – you sign in to pathofexile.com once the first time'}">Travel to hideout</button>` : ''}
-      ${x.whisper ? `<button class="primary" data-whisper="${esc(x.id)}" title="Copies the seller's whisper – paste it in game chat with Enter, Ctrl+V">Copy whisper</button>` : ''}
+      ${x.instant && x.hideoutToken ? `<button class="primary gilded" data-hideout="${esc(x.id)}" title="${data.signedIn ? 'Asks the trade site to take you to the seller\'s hideout, straight from here' : 'Takes you to the seller\'s hideout from here – you sign in to pathofexile.com once the first time'}">Travel to hideout</button>` : ''}
+      ${x.whisper ? `<button class="primary gilded" data-whisper="${esc(x.id)}" title="Copies the seller's whisper – paste it in game chat with Enter, Ctrl+V">Copy whisper</button>` : ''}
       <button class="link" data-listing="${esc(x.id)}" title="Opens the trade site in your browser on just this seller's listing">on trade site ↗</button>
     </div>
   </article>`;

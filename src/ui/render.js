@@ -228,6 +228,13 @@
     return '';
   };
 
+  // the number in carved type, the words after it in plain text ("+26.8%" + "for your build")
+  function scoreHtml(label) {
+    if (!label) return '';
+    const m = String(label).match(/^([+\-−]?[\d.,]+%?)\s*(.*)$/);
+    return m ? `<span class="score">${esc(m[1])}${m[2] ? ` <small>${esc(m[2])}</small>` : ''}</span>` : `<span class="score">${esc(label)}</span>`;
+  }
+
   function pointsLabel(r) {
     // a loss verdict with a positive score would read like an upgrade: the banner says what it costs
     if (r.scoreMode === 'pob') return r.delta == null || ((r.verdict === 'dmgloss' || r.verdict === 'resloss') && r.delta > 0) ? '' : `${r.delta > 0 ? '+' : ''}${r.delta}% for your build`;
@@ -258,7 +265,8 @@
     const rarity = (it.rarity || '').toLowerCase();
     const full = opts.expanded || ui.detail === 'full';
     const gearMode = r.scoreMode === 'gear' || r.scoreMode === 'pob';
-    const target = ['Ring', 'Charm', 'Jewel'].includes(it.slot) ? it.slot : r.targetSlot;
+    // jewels judged by PoB: the search is for your tree's sockets, starting from this jewel
+    const target = it.slot === 'Jewel' && r.pob && r.pob.socket && it.id ? { itemId: it.id } : ['Ring', 'Charm', 'Jewel'].includes(it.slot) ? it.slot : r.targetSlot;
     const budget = r.budgetLabel ? ' ' + r.budgetLabel.replace(/ \(.*\)$/, '') : '';
 
     const rowCls = (row) => {
@@ -307,7 +315,7 @@
           <div class="dim">${r.pobPending ? 'Checking with Path of Building…' : "Uniques have fixed mods, so there's no gear score – check its price, or compare the changes below."}</div>`
           : `<div class="verdict ${v.cls}">
           <span class="badge">${v.text}</span>
-          ${r.isEquipped || emptySlot ? '' : `<span class="score">${esc(pointsLabel(r))}</span>`}
+          ${r.isEquipped || emptySlot ? '' : scoreHtml(pointsLabel(r))}
           ${r.isEquipped ? '' : r.replacing.length ? `<span class="dim">vs ${esc(r.replacing.join(' + '))}</span>` : `<span class="dim">${esc(r.targetSlot)} slot is empty</span>`}
         </div>`}
         ${lossBanner}

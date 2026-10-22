@@ -36,6 +36,7 @@ async function load() {
   renderResists();
   renderBuildEditor();
   $('#startWithWindows').checked = !!state.settings.startWithWindows;
+  if (state.platform === 'linux') { $('#startWithLabel').textContent = 'Start when I log in'; if (state.dataDir) $('#dataDirText').textContent = state.dataDir; }
   $('#openSettingsOnStart').checked = state.settings.openSettingsOnStart !== false;
   $('#advancedCopy').checked = !!state.settings.advancedCopy;
   $('#watchClipboard').checked = state.settings.watchClipboard !== false;
@@ -535,7 +536,7 @@ async function renderSaved() {
   $('#savedList').innerHTML = list.length ? '<tr><th>Search</th><th>Listings last time</th><th></th></tr>' + list.map((x) => `<tr>
       <td><b>${esc(x.name)}</b><div class="dim">${esc(x.league)}${x.itemClass ? ' · ' + esc(x.itemClass) : ''}</div></td>
       <td>${x.lastTotal != null ? esc(x.lastTotal) : '?'} <span class="dim">${esc(ago2(x.lastRun))}</span><div class="note" data-savedmsg="${esc(x.id)}"></div></td>
-      <td class="nowrap"><label class="small"><input type="checkbox" data-alert="${esc(x.id)}" ${x.alert ? 'checked' : ''}> Alert</label> <button class="primary" data-run="${esc(x.id)}">Run</button> <button data-del="${esc(x.id)}">Delete</button></td></tr>`).join('')
+      <td class="nowrap"><label class="small"><input type="checkbox" data-alert="${esc(x.id)}" ${x.alert ? 'checked' : ''}> Alert</label> <button class="primary gilded" data-run="${esc(x.id)}">Run</button> <button data-del="${esc(x.id)}">Delete</button></td></tr>`).join('')
     : '<tr><td class="dim">No saved searches yet.</td></tr>';
   document.querySelectorAll('[data-run]').forEach((b) => b.addEventListener('click', async () => {
     const msg = document.querySelector(`[data-savedmsg="${b.dataset.run}"]`);

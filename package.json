@@ -1,14 +1,15 @@
 {
   "name": "poe2-upgrade-checker",
-  "version": "0.4.1",
-  "description": "Path of Exile 2 overlay: Ctrl+C an item to see if it's an upgrade, and search the trade site for better gear.",
+  "version": "0.4.2",
+  "description": "Free Path of Exile 2 overlay: press F2 on an item to see if it's really an upgrade for your build, judged by Path of Building's own calculations. Finds better gear on the trade site within your budget.",
   "main": "src/main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
     "test": "node --test test/core.test.js test/trade.test.js test/rates.test.js test/listing.test.js test/pob.test.js test/pobverdict.test.js",
     "pob": "node tools/get-pob.js",
-    "dist": "node tools/get-pob.js && npx electron-builder@25.1.8 --win nsis portable --publish never"
+    "dist": "node tools/get-pob.js && npx electron-builder@25.1.8 --win nsis portable --publish never",
+    "dist:linux": "node tools/get-pob.js && npx electron-builder@25.1.8 --linux AppImage --publish never"
   },
   "devDependencies": {
     "electron": "33.4.11"
@@ -32,8 +33,25 @@
       "artifactName": "PoE2-Upgrade-Checker-Portable-${version}.exe"
     },
     "extraResources": [
-      { "from": "vendor/pob", "to": "pob", "filter": ["src/**/*.lua", "src/**/*.json", "!src/Export/**", "runtime/lua/**", "runtime/*.dll", "runtime/pobhost.exe", "LICENSE.md", "manifest.xml"] },
-      { "from": "pob/server.lua", "to": "pob/server.lua" }
+      {
+        "from": "vendor/pob",
+        "to": "pob",
+        "filter": [
+          "src/**/*.lua",
+          "src/**/*.json",
+          "!src/Export/**",
+          "runtime/lua/**",
+          "runtime/*.dll",
+          "runtime/pobhost.exe",
+          "runtime/linux/**",
+          "LICENSE.md",
+          "manifest.xml"
+        ]
+      },
+      {
+        "from": "pob/server.lua",
+        "to": "pob/server.lua"
+      }
     ],
     "directories": {
       "output": "dist"
@@ -51,9 +69,22 @@
         "repo": "poe2-upgrade-checker",
         "releaseType": "release"
       }
-    ]
+    ],
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game",
+      "artifactName": "PoE2-Upgrade-Checker-${version}.AppImage",
+      "synopsis": "Is this item an upgrade for your PoE2 build?"
+    }
   },
   "dependencies": {
     "electron-updater": "6.3.9"
-  }
+  },
+  "author": {
+    "name": "ets-public"
+  },
+  "homepage": "https://github.com/ets-public/poe2-upgrade-checker"
 }

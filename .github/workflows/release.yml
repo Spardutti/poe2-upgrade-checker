@@ -1,7 +1,7 @@
 name: Release
 
-# Builds the Windows installer and the portable .exe, runs the tests, and publishes both as a
-# GitHub release with the matching CHANGELOG.md section as release notes.
+# Builds the Windows installer and the portable .exe (and, after them, the experimental Linux
+# AppImage), runs the tests, and publishes them as a GitHub release with the matching CHANGELOG.md section as release notes.
 # Started by release.bat (it pushes a tag like v0.4.1), or by hand: Actions -> Release -> Run workflow.
 on:
   workflow_dispatch:
@@ -54,7 +54,33 @@ jobs:
               if (on) out.push(l);
             }
             const notes = out.join("\n").trim() || "Fixes and improvements.";
-            const head = "## Download\n\n- **`PoE2-Upgrade-Checker-Setup-" + v + ".exe`**: installs for your user (no admin) and **updates itself**. Recommended.\n- `PoE2-Upgrade-Checker-Portable-" + v + ".exe`: no install, no auto-update.\n\nWindows may say the app is unrecognised (it isn\x27t code-signed): click *More info → Run anyway*. In PoE2, use **Windowed Fullscreen**.\n\n## What\x27s new\n\n";
+            const head = "## Download\n\n- **`PoE2-Upgrade-Checker-Setup-" + v + ".exe`**: installs for your user (no admin) and **updates itself**. Recommended.\n- `PoE2-Upgrade-Checker-Portable-" + v + ".exe`: no install, no auto-update.\n\nWindows may say the app is unrecognised (it isn\x27t code-signed): click *More info → Run anyway*. In PoE2, use **Windowed Fullscreen**.\n\n**Linux (experimental):** `PoE2-Upgrade-Checker-" + v + ".AppImage` for the game under Steam/Proton. `chmod +x` it and run it. See the README\x27s Linux section.\n\n## What\x27s new\n\n";
             fs.writeFileSync("notes.md", head + notes + "\n\nFull guide: [README](https://github.com/" + process.env.GITHUB_REPOSITORY + "#readme)\n");
           ' "$VER"
           gh release edit "v$VER" --title "$VER" --notes-file notes.md
+
+  # Linux AppImage (experimental): built on the oldest supported Ubuntu so it runs on older distros
+  # too, after the Windows job has created the release; uploaded with its auto-update file.
+  linux:
+    needs: build
+    runs-on: ubuntu-22.04
+    continue-on-error: true # experimental: a Linux problem never fails the Windows release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - run: node tools/get-pob.js
+      - run: node tools/pob-smoke.js
+      - run: npm test
+      - name: Build the AppImage
+        run: npx electron-builder@25.1.8 --linux AppImage --publish never
+      - name: Upload it to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          ls -la dist
+          gh release upload "v$VER" dist/*.AppImage dist/latest-linux.yml --clobber

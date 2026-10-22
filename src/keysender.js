@@ -1,7 +1,8 @@
 'use strict';
 
-// Sends a single Ctrl+C keystroke to the foreground window (the game) on
-// Windows. Uses one long-running PowerShell process so each press is fast,
+// Sends a single Ctrl+C keystroke to the game on Windows. If one of this app's own windows is in
+// front (you clicked the results window or the main window), the game is brought back to the
+// front first, otherwise the copy would go to our window and nothing would be copied. Uses one long-running PowerShell process so each press is fast,
 // instead of starting PowerShell every time. No native modules needed.
 
 const { spawn } = require('child_process');
@@ -18,6 +19,72 @@ public static class PoeKeys {
   [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
   [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
   [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint mapType);
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr hWnd);
+  [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
+  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
+  [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
+  [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT p);
+  [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
+  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+  [DllImport("advapi32.dll")] static extern bool OpenProcessToken(IntPtr h, uint access, out IntPtr token);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  // a game started "as administrator" doesn't take keystrokes from a normal app (Windows blocks
+  // them); we can tell because we may not even look at its process token
+  static bool Elevated(uint pid) {
+    IntPtr h = OpenProcess(0x1000, false, pid); if (h == IntPtr.Zero) return false;
+    IntPtr t; bool ok = OpenProcessToken(h, 0x0008, out t);
+    if (ok) CloseHandle(t); CloseHandle(h);
+    return !ok;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+  static string ProcName(uint pid) { try { return System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { return "?"; } }
+  static bool IsGame(string name) { return name.StartsWith("PathOfExile", StringComparison.OrdinalIgnoreCase); }
+  static IntPtr FindGame() {
+    foreach (var p in System.Diagnostics.Process.GetProcesses()) {
+      if (!IsGame(p.ProcessName)) continue;
+      IntPtr h = p.MainWindowHandle; if (h != IntPtr.Zero && !IsIconic(h)) return h;
+    }
+    return IntPtr.Zero;
+  }
+  static bool Focus(IntPtr h, uint fgThread) {
+    uint me = GetCurrentThreadId();
+    AttachThreadInput(me, fgThread, true);
+    BringWindowToTop(h); bool ok = SetForegroundWindow(h);
+    AttachThreadInput(me, fgThread, false);
+    return ok;
+  }
+  // Before the keystroke: make sure it reaches the game, with the item under the mouse hovered.
+  //  - the game isn't the active window, but this app is, or the mouse is over the game (you clicked
+  //    the results window, or Discord has focus): bring the game to the front
+  //  - nudge: the app just hid its popup from under the mouse, so move the mouse 1 pixel and back
+  //    for the game to see the item under it again (and show its tooltip)
+  // Returns "fg=<process the keystroke goes to>;over=<process under the mouse>[;refocused][;nudged]".
+  public static string Prepare(int appPid, bool nudge) {
+    IntPtr fg = GetForegroundWindow(); uint fgPid; uint fgThread = GetWindowThreadProcessId(fg, out fgPid);
+    string fgName = ProcName(fgPid);
+    POINT pt; GetCursorPos(out pt);
+    IntPtr under = GetAncestor(WindowFromPoint(pt), 2); uint underPid; GetWindowThreadProcessId(under, out underPid);
+    string underName = ProcName(underPid);
+    string extra = "";
+    if (nudge) { SetCursorPos(pt.X + 1, pt.Y); System.Threading.Thread.Sleep(20); SetCursorPos(pt.X, pt.Y); extra += ";nudged"; }
+    if (!IsGame(fgName) && (fgPid == (uint)appPid || IsGame(underName))) {
+      IntPtr game = IsGame(underName) ? under : FindGame();
+      if (game != IntPtr.Zero && Focus(game, fgThread)) {
+        IntPtr now = GetForegroundWindow(); uint nowPid; GetWindowThreadProcessId(now, out nowPid);
+        fgName = ProcName(nowPid); extra += ";refocused";
+        System.Threading.Thread.Sleep(90); // let the game take the focus before the keystroke
+      } else extra += ";refocus-failed";
+    }
+    if (nudge) System.Threading.Thread.Sleep(70); // the game redraws the tooltip
+    IntPtr f2 = GetForegroundWindow(); uint f2Pid; GetWindowThreadProcessId(f2, out f2Pid);
+    if (IsGame(ProcName(f2Pid)) && Elevated(f2Pid)) extra += ";game-admin";
+    return "fg=" + fgName + ";over=" + underName + extra;
+  }
   const uint UP = 2;
   static bool Down(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
   // Send with the hardware scan code and hold each key briefly: games read the
@@ -42,10 +109,192 @@ while ($true) {
   $line = [Console]::In.ReadLine()
   if ($line -eq $null) { break }
   try {
-    [PoeKeys]::Copy($line -eq 'advanced')
-    [Console]::Out.WriteLine('ok')
+    $parts = $line.Split(' ')
+    $target = [PoeKeys]::Prepare([int]($(if ($parts.Count -gt 1) { $parts[1] } else { 0 })), ($parts.Count -gt 2 -and $parts[2] -eq 'nudge'))
+    [PoeKeys]::Copy($parts[0] -eq 'advanced')
+    [Console]::Out.WriteLine('ok ' + $target)
   } catch { [Console]::Out.WriteLine('err ' + $_.Exception.Message) }
 }
+`;
+
+// Linux: the same job for the game under Proton (an X11 window, also on Wayland desktops via
+// XWayland), with XTest through Python's ctypes, so there's nothing to install.
+const PY_SCRIPT = String.raw`# PoE2 Upgrade Checker - Linux key helper (X11 / XWayland, via XTest; no installs needed).
+# Reads one command per line: "copy <app pid> [nudge]" or "advanced <app pid> [nudge]".
+# Answers "ok fg=<window that got the keystroke>;over=<window under the mouse>[;refocused|;refocus-failed][;nudged]"
+# The game runs under Proton/Wine as an X11 window, so this works on X11 and on Wayland desktops.
+import ctypes, os, sys, time
+from ctypes import c_int, c_uint, c_ulong, c_long, c_char_p, c_void_p, POINTER, byref, Structure, Union
+
+def out(s):
+    sys.stdout.write(s + '\n'); sys.stdout.flush()
+
+try:
+    X = ctypes.CDLL('libX11.so.6'); T = ctypes.CDLL('libXtst.so.6')
+except OSError as e:
+    out('fatal X11/XTest libraries not found (%s)' % e); sys.exit(2)
+Window = c_ulong; Atom = c_ulong
+X.XOpenDisplay.restype = c_void_p; X.XOpenDisplay.argtypes = [c_char_p]
+d = X.XOpenDisplay(None)
+if not d:
+    out('fatal cannot open the X display (DISPLAY=%s)' % os.environ.get('DISPLAY')); sys.exit(3)
+ERRH = ctypes.CFUNCTYPE(c_int, c_void_p, c_void_p)(lambda a, b: 0)  # ignore BadWindow etc.
+X.XSetErrorHandler(ERRH)
+X.XDefaultRootWindow.restype = Window; X.XDefaultRootWindow.argtypes = [c_void_p]
+root = X.XDefaultRootWindow(d)
+X.XKeysymToKeycode.restype = ctypes.c_ubyte; X.XKeysymToKeycode.argtypes = [c_void_p, c_ulong]
+X.XInternAtom.restype = Atom; X.XInternAtom.argtypes = [c_void_p, c_char_p, c_int]
+X.XGetWindowProperty.argtypes = [c_void_p, Window, Atom, c_long, c_long, c_int, Atom, POINTER(Atom), POINTER(c_int), POINTER(c_ulong), POINTER(c_ulong), POINTER(c_void_p)]
+X.XFree.argtypes = [c_void_p]
+X.XQueryPointer.argtypes = [c_void_p, Window, POINTER(Window), POINTER(Window), POINTER(c_int), POINTER(c_int), POINTER(c_int), POINTER(c_int), POINTER(c_uint)]
+X.XQueryKeymap.argtypes = [c_void_p, ctypes.c_char * 32]
+X.XFlush.argtypes = [c_void_p]
+X.XGetInputFocus.argtypes = [c_void_p, POINTER(Window), POINTER(c_int)]
+T.XTestFakeKeyEvent.argtypes = [c_void_p, c_uint, c_int, c_ulong]
+T.XTestFakeRelativeMotionEvent.argtypes = [c_void_p, c_int, c_int, c_ulong]
+class XClassHint(Structure):
+    _fields_ = [('res_name', c_void_p), ('res_class', c_void_p)]
+X.XGetClassHint.argtypes = [c_void_p, Window, POINTER(XClassHint)]
+class XClientMessageEvent(Structure):
+    _fields_ = [('type', c_int), ('serial', c_ulong), ('send_event', c_int), ('display', c_void_p), ('window', Window), ('message_type', Atom), ('format', c_int), ('l', c_long * 5)]
+class XEvent(Union):
+    _fields_ = [('xclient', XClientMessageEvent), ('pad', c_long * 24)]
+X.XSendEvent.argtypes = [c_void_p, Window, c_int, c_long, POINTER(XEvent)]
+X.XSetInputFocus.argtypes = [c_void_p, Window, c_int, c_ulong]
+X.XRaiseWindow.argtypes = [c_void_p, Window]
+
+KC = lambda sym: X.XKeysymToKeycode(d, sym)
+CTRL, ALT, SHIFT, C = KC(0xffe3), KC(0xffe9), KC(0xffe1), KC(0x0063)
+GAME_HINTS = ('pathofexile', 'steam_app_2694490')  # PoE2's window class under Proton (Steam app 2694490)
+
+def prop(w, name):
+    a = X.XInternAtom(d, name.encode(), 0); at = Atom(); af = c_int(); n = c_ulong(); rest = c_ulong(); data = c_void_p()
+    if X.XGetWindowProperty(d, w, a, 0, 16, 0, 0, byref(at), byref(af), byref(n), byref(rest), byref(data)) != 0 or not data.value:
+        return None
+    try:
+        if n.value == 0 or af.value != 32: return None
+        arr = ctypes.cast(data, POINTER(c_ulong)); return [arr[i] for i in range(n.value)]
+    finally:
+        X.XFree(data)
+
+def wm_class(w):
+    h = XClassHint()
+    if not w or not X.XGetClassHint(d, w, byref(h)): return ''
+    s = ''
+    for p in (h.res_name, h.res_class):
+        if p: s += ctypes.string_at(p).decode('utf8', 'replace') + ' '; X.XFree(p)
+    return s.strip()
+
+def pid_of(w):
+    v = prop(w, '_NET_WM_PID') if w else None
+    return v[0] if v else 0
+
+def comm(pid):
+    try:
+        with open('/proc/%d/comm' % pid) as f: return f.read().strip()
+    except Exception: return ''
+
+def is_game(w):
+    s = (wm_class(w) + ' ' + comm(pid_of(w))).lower()
+    return any(h in s for h in GAME_HINTS)
+
+def describe(w, app_pid):
+    if not w: return '?'
+    p = pid_of(w)
+    if p and app_pid and p == app_pid: return 'self'
+    if is_game(w): return 'PathOfExile'
+    c = wm_class(w).split(' ')
+    return (c[-1] if c and c[-1] else '') or comm(p) or '?'
+
+def active():
+    v = prop(root, '_NET_ACTIVE_WINDOW')
+    if v and v[0]: return v[0]
+    w = Window(); r = c_int(); X.XGetInputFocus(d, byref(w), byref(r))
+    return w.value if w.value > 1 else 0  # 0/1: None/PointerRoot
+
+def pointer_window():
+    # walk down from the root to the deepest window under the mouse; the first one with a class is the app's
+    w = root; chain = []
+    rr = Window(); ch = Window(); rx = c_int(); ry = c_int(); wx = c_int(); wy = c_int(); m = c_uint()
+    for _ in range(8):
+        if not X.XQueryPointer(d, w, byref(rr), byref(ch), byref(rx), byref(ry), byref(wx), byref(wy), byref(m)) or not ch.value: break
+        w = ch.value; chain.append(w)
+    for c in chain:
+        if wm_class(c) or pid_of(c): return c
+    return chain[-1] if chain else 0
+
+def find_game():
+    for w in (prop(root, '_NET_CLIENT_LIST') or []):
+        if is_game(w): return w
+    return 0
+
+def activate(w):
+    ev = XEvent(); e = ev.xclient
+    e.type = 33; e.send_event = 1; e.display = d; e.window = w; e.format = 32
+    e.message_type = X.XInternAtom(d, b'_NET_ACTIVE_WINDOW', 0)
+    e.l[0] = 2; e.l[1] = 0; e.l[2] = 0  # 2: asked for by a tool on the user's behalf
+    X.XSendEvent(d, root, 0, (1 << 20) | (1 << 19), byref(ev)); X.XFlush(d)
+
+def key(code, down):
+    T.XTestFakeKeyEvent(d, code, 1 if down else 0, 0); X.XFlush(d)
+
+def held(code):
+    km = (ctypes.c_char * 32)(); X.XQueryKeymap(d, km)
+    return (ord(km[code // 8]) >> (code % 8)) & 1
+
+MODS = set(KC(k) for k in (0xffe1, 0xffe2, 0xffe3, 0xffe4, 0xffe9, 0xffea, 0xffeb, 0xffec, 0xfe03))
+def wait_hotkey_released(timeout=1.5):
+    # X11 grabs the whole keyboard while the hotkey is held down: keys sent meanwhile go to this app,
+    # not the game. Wait until only modifiers (or nothing) are down.
+    end = time.time() + timeout
+    while time.time() < end:
+        km = (ctypes.c_char * 32)(); X.XQueryKeymap(d, km)
+        down = [i * 8 + b for i in range(32) for b in range(8) if (ord(km[i]) >> b) & 1]
+        if not [k for k in down if k not in MODS]: return True
+        time.sleep(0.01)
+    return False
+
+def prepare(app_pid, nudge):
+    extra = '' if wait_hotkey_released() else ';hotkey-held'
+    time.sleep(0.03)  # the grab ends just after the release
+    fg = active(); under = pointer_window()
+    if nudge:
+        T.XTestFakeRelativeMotionEvent(d, 1, 0, 0); X.XFlush(d); time.sleep(0.02)
+        T.XTestFakeRelativeMotionEvent(d, -1, 0, 0); X.XFlush(d); extra += ';nudged'
+    fg_name = describe(fg, app_pid); under_name = describe(under, app_pid)
+    if fg_name != 'PathOfExile' and (fg_name == 'self' or under_name == 'PathOfExile'):
+        game = under if under_name == 'PathOfExile' else find_game()
+        if game:
+            activate(game); time.sleep(0.12)
+            if not is_game(active()):  # window manager ignored the request: set the focus ourselves
+                X.XRaiseWindow(d, game); X.XSetInputFocus(d, game, 2, 0); X.XFlush(d); time.sleep(0.08)
+            if is_game(active()): fg_name = 'PathOfExile'; extra += ';refocused'
+            else: extra += ';refocus-failed'
+        else: extra += ';refocus-failed'
+    if nudge: time.sleep(0.07)
+    return 'fg=%s;over=%s%s' % (fg_name, under_name, extra)
+
+def copy(advanced):
+    if held(SHIFT): key(SHIFT, False)
+    alt = held(ALT)
+    if alt and not advanced: key(ALT, False)
+    key(CTRL, True); time.sleep(0.015)
+    if advanced and not alt: key(ALT, True); time.sleep(0.015)
+    key(C, True); time.sleep(0.04); key(C, False); time.sleep(0.015)
+    if advanced and not alt: key(ALT, False)
+    key(CTRL, False)
+
+out('ready')
+for line in sys.stdin:
+    parts = line.split()
+    if not parts: continue
+    try:
+        app_pid = int(parts[1]) if len(parts) > 1 else 0
+        target = prepare(app_pid, len(parts) > 2 and parts[2] == 'nudge')
+        copy(parts[0] == 'advanced')
+        out('ok ' + target)
+    except Exception as e:
+        out('err %s' % e)
 `;
 
 class KeySender {
@@ -55,20 +304,29 @@ class KeySender {
     this.proc = null;
     this.ready = false;
     this.waiters = [];
-    this.supported = process.platform === 'win32';
+    this.supported = process.platform === 'win32' || process.platform === 'linux';
+    this.mode = process.platform === 'linux' ? 'python' : 'powershell';
+    this.unavailable = null; // why sending keys can't work here (Linux without Python/X11 and xdotool)
   }
 
   start() {
-    if (!this.supported || this.proc) return;
-    const script = path.join(this.dir, 'poe2uc-keys.ps1');
+    if (!this.supported || this.proc || this.mode === 'xdotool') return;
     try {
-      fs.writeFileSync(script, PS_SCRIPT);
-      this.proc = spawn('powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script],
-        { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      if (this.mode === 'python') {
+        const script = path.join(this.dir, 'poe2uc-keys.py');
+        fs.writeFileSync(script, PY_SCRIPT);
+        this.proc = spawn('python3', ['-u', script], { stdio: ['pipe', 'pipe', 'pipe'] });
+      } else {
+        const script = path.join(this.dir, 'poe2uc-keys.ps1');
+        fs.writeFileSync(script, PS_SCRIPT);
+        this.proc = spawn('powershell.exe',
+          ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script],
+          { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      }
     } catch (err) {
-      this.log('keysender: could not start PowerShell: ' + err.message);
+      this.log(`keysender: could not start ${this.mode}: ${err.message}`);
       this.proc = null;
+      if (this.mode === 'python') this.fallbackLinux(err.message);
       return;
     }
     let buf = '';
@@ -77,10 +335,11 @@ class KeySender {
       let i;
       while ((i = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
-        if (line === 'ready') { this.ready = true; this.log('keysender: ready'); continue; }
+        if (line === 'ready') { this.ready = true; this.log(`keysender: ready (${this.mode})`); continue; }
+        if (line.startsWith('fatal')) { this.log('keysender: ' + line); this.fatal = line.slice(6); continue; }
         const w = this.waiters.shift();
         if (line.startsWith('err')) this.log('keysender: ' + line);
-        if (w) w(line === 'ok');
+        if (w) w(line.startsWith('ok') ? (line.slice(3) || 'game') : false);
       }
     });
     this.proc.stderr.on('data', (d) => this.log('keysender stderr: ' + d.toString().trim()));
@@ -89,28 +348,53 @@ class KeySender {
       this.log('keysender: ' + err.message);
       this.proc = null; this.ready = false;
       this.waiters.splice(0).forEach((w) => w(false));
+      if (this.mode === 'python') { this.stopping = true; this.fallbackLinux(err.message); } // no python3
     });
     this.proc.stdin.on('error', (err) => this.log('keysender: ' + err.message));
     this.proc.on('exit', (code) => {
       this.log('keysender exited ' + code);
       this.proc = null; this.ready = false;
       this.waiters.splice(0).forEach((w) => w(false));
+      // Linux: no X11/XTest (or no display): try xdotool instead of restarting a helper that can't work
+      if (this.mode === 'python' && this.fatal) { this.fallbackLinux(this.fatal); return; }
+      // start it again straight away, so it's ready for the next press (not while quitting)
+      if (!this.stopping) { this.restarts = (this.restarts || 0) + 1; if (this.restarts < 20) setTimeout(() => { if (!this.proc && !this.stopping) this.start(); }, Math.min(30000, 500 * this.restarts)); }
     });
   }
 
-  // Resolves true once the keystroke was sent.
-  copy(advanced) {
-    if (!this.supported) return Promise.resolve(false);
+  // Resolves once the keystroke was sent: to the name of the process it went to (truthy), or false.
+  // opts.nudge: the popup was just hidden from under the mouse (see Prepare in the script)
+  async copy(advanced, opts = {}) {
+    if (!this.supported) return false;
+    if (this.mode === 'xdotool') {
+      return new Promise((resolve) => {
+        const p = spawn('xdotool', ['key', '--clearmodifiers', advanced ? 'ctrl+alt+c' : 'ctrl+c'], { stdio: 'ignore' });
+        p.on('error', () => resolve(false)); p.on('exit', (c) => resolve(c === 0 ? 'fg=?;over=?' : false));
+      });
+    }
     if (!this.proc) this.start();
-    if (!this.proc) return Promise.resolve(false);
+    if (!this.proc) return false;
+    // PowerShell compiles the helper on start (1–3 s): wait for it instead of dropping this press
+    for (let t = 0; !this.ready && this.proc && t < 6000; t += 50) await new Promise((r) => setTimeout(r, 50));
+    if (!this.ready || !this.proc) { this.log('keysender: not ready'); return false; }
     return new Promise((resolve) => {
-      const t = setTimeout(() => resolve(false), 1500);
+      const t = setTimeout(() => { this.log('keysender: no answer'); resolve(false); }, 2500);
       this.waiters.push((ok) => { clearTimeout(t); resolve(ok); });
-      try { this.proc.stdin.write((advanced ? 'advanced' : 'copy') + '\n'); } catch (_) { clearTimeout(t); resolve(false); }
+      try { this.proc.stdin.write(`${advanced ? 'advanced' : 'copy'} ${process.pid}${opts.nudge ? ' nudge' : ''}\n`); } catch (_) { clearTimeout(t); resolve(false); }
     });
   }
 
-  stop() { if (this.proc) { try { this.proc.kill(); } catch (_) {} this.proc = null; } }
+  // Linux without Python's X11/XTest access: xdotool if it's installed, else nothing (you press
+  // Ctrl+C yourself and the app reads the clipboard)
+  fallbackLinux(why) {
+    try { require('child_process').execFileSync('xdotool', ['--version'], { stdio: 'ignore' }); this.mode = 'xdotool'; this.log('keysender: using xdotool (' + why + ')'); } catch (_) {
+      this.mode = 'none'; this.supported = false;
+      this.unavailable = `Can't send Ctrl+C to the game here (${why}). Press Ctrl+C on the item yourself – the app reads it from the clipboard – or install xdotool.`;
+      this.log('keysender: ' + this.unavailable);
+    }
+  }
+
+  stop() { this.stopping = true; if (this.proc) { try { this.proc.kill(); } catch (_) {} this.proc = null; } }
 }
 
-module.exports = { KeySender, PS_SCRIPT };
+module.exports = { KeySender, PS_SCRIPT, PY_SCRIPT };

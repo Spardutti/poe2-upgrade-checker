@@ -19,6 +19,10 @@ const { Store } = require('./core/store');
 const { SLOTS, MAIN_SLOTS, SLOT_GROUPS, WEAKEST_OF, groupOf } = require('./core/slots');
 const { KeySender } = require('./keysender');
 
+// Linux: run through X11 (XWayland on Wayland desktops). Global hotkeys, putting the popup at the
+// mouse and sending Ctrl+C to the game (an X11 window under Proton) all need it.
+if (process.platform === 'linux') app.commandLine.appendSwitch('ozone-platform', 'x11');
+
 if (!app.requestSingleInstanceLock()) { app.exit(0); }
 
 let store;
@@ -131,6 +135,8 @@ async function pobJudge(list) {
   list.forEach((x, i) => {
     const text = x.item && (x.item.raw || x.item.listingText);
     if (!text) return;
+    // jewels: PoB tries it in every jewel socket you've allocated on the tree
+    if (x.item.slot === 'Jewel' || /^Jewel \d$/.test(x.slot || '')) { req.push({ slot: 'Jewel', text }); idx.push([i, 'Jewel']); return; }
     const group = x.item.slot && SLOT_GROUPS[x.item.slot];
     const slots = group && group.every((g) => pobVerdict.SLOT_TO_POB[g]) ? group : [x.slot || x.item.slot];
     for (const sl of slots) { const ps = pobVerdict.SLOT_TO_POB[sl]; if (ps) { req.push({ slot: ps, text }); idx.push([i, sl]); } }
@@ -140,6 +146,16 @@ async function pobJudge(list) {
     const res = await pobEngine().evalItems(req);
     res.forEach((r, k) => {
       if (!r || !r.ok) return;
+      if (r.multi) {
+        // a jewel that's already in one of your sockets is only compared with itself there
+        const nm = list[idx[k][0]].item && list[idx[k][0]].item.name;
+        const own = r.multi.filter((m) => nm && m.replacing === nm);
+        for (const m of (own.length ? own : r.multi)) {
+          const j = pobVerdict.judge(r.before, m.after, pobWeights());
+          if (j) { j.slot = idx[k][1]; j.socket = { slot: m.slot, label: m.label, replacing: m.replacing || null }; per[idx[k][0]].push(j); }
+        }
+        return;
+      }
       const j = pobVerdict.judge(r.before, r.after, pobWeights());
       if (j) { j.slot = idx[k][1]; per[idx[k][0]].push(j); }
     });
@@ -149,7 +165,15 @@ async function pobJudge(list) {
 // Path of Building's own weighted trade search for a slot ("Trader"), trimmed to what the trade
 // site accepts; every listing it finds is then checked exactly with your build.
 const pobQueries = new Map(); // slot|weights -> { at, r }
-async function pobQueryFor(slot) {
+// which of your tree's jewel sockets a jewel search is for: the one holding this jewel if it's in
+// your tree, otherwise your first socketed one (the weights are the same for every normal socket)
+function pobJewelSocket(item) {
+  const socks = ((pobEngine().info() || {}).sockets) || [];
+  return (item && socks.find((s) => s.jewel && s.jewel === item.name)) || socks.find((s) => s.jewel) || socks[0] || null;
+}
+const isRadiusJewel = (item) => !!item && (/^Time-Lost /i.test(item.baseType || '') || (item.lines || []).some((l) => /^Radius:/i.test(l.text || '')));
+
+async function pobQueryFor(slot, item) {
   const eng = pobEngine();
   const info = await eng.ensureLoaded();
   const key = pobVerdict.dpsKey(info && info.stats);
@@ -157,18 +181,24 @@ async function pobQueryFor(slot) {
   // the damage number PoB's search should raise: the same one the verdicts use for this build
   const dmgStat = { MinionDPS: 'MinionCombinedDPS', FullDPS: 'FullDPS', CombinedDPS: 'CombinedDPS', TotalDPS: 'TotalDPS' }[key] || 'FullDPS';
   const weights = [{ stat: dmgStat, weightMult: w }, { stat: 'TotalEHP', weightMult: Math.max(0.05, 1 - w) }];
-  const ck = `${store.data.activeProfile}|${slot}|${w}`; // resistance priority is applied after, per search
+  let pobSlotName = pobVerdict.SLOT_TO_POB[slot]; let jewelType;
+  if (slot === 'Jewel') {
+    const sock = pobJewelSocket(item);
+    if (!sock) throw new Error('Your Path of Building build has no allocated jewel socket.');
+    pobSlotName = sock.slot; jewelType = isRadiusJewel(item) ? 'Radius' : 'Base';
+  }
+  const ck = `${store.data.activeProfile}|${slot}|${jewelType || ''}|${w}`; // resistance priority is applied after, per search
   const hit = pobQueries.get(ck);
   if (hit && Date.now() - hit.at < 15 * 60000) return hit.r;
   const t0 = Date.now();
-  const r = await eng.makeQuery({ slot: pobVerdict.SLOT_TO_POB[slot], weights });
+  const r = await eng.makeQuery({ slot: pobSlotName, weights, jewelType });
   r.query = typeof r.query === 'string' ? JSON.parse(r.query) : r.query;
   log(`pob: built a ${slot} search in ${Date.now() - t0} ms (${((r.query.query.stats || []).find((g) => g.type === 'weight') || { filters: [] }).filters.length} weighted stats)`);
   pobQueries.set(ck, { at: Date.now(), r });
   return r;
 }
 async function pobSearch(item, slot, league, budget, opts) {
-  const pq = await pobQueryFor(slot);
+  const pq = await pobQueryFor(slot, item);
   const all = JSON.parse(JSON.stringify(pq.query));
   const wg = (all.query.stats || []).find((g) => g.type === 'weight');
   if (!wg || !wg.filters.length) return null;
@@ -211,7 +241,9 @@ async function pobSearch(item, slot, league, budget, opts) {
     const norm = (t) => String(t || '').replace(/^\+/, '').toLowerCase();
     const isDmg = (t) => /damage|critical|attack speed|cast speed|cooldown|level of|minions? (deal|have)/i.test(t) && !/resistances?$|energy shield|armour|evasion|life|mana/i.test(t);
     const dmg = wg.filters.filter((f) => f.value.weight > 0 && isDmg(text.get(f.id))).slice(0, 8);
-    const worn = store.equipped[slot];
+    // for jewels: the jewel in the socket the search is for (as saved on My gear, matched by name)
+    const sockJewel = slot === 'Jewel' && pobJewelSocket(item) ? pobJewelSocket(item).jewel : null;
+    const worn = slot === 'Jewel' ? Object.entries(store.equipped).filter(([k]) => /^Jewel /.test(k)).map(([, v]) => v).find((v) => v && v.name === sockJewel) || null : store.equipped[slot];
     const have = new Set(Object.keys((worn && worn.stats) || {}).map(norm));
     const own = new Set(dmg.filter((f) => have.has(norm(text.get(f.id)))).map((f) => norm(text.get(f.id)))).size;
     if (own > 0 && dmg.length) {
@@ -250,7 +282,7 @@ async function pobSearch(item, slot, league, budget, opts) {
   const needDmg = dmgGroup ? `; every listing has at least ${dmgGroup.value.min} of your damage mods` : droppedDmg ? '; nothing in your budget has your damage mods, so these may lose damage' : '';
   const res = await openIfAny(r, {
     item, mode: 'pob', body, searchKey: searchKey(body),
-    title: `Best for your build: ${item.slot === 'Ring' ? 'rings' : slot}${budget && budget.max ? '' : ''}`,
+    title: `Best for your build: ${item.slot === 'Ring' ? 'rings' : slot === 'Jewel' ? (isRadiusJewel(item) ? 'radius jewels' : 'jewels') : slot}`,
     note: `Path of Building weighted this search by what each stat does to your build (${used} stats${used < wg.filters.length ? `, the trade site allowed ${used} of ${wg.filters.length}` : ''})${boosted.length ? ', with extra weight on the resistances you still need' : ''}${needDmg}. Every listing below is then checked with your build: items that lose resistance or damage are marked and go to the bottom.`,
   });
   return { ...res, mode: 'pob', filters: used };
@@ -264,7 +296,8 @@ function applyPob(r, j) {
   r.scoreMode = 'pob';
   r.delta = j.score;
   r.pct = null;
-  if (j.slot && j.slot !== r.targetSlot && store.equipped[j.slot]) { r.targetSlot = j.slot; r.replacing = [store.equipped[j.slot].name]; }
+  if (j.socket) r.replacing = [j.socket.replacing ? `${j.socket.replacing} (${j.socket.label})` : `an empty jewel socket (${j.socket.label})`];
+  else if (j.slot && j.slot !== r.targetSlot && store.equipped[j.slot]) { r.targetSlot = j.slot; r.replacing = [store.equipped[j.slot].name]; }
   r.risks = j.breaks.length ? j.breaks : null;
   r.resRank = j.resRank;
   return r;
@@ -566,6 +599,26 @@ function pollClipboard() {
   if (/^Item Class:/i.test(text.trim())) handleItemText(text, 'clipboard');
 }
 
+// Why a hotkey press found no item, in words you can act on. sent: the key sender's answer
+// ("fg=<process that got the keystroke>;over=<process under the mouse>[;refocused|;refocus-failed]")
+function noItemReason(sent, text) {
+  if (!sent) return (keys && keys.unavailable) || 'Couldn\'t send Ctrl+C to the game (the key sender didn\'t start). Press Ctrl+C on the item yourself, or see Tray → Open log.';
+  const s = String(sent);
+  const fg = (s.match(/fg=([^;]*)/) || [])[1] || ''; const over = (s.match(/over=([^;]*)/) || [])[1] || '';
+  const isGame = (n) => /^PathOfExile/i.test(n);
+  const me = path.basename(process.execPath, '.exe').toLowerCase();
+  const isMe = (n) => n && (n === 'self' || n.toLowerCase() === me || /^electron$/i.test(n));
+  const hk = store.settings.hotkey || DEFAULT_HOTKEY;
+  if (/game-admin/.test(s)) return 'Path of Exile 2 is running as administrator, so Windows blocks the Ctrl+C this app sends it. Start the game normally (not "Run as administrator"), or start this app as administrator too.';
+  if (isMe(over)) return `Your mouse was over this app's window, not the game. Hover the item in game, then press ${hk}.`;
+  if (/refocus-failed/.test(s) || (fg && !isGame(fg) && fg !== '?')) {
+    return `Path of Exile 2 wasn't the active window${fg && fg !== '?' ? ` (${fg} was)` : ''}, so the copy went there. Click once in the game, then press ${hk} again.`;
+  }
+  if (over && !isGame(over) && over !== '?') return `Your mouse wasn't over the game (it was over ${over}). Hover the item in game, then press ${hk}.`;
+  if (text) return 'That wasn\'t an item (the game copied something else). Hover an item so its tooltip shows, then press the hotkey.';
+  return `No item under the mouse. Hover an item until its tooltip shows, then press ${hk}.`;
+}
+
 // Hotkey mode: press the hotkey over an item; we send Ctrl+C to the game for
 // you (one keystroke per press) and always show the popup, even for the same item.
 async function onHotkey() {
@@ -585,33 +638,30 @@ async function onHotkey() {
       }
       return '';
     };
-    // send the copy before anything appears on screen: a window popping up first can make
-    // the game drop its tooltip (then nothing gets copied)
-    let sent = await keys.copy(!!store.settings.advancedCopy);
-    if (!sent) log('hotkey: could not send Ctrl+C to the game');
-    let text = await waitForText(250);
-    if (!text) {
-      showResult({ ok: false, loading: true, reason: 'Reading item…' });
-      text = await waitForText(300);
+    // The last popup is often still up, right where you moved the mouse for the next item: the game
+    // then sees the popup, not the item, and copies nothing. Hide it first (the key sender then
+    // nudges the mouse so the game hovers the item again).
+    let nudge = false;
+    if (popup && !popup.isDestroyed() && popup.isVisible()) {
+      const c = screen.getCursorScreenPoint(); const b = popup.getBounds();
+      if (c.x >= b.x - 4 && c.x <= b.x + b.width + 4 && c.y >= b.y - 4 && c.y <= b.y + b.height + 4) { popup.hide(); nudge = true; }
     }
+    // send the copy before anything appears on screen: a window popping up first can make
+    // the game drop its tooltip (then nothing gets copied). One Ctrl+C per press, never more.
+    const sent = await keys.copy(!!store.settings.advancedCopy, { nudge });
+    if (!sent) log('hotkey: could not send Ctrl+C to the game');
+    else if (sent !== true && !/^fg=PathOfExile[^;]*;over=PathOfExile/i.test(sent)) log('hotkey: sent to ' + sent);
+    let text = await waitForText(250);
     if (!text && sent) {
-      // The game sometimes misses the first copy (e.g. the tooltip wasn't up
-      // yet). Copying is client-side only, so trying once more is harmless.
-      log('hotkey: nothing copied, retrying once');
-      sent = await keys.copy(!!store.settings.advancedCopy);
-      text = await waitForText(900);
+      showResult({ ok: false, loading: true, reason: 'Reading item…' });
+      text = await waitForText(1250); // the game can be slow to fill the clipboard when it's busy
     }
     if (text && handleItemText(text, 'hotkey')) return;
     // Nothing copied: put the old clipboard back and say why.
     try { clipboard.writeText(before || ''); } catch (_) { /* ignore */ }
     lastClip = before || '';
-    log(`hotkey: no item text (sent=${sent}, got ${text ? 'non-item text' : 'nothing'})`);
-    showResult({
-      ok: false,
-      reason: sent
-        ? 'No item found. Hover your mouse over an item in game, then press the hotkey.'
-        : 'Couldn\'t send Ctrl+C to the game. Press Ctrl+C on the item yourself, or see Tray → Open log.',
-    });
+    log(`hotkey: no item text (${sent ? `sent: ${sent}` : 'not sent'}, got ${text ? 'non-item text' : 'nothing'})`);
+    showResult({ ok: false, reason: noItemReason(sent, text) });
   } finally {
     hotkeyBusy = false;
   }
@@ -669,7 +719,8 @@ function resolveItem(target) {
   if (WEAKEST_OF.includes(target)) {
     // your weakest ring / charm / jewel (by gear score, or weights if the build is off)
     const items = SLOT_GROUPS[target].map((sl) => store.equipped[sl]).filter(Boolean);
-    if (!items.length) return null;
+    // no jewels saved, but PoB has your tree's: search from the jewel you just copied
+    if (!items.length) return target === 'Jewel' && pobOn() && lastItem && lastItem.slot === 'Jewel' ? lastItem : null;
     const val = (it) => { const g = gearOf(it); if (g && g.score != null) return g.score; return require('./core/scorer').score(it, store.weights); };
     return items.slice().sort((a, b) => val(a) - val(b))[0];
   }
@@ -901,6 +952,7 @@ ipcMain.handle('ignore:set', (_e, rules) => {
 });
 
 ipcMain.handle('state:get', () => JSON.parse(JSON.stringify({
+  platform: process.platform, dataDir: app.getPath('userData'),
   defaultBuild: gearLib.DEFAULT_BUILD,
   pobOn: pobOn(),
   resultsHotkeyOk: !!resultsHotkey,
@@ -1511,7 +1563,10 @@ ipcMain.handle('trade:quick', async (_e, target, mode, extra) => {
 
   // default "Find upgrades": Path of Building's weighted search when your build is loaded,
   // otherwise better for your build by gear score
-  const pobSlot = (() => { const sl = WEAKEST_OF.includes(item.slot) ? (resolveSlotOf(item) || (SLOT_GROUPS[item.slot] || [])[0]) : item.slot; return pobVerdict.SLOT_TO_POB[sl] ? sl : null; })();
+  const pobSlot = (() => {
+    if (item.slot === 'Jewel') return 'Jewel'; // PoB picks the socket (pobJewelSocket)
+    const sl = WEAKEST_OF.includes(item.slot) ? (resolveSlotOf(item) || (SLOT_GROUPS[item.slot] || [])[0]) : item.slot; return pobVerdict.SLOT_TO_POB[sl] ? sl : null;
+  })();
   if (mode === 'upgrade' && pobOn() && pobSlot) mode = 'pob';
   if (mode === 'upgrade') mode = store.settings.build === 'off' || /unique/i.test(item.rarity || '') ? 'similar' : 'gear';
   if (mode === 'pob') {
@@ -1870,9 +1925,10 @@ ipcMain.handle('trade:hideout', async (_e, listingId) => {
   } catch (err) { return { ok: false, error: err.message || String(err) }; }
 });
 
-// ---------- start with Windows ----------
+// ---------- start with Windows (or with your Linux desktop) ----------
 
 function applyLoginItem() {
+  if (process.platform === 'linux') return applyLinuxAutostart();
   try {
     const openAtLogin = !!store.settings.startWithWindows;
     const args = app.isPackaged ? ['--hidden'] : [app.getAppPath(), '--hidden'];
@@ -1880,6 +1936,20 @@ function applyLoginItem() {
     const portable = process.env.PORTABLE_EXECUTABLE_FILE;
     app.setLoginItemSettings({ openAtLogin, path: portable || process.execPath, args });
   } catch (err) { log('login item: ' + err.message); }
+}
+
+// Linux desktops start what's in ~/.config/autostart (the AppImage, quietly in the tray)
+function applyLinuxAutostart() {
+  try {
+    const dir = path.join(process.env.XDG_CONFIG_HOME || path.join(require('os').homedir(), '.config'), 'autostart');
+    const file = path.join(dir, 'poe2-upgrade-checker.desktop');
+    if (!store.settings.startWithWindows) { if (fs.existsSync(file)) fs.unlinkSync(file); return; }
+    const exe = process.env.APPIMAGE || process.execPath;
+    const q = (s) => `"${String(s).replace(/(["\\`$])/g, '\\$1')}"`;
+    const exec = app.isPackaged ? `${q(exe)} --hidden` : `${q(exe)} ${q(app.getAppPath())} --hidden`;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, `[Desktop Entry]\nType=Application\nName=PoE2 Upgrade Checker\nExec=${exec}\nX-GNOME-Autostart-enabled=true\nTerminal=false\n`);
+  } catch (err) { log('autostart: ' + err.message); }
 }
 
 // ---------- settings window & tray ----------
@@ -1916,7 +1986,8 @@ function openSettings() {
 // ---------- auto-update (installed app only; releases on GitHub) ----------
 const upd = { state: 'idle', version: null, error: null, progress: null, checked: null };
 let autoUpdater = null;
-function updaterAvailable() { return app.isPackaged && !process.env.PORTABLE_EXECUTABLE_DIR; }
+// the installed app and the AppImage update themselves; the portable .exe and other Linux builds don't
+function updaterAvailable() { return app.isPackaged && !process.env.PORTABLE_EXECUTABLE_DIR && (process.platform !== 'linux' || !!process.env.APPIMAGE); }
 function setupUpdater() {
   if (!updaterAvailable()) { upd.state = app.isPackaged ? 'portable' : 'dev'; return; }
   try { ({ autoUpdater } = require('electron-updater')); } catch (err) { upd.state = 'unavailable'; log('updater: ' + err.message); return; }

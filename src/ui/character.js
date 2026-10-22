@@ -157,7 +157,8 @@
       const name = it ? it.name : pobName; if (!name) return '';
       const g = gs[slot];
       return row(slot, `${esc(name)}${over.has(POB_SLOT[slot] || slot) ? ' <small>copied in game</small>' : it && it.fromPob ? ' <small>from PoB</small>' : ''}${g && g.score != null ? ` <span class="gs g-${esc(g.grade)}">${g.score} ${esc(g.grade)}</span>` : ''}`);
-    })) + '<div class="row"><button class="link" data-goto="gear">Change gear on My gear →</button></div>');
+    })) + (s.sockets && s.sockets.length ? `<h4 class="small">Jewel sockets on your tree</h4>${table(s.sockets.map((j) => row(j.label, j.jewel ? esc(j.jewel) : '<span class="neg">empty</span>')))}` : '')
+      + '<div class="row"><button class="link" data-goto="gear">Change gear on My gear →</button></div>');
 
     return `${hero}<div class="grid g-cards">${minionCard}${offence}${defence}${res}${maxHit}${resources}${misc}${gear}</div><div class="grid g-2 g-even"><div class="col">${skills}</div><div class="col">${tree}</div></div>`;
   }

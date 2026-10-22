@@ -1,7 +1,7 @@
 'use strict';
 
 // Runs Path of Building's calculations in a child process (pob/server.lua inside PoB's own
-// LuaJIT, hosted by pobhost.exe on Windows) and asks it what an item would change on your build.
+// LuaJIT, hosted by pobhost.exe on Windows; on Linux the bundled LuaJIT runs it directly) and asks it what an item would change on your build.
 //
 //   const eng = createEngine({ log, appPath, resourcesPath, packaged })
 //   await eng.loadBuild(xml)            -> { className, ascendancy, level, mainSkill, stats }
@@ -32,6 +32,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
     const script = path.relative(srcDir, serverLua);
     if (process.env.POB_LUAJIT) return { cmd: process.env.POB_LUAJIT, args: [script] }; // dev/test on Linux
     if (process.platform === 'win32') return { cmd: path.join(runtimeDir, 'pobhost.exe'), args: [script] };
+    if (process.platform === 'linux') return { cmd: path.join(runtimeDir, 'linux', 'luajit'), args: [script], moduleDir: path.join(runtimeDir, 'linux') };
     return null;
   }
 
@@ -57,7 +58,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
       log('pob: starting the Path of Building engine');
       proc = spawn(h.cmd, h.args, {
         cwd: srcDir, windowsHide: true,
-        env: (() => { const rt = path.relative(srcDir, runtimeDir); return { ...process.env, POBHOST_DIR: process.env.POBHOST_DIR || rt, POB_LUA_PATH: [path.join(rt, 'lua', '?.lua'), path.join(rt, 'lua', '?', 'init.lua')].join(';') }; })(),
+        env: (() => { const rt = path.relative(srcDir, runtimeDir); return { ...process.env, POBHOST_DIR: process.env.POBHOST_DIR || (h.moduleDir ? path.relative(srcDir, h.moduleDir) : rt), POB_LUA_PATH: [path.join(rt, 'lua', '?.lua'), path.join(rt, 'lua', '?', 'init.lua')].join(';') }; })(),
       });
       proc.stdin.on('error', (err) => log('pob: ' + err.message));
       let started = false;

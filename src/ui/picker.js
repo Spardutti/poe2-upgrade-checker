@@ -74,7 +74,7 @@
         const def = ks.includes('pseudo') ? 'pseudo' : ks.includes('explicit') ? 'explicit' : ks[0];
         action = `${ks.length > 1 ? `<select data-kind="${i}">${ks.map((k) => `<option value="${esc(k)}" ${k === def ? 'selected' : ''}>${esc(cat.kindLabel[k] || k)}</option>`).join('')}</select>` : ''}
           <input type="number" class="num" data-min="${i}" placeholder="min">
-          <button data-add="${i}" class="primary">Add</button>`;
+          <button data-add="${i}" class="primary gilded">Add</button>`;
       } else if (mode === 'ignore') {
         const r = rules.find((x) => x.key && x.key === e.text);
         action = r ? `<span class="dim">${r.mode === 'exclude' ? 'Excluded' : 'Ignored'}</span> <button data-unrule="${i}">Undo</button>`

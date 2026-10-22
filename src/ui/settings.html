@@ -160,11 +160,11 @@
             <input id="addTradeStat" list="tradeStats" placeholder="Add a stat you want, e.g. #% increased Spell Damage" class="grow">
             <input id="addTradeMin" type="number" placeholder="min" class="num">
             <button id="addTradeBtn">Add</button>
-            <button id="addBrowse" class="primary">Browse stats…</button>
+            <button id="addBrowse">Browse stats…</button>
             <datalist id="tradeStats"></datalist>
           </div>
           <div class="row">
-            <button id="findSearch" class="primary">Search with ticked stats</button>
+            <button id="findSearch" class="primary gilded">Search with ticked stats</button>
             <span id="findMsg2" class="note"></span>
           </div>
           </div>
@@ -177,7 +177,7 @@
           <div class="row">
             <input id="ignoreAdd" list="ignoreStatsList" placeholder="Ignore another stat, e.g. # to maximum Mana" class="grow">
             <button id="ignoreAddBtn">Add</button>
-            <button id="ignoreBrowse" class="primary">Browse stats…</button>
+            <button id="ignoreBrowse">Browse stats…</button>
             <datalist id="ignoreStatsList"></datalist>
           </div>
           </div>
@@ -224,9 +224,9 @@
             <input type="search" id="filter" placeholder="Filter stats…">
             <label><input type="checkbox" id="onlyWeighted"> Only weighted</label>
             <button id="addStat">+ Add stat</button>
-            <button id="weightBrowse" class="primary">Browse stats…</button>
+            <button id="weightBrowse">Browse stats…</button>
             <button id="resetWeights">Reset to defaults</button>
-            <button id="suggestBtn" class="primary" title="Builds weights from the stats your equipped gear has">Suggest from my gear</button>
+            <button id="suggestBtn" title="Builds weights from the stats your equipped gear has">Suggest from my gear</button>
           </div>
           <div id="suggestBox" class="suggest hidden"></div>
           <table class="list" id="weights"></table>
@@ -294,7 +294,7 @@
       </div>
       <div class="card-p">
         <h3>Startup</h3>
-      <div class="row"><label><input type="checkbox" id="startWithWindows"> Start with Windows (quietly, in the tray)</label></div>
+      <div class="row"><label><input type="checkbox" id="startWithWindows"> <span id="startWithLabel">Start with Windows</span> (quietly, in the tray)</label></div>
       <div class="row"><label><input type="checkbox" id="openSettingsOnStart"> Open this window when the app starts</label></div>
       </div>
       <div class="card-p">
@@ -316,7 +316,7 @@
       </div>
       <div class="help">
         If the test popup appears here but not in game, switch PoE2 to <b>Windowed Fullscreen</b> (Options → Graphics).
-        If the hotkey does nothing, open the log. Your data is saved in %APPDATA%\poe2-upgrade-checker.
+        If the hotkey does nothing, open the log. Your data is saved in <span id="dataDirText">%APPDATA%\poe2-upgrade-checker</span>.
       </div>
       </div>
       </div>

@@ -134,6 +134,29 @@ local function equip(list)
   return done
 end
 
+-- your allocated jewel sockets on the passive tree, in PoB's order ("Socket #1"…), with what's in them
+local function jewelSockets()
+  local list = {}
+  local it = build.itemsTab
+  -- PoB refreshes activeSocketList only while drawing, so read the allocated sockets ourselves
+  local ids = {}
+  for nodeId in pairs(it.sockets or {}) do if build.spec.allocNodes[nodeId] then ids[#ids + 1] = nodeId end end
+  table.sort(ids)
+  for n, nodeId in ipairs(ids) do
+    local sock = it.sockets[nodeId]
+    sock.inactive = false
+    if sock then
+      local node = build.spec.nodes[nodeId]
+      -- sockets made by cluster-style jewels (containJewelSocket) aren't on the main tree
+      if not (node and node.containJewelSocket) then
+        local jewel = sock.selItemId and sock.selItemId ~= 0 and it.items[sock.selItemId] or nil
+        list[#list + 1] = { slot = sock.slotName, nodeId = nodeId, label = "Socket #" .. n, jewel = jewel and (jewel.title or jewel.name) or nil }
+      end
+    end
+  end
+  return list
+end
+
 local function summary()
   local o = build.calcsTab.mainOutput
   local skill = build.mainSocketGroup and build.skillsTab.socketGroupList[build.mainSocketGroup]
@@ -144,6 +167,7 @@ local function summary()
     mainSkill = skill and skill.displayLabel or nil,
     stats = pick(o),
     gear = gearNames(),
+    sockets = jewelSockets(),
   }
 end
 
@@ -237,6 +261,18 @@ local function evalItems(items)
       local item = makeItem(it.text)
       if not item then return { ok = false, error = "Path of Building couldn't read this item" } end
       local slot = it.slot
+      if slot == "Jewel" then
+        -- try it in every allocated socket: replacing the jewel there, or in an empty one
+        local multi = {}
+        for _, s in ipairs(jewelSockets()) do
+          if build.itemsTab:IsItemValidForSlot(item, s.slot) then
+            local new_ = calcFunc({ repSlotName = s.slot, repItem = item })
+            multi[#multi + 1] = { slot = s.slot, label = s.label, replacing = s.jewel, after = pick(new_) }
+          end
+        end
+        if #multi == 0 then return { ok = false, error = "You have no allocated jewel socket this jewel fits" } end
+        return { ok = true, slot = slot, before = pick(base), multi = multi }
+      end
       local new_ = calcFunc({ repSlotName = slot, repItem = item })
       return { ok = true, slot = slot, before = pick(base), after = pick(new_) }
     end)
