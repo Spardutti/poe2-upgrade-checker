@@ -13,13 +13,17 @@ function label(key, diff) {
 
 const VERDICT = {
   upgrade: ['UPGRADE', 'up'], small: ['SMALL UPGRADE', 'up'], risky: ['UPGRADE, BUT…', 'risky'], resloss: ['LOSES RESISTANCE', 'down'], dmgloss: ['LOSES DAMAGE', 'down'], downgrade: ['DOWNGRADE', 'down'], same: ['SIDEGRADE', 'same'],
-  new: ['EMPTY SLOT', 'new'], equipped: ['EQUIPPED', 'same'],
+  new: ['EMPTY SLOT', 'new'], equipped: ['EQUIPPED', 'same'], unjudged: ['NOT JUDGED', 'same'],
 };
 
-function dual(p) {
-  const a = Number(p.amount); const d = data.divineRate;
-  if (p.currency === 'divine') return `≈ ${Math.round(a * d).toLocaleString('en')} ex`;
-  if (p.currency === 'exalted') return `≈ ${Math.round((a / d) * 100) / 100} div`;
+function dual(p, priceEx) {
+  const a = Number(p.amount); const d = Number(data.divineRate);
+  const base = data.game === 'poe1' ? 'chaos' : 'exalted'; // the everyday currency
+  if (!(d > 0)) return p.currency !== base && priceEx > 0 ? `≈ ${Math.round(priceEx).toLocaleString('en')} ${data.unit || 'ex'}` : '';
+  if (p.currency === 'divine') return `≈ ${Math.round(a * d).toLocaleString('en')} ${data.unit || 'ex'}`;
+  if (p.currency === base) return `≈ ${Math.round((a / d) * 100) / 100} div`;
+  // another currency (PoE1 exalts, alchs…): what it comes to in the everyday currency
+  if (priceEx > 0) return `≈ ${Math.round(priceEx).toLocaleString('en')} ${data.unit || 'ex'}`;
   return '';
 }
 
@@ -69,7 +73,7 @@ function card(x) {
       </div>
       <div class="l-price">
         <div class="price">${esc(x.priceText)}</div>
-        ${x.price && data.divineRate ? `<div class="dim">${esc(dual(x.price))}</div>` : ''}
+        ${x.price && dual(x.price, x.priceEx) ? `<div class="dim">${esc(dual(x.price, x.priceEx))}</div>` : ''}
         <div class="dim">${x.instant ? 'Instant buyout' : `${x.online ? '<span class="dot on"></span>online' : '<span class="dot"></span>offline'} · ${esc(x.seller)}`}</div>
       </div>
     </div>
@@ -90,14 +94,16 @@ function card(x) {
 function render() {
   if (!data) return;
   $('#title').textContent = data.title || 'Trade results';
+  const bt = document.getElementById('betaTag');
+  if (bt) bt.classList.toggle('hidden', !data.gameBeta);
   $('#gsHelpBtn').textContent = data.pobOn ? 'How are items judged?' : "What's the gear score?";
   $('#hideHint').textContent = `Esc hides${data.resultsHotkey ? ` · ${data.resultsHotkey} reopens` : ''}`;
   const ups = (data.listings || []).filter((x) => x.compare && ['upgrade', 'small', 'risky', 'new'].includes(x.compare.verdict)).length;
   const losing = (data.listings || []).filter((x) => x.compare && x.compare.verdict === 'resloss').length;
   const dmgLosing = (data.listings || []).filter((x) => x.compare && x.compare.pob && x.compare.pob.dmgLoss).length;
   const capping = (data.listings || []).filter((x) => x.compare && x.compare.resRank === 2).length;
-  $('#sub').textContent = data.total == null ? (data.league || '') : `${data.league} · ${data.total} listing${data.total === 1 ? '' : 's'} · showing ${data.shown}${data.listings && data.listings.length ? ` · ${ups} upgrade${ups === 1 ? '' : 's'} for you${capping ? ` · ${capping} cap a resistance` : ''}${losing ? ` · ${losing} lose resistance` : ''}${dmgLosing ? ` · ${dmgLosing} lose damage` : ''}` : ''}${data.divineRate ? ` · 1 div ≈ ${data.divineRate} ex` : ''}`;
-  $('#note').textContent = data.note || '';
+  $('#sub').textContent = data.total == null ? (data.league || '') : `${data.league} · ${data.total} listing${data.total === 1 ? '' : 's'} · showing ${data.shown}${data.listings && data.listings.length ? ` · ${ups} upgrade${ups === 1 ? '' : 's'} for you${capping ? ` · ${capping} cap a resistance` : ''}${losing ? ` · ${losing} lose resistance` : ''}${dmgLosing ? ` · ${dmgLosing} lose damage` : ''}` : ''}${data.divineRate ? ` · 1 div ≈ ${data.divineRate} ${data.unit || 'ex'}` : ''}`;
+  $('#note').textContent = [data.otherGame, data.note].filter(Boolean).join(' ');
   if (data.priceSummary) {
     $('#priceBanner').classList.remove('hidden');
     const ps = data.priceSummary;

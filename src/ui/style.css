@@ -248,6 +248,26 @@ body.cb .up { color: #4aa3ff; } body.cb .down { color: #ff9a3c; }
 
 /* ---------- Path of Building verdict ---------- */
 .pob { margin: 7px 0 2px; font-size: 13.5px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+/* PoE1 support is in beta: a small mark wherever a PoE1 character is in use */
+.price-card .price-big { font-size: 1.25em; margin: 6px 0 2px; }
+.ninja { margin: 4px 0; }
+.kv.spend th { text-align: left; font-weight: 600; color: var(--ash); padding: 4px 6px 4px 0; }
+.kv.spend td { padding: 6px 8px 6px 0; }
+.kv td.num { text-align: right; white-space: nowrap; }
+.spend-top h3 { margin-top: 0; }
+#spendBody .pos { color: var(--up); } #spendBody .neg { color: var(--down); } #spendBody .warn { color: var(--warn); }
+.map-mods { margin: 6px 0; }
+.map-mod { display: flex; gap: 8px; padding: 4px 2px; cursor: pointer; border-bottom: 1px solid var(--iron-lo); }
+.map-mod:hover { background: rgba(255, 255, 255, .03); }
+.map-mod .mi { width: 14px; text-align: center; flex: none; }
+.map-mod.lv-danger .mi, .map-mod.lv-danger .mt { color: var(--down); }
+.map-mod.lv-warn .mi { color: var(--warn); }
+.map-mod.lv-ok .mi { color: var(--up); }
+.price-pick { margin: 6px 0; }
+.price-pick .pp-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.price-pick .pp-row span { flex: 1; }
+.price-pick .pp-min { width: 64px; }
+.beta-tag { display: inline-block; font: 700 9.5px/1 var(--f-carved); letter-spacing: .1em; padding: 3px 5px 2px; color: var(--warn); border: 1px solid currentColor; vertical-align: 1px; white-space: nowrap; }
 .pob-tag { font: 700 10px/1 var(--f-carved); letter-spacing: .12em; padding: 3px 5px 2px; border-radius: 0; background: none; color: var(--gold); border: 1px solid var(--bronze); }
 .pob-main b { font-weight: 700; }
 .prio { gap: 6px 14px; }

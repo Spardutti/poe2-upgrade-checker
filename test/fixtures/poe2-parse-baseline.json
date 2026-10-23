@@ -1,0 +1,1569 @@
+[
+ {
+  "text": "Item Class: Helmets\nRarity: Rare\nDoom Visage\nExpert Visored Helm\n--------\nQuality: +20% (augmented)\nArmour: 312 (augmented)\n--------\nRequirements:\nLevel: 65\nStr: 101\n--------\nSockets: S\n--------\nItem Level: 79\n--------\n+12% to Cold Resistance (rune)\n--------\n+89 to maximum Life\n+32% to Fire Resistance\n+11% to all Elemental Resistances\n+14 to Strength\n12% reduced Attribute Requirements",
+  "parsed": {
+   "raw": "Item Class: Helmets\nRarity: Rare\nDoom Visage\nExpert Visored Helm\n--------\nQuality: +20% (augmented)\nArmour: 312 (augmented)\n--------\nRequirements:\nLevel: 65\nStr: 101\n--------\nSockets: S\n--------\nItem Level: 79\n--------\n+12% to Cold Resistance (rune)\n--------\n+89 to maximum Life\n+32% to Fire Resistance\n+11% to all Elemental Resistances\n+14 to Strength\n12% reduced Attribute Requirements",
+   "itemClass": "Helmets",
+   "rarity": "Rare",
+   "name": "Doom Visage",
+   "baseType": "Expert Visored Helm",
+   "slot": "Helmet",
+   "twoHanded": false,
+   "itemLevel": 79,
+   "requiredLevel": 65,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Armour": 312,
+    "#% to Cold Resistance": 23,
+    "# to maximum Life": 89,
+    "#% to Fire Resistance": 43,
+    "#% to Lightning Resistance": 11,
+    "# to Strength": 14,
+    "#% increased Attribute Requirements": -12
+   },
+   "lines": [
+    {
+     "text": "Armour: 312 (augmented)",
+     "key": "[Base] Armour",
+     "value": 312,
+     "tag": "base"
+    },
+    {
+     "text": "+12% to Cold Resistance (rune)",
+     "key": "#% to Cold Resistance",
+     "value": 12,
+     "tag": "rune"
+    },
+    {
+     "text": "+89 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 89,
+     "tag": "explicit"
+    },
+    {
+     "text": "+32% to Fire Resistance",
+     "key": "#% to Fire Resistance",
+     "value": 32,
+     "tag": "explicit"
+    },
+    {
+     "text": "+11% to all Elemental Resistances",
+     "key": "#% to all Elemental Resistances",
+     "value": 11,
+     "tag": "explicit"
+    },
+    {
+     "text": "+14 to Strength",
+     "key": "# to Strength",
+     "value": 14,
+     "tag": "explicit"
+    },
+    {
+     "text": "12% reduced Attribute Requirements",
+     "key": "#% increased Attribute Requirements",
+     "value": -12,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Helmets\r\nRarity: Rare\r\nGrim Crown\r\nVisored Helm\r\n--------\r\nArmour: 180\r\n--------\r\nItem Level: 50\r\n--------\r\n+55 to maximum Life\r\n+20% to Fire Resistance\r\n+18% to Lightning Resistance",
+  "parsed": {
+   "raw": "Item Class: Helmets\nRarity: Rare\nGrim Crown\nVisored Helm\n--------\nArmour: 180\n--------\nItem Level: 50\n--------\n+55 to maximum Life\n+20% to Fire Resistance\n+18% to Lightning Resistance",
+   "itemClass": "Helmets",
+   "rarity": "Rare",
+   "name": "Grim Crown",
+   "baseType": "Visored Helm",
+   "slot": "Helmet",
+   "twoHanded": false,
+   "itemLevel": 50,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Armour": 180,
+    "# to maximum Life": 55,
+    "#% to Fire Resistance": 20,
+    "#% to Lightning Resistance": 18
+   },
+   "lines": [
+    {
+     "text": "Armour: 180",
+     "key": "[Base] Armour",
+     "value": 180,
+     "tag": "base"
+    },
+    {
+     "text": "+55 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 55,
+     "tag": "explicit"
+    },
+    {
+     "text": "+20% to Fire Resistance",
+     "key": "#% to Fire Resistance",
+     "value": 20,
+     "tag": "explicit"
+    },
+    {
+     "text": "+18% to Lightning Resistance",
+     "key": "#% to Lightning Resistance",
+     "value": 18,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Rings\nRarity: Rare\nStorm Loop\nSapphire Ring\n--------\nRequirements:\nLevel: 40\n--------\nItem Level: 75\n--------\n{ Implicit Modifier }\n+24(20-30)% to Cold Resistance (implicit)\n--------\n{ Prefix Modifier \"Hale\" (Tier: 4) — Life }\n+62(55-69) to maximum Life\n{ Suffix Modifier \"of the Squall\" (Tier: 3) — Elemental, Lightning, Resistance }\n+30(26-30)% to Lightning Resistance\n{ Suffix Modifier \"of the Fox\" — Attribute }\n+12(9-15) to Strength and Dexterity",
+  "parsed": {
+   "raw": "Item Class: Rings\nRarity: Rare\nStorm Loop\nSapphire Ring\n--------\nRequirements:\nLevel: 40\n--------\nItem Level: 75\n--------\n{ Implicit Modifier }\n+24(20-30)% to Cold Resistance (implicit)\n--------\n{ Prefix Modifier \"Hale\" (Tier: 4) — Life }\n+62(55-69) to maximum Life\n{ Suffix Modifier \"of the Squall\" (Tier: 3) — Elemental, Lightning, Resistance }\n+30(26-30)% to Lightning Resistance\n{ Suffix Modifier \"of the Fox\" — Attribute }\n+12(9-15) to Strength and Dexterity",
+   "itemClass": "Rings",
+   "rarity": "Rare",
+   "name": "Storm Loop",
+   "baseType": "Sapphire Ring",
+   "slot": "Ring",
+   "twoHanded": false,
+   "itemLevel": 75,
+   "requiredLevel": 40,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "#% to Cold Resistance": 24,
+    "# to maximum Life": 62,
+    "#% to Lightning Resistance": 30,
+    "# to Strength": 12,
+    "# to Dexterity": 12
+   },
+   "lines": [
+    {
+     "text": "+24(20-30)% to Cold Resistance (implicit)",
+     "key": "#% to Cold Resistance",
+     "value": 24,
+     "tag": "implicit"
+    },
+    {
+     "text": "+62(55-69) to maximum Life",
+     "key": "# to maximum Life",
+     "value": 62,
+     "tag": "explicit"
+    },
+    {
+     "text": "+30(26-30)% to Lightning Resistance",
+     "key": "#% to Lightning Resistance",
+     "value": 30,
+     "tag": "explicit"
+    },
+    {
+     "text": "+12(9-15) to Strength and Dexterity",
+     "key": "# to Strength and Dexterity",
+     "value": 12,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": true,
+    "prefixes": 1,
+    "suffixes": 2,
+    "openPrefix": 2,
+    "openSuffix": 1
+   }
+  }
+ },
+ {
+  "text": "Item Class: Two Hand Maces\nRarity: Rare\nBrute Knell\nForge Maul\n--------\nPhysical Damage: 100-160 (augmented)\nFire Damage: 20-40 (augmented)\nCritical Hit Chance: 5.00%\nAttacks per Second: 1.10\n--------\nItem Level: 70\n--------\n120% increased Physical Damage\nAdds 20 to 40 Fire Damage\n+40 to Strength",
+  "parsed": {
+   "raw": "Item Class: Two Hand Maces\nRarity: Rare\nBrute Knell\nForge Maul\n--------\nPhysical Damage: 100-160 (augmented)\nFire Damage: 20-40 (augmented)\nCritical Hit Chance: 5.00%\nAttacks per Second: 1.10\n--------\nItem Level: 70\n--------\n120% increased Physical Damage\nAdds 20 to 40 Fire Damage\n+40 to Strength",
+   "itemClass": "Two Hand Maces",
+   "rarity": "Rare",
+   "name": "Brute Knell",
+   "baseType": "Forge Maul",
+   "slot": "Weapon",
+   "twoHanded": true,
+   "itemLevel": 70,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "#% increased Physical Damage": 120,
+    "Adds # to # Fire Damage": 30,
+    "# to Strength": 40,
+    "[Weapon] Physical DPS": 143,
+    "[Weapon] Elemental DPS": 33,
+    "[Weapon] Total DPS": 176,
+    "[Weapon] Critical Hit Chance": 5,
+    "[Weapon] Attacks per Second": 1.1
+   },
+   "lines": [
+    {
+     "text": "120% increased Physical Damage",
+     "key": "#% increased Physical Damage",
+     "value": 120,
+     "tag": "explicit"
+    },
+    {
+     "text": "Adds 20 to 40 Fire Damage",
+     "key": "Adds # to # Fire Damage",
+     "value": 30,
+     "tag": "explicit"
+    },
+    {
+     "text": "+40 to Strength",
+     "key": "# to Strength",
+     "value": 40,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Stackable Currency\nRarity: Currency\nDivine Orb\n--------\nStack Size: 1/20",
+  "parsed": {
+   "raw": "Item Class: Stackable Currency\nRarity: Currency\nDivine Orb\n--------\nStack Size: 1/20",
+   "itemClass": "Stackable Currency",
+   "rarity": "Currency",
+   "name": "Divine Orb",
+   "baseType": "Divine Orb",
+   "slot": null,
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {},
+   "lines": [],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Life Flasks\nRarity: Magic\nFlask\n--------\nItem Level: 10",
+  "parsed": {
+   "raw": "Item Class: Life Flasks\nRarity: Magic\nFlask\n--------\nItem Level: 10",
+   "itemClass": "Life Flasks",
+   "rarity": "Magic",
+   "name": "Flask",
+   "baseType": null,
+   "slot": "Life Flask",
+   "twoHanded": false,
+   "itemLevel": 10,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {},
+   "lines": [],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Jewels\nRarity: Rare\nA\nSapphire\n--------\nMinions deal 10% increased Damage",
+  "parsed": {
+   "raw": "Item Class: Jewels\nRarity: Rare\nA\nSapphire\n--------\nMinions deal 10% increased Damage",
+   "itemClass": "Jewels",
+   "rarity": "Rare",
+   "name": "A",
+   "baseType": "Sapphire",
+   "slot": "Jewel",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "Minions deal #% increased Damage": 10
+   },
+   "lines": [
+    {
+     "text": "Minions deal 10% increased Damage",
+     "key": "Minions deal #% increased Damage",
+     "value": 10,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Jewels\nRarity: Rare\nB\nSapphire\n--------\nMinions deal 5% increased Damage",
+  "parsed": {
+   "raw": "Item Class: Jewels\nRarity: Rare\nB\nSapphire\n--------\nMinions deal 5% increased Damage",
+   "itemClass": "Jewels",
+   "rarity": "Rare",
+   "name": "B",
+   "baseType": "Sapphire",
+   "slot": "Jewel",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "Minions deal #% increased Damage": 5
+   },
+   "lines": [
+    {
+     "text": "Minions deal 5% increased Damage",
+     "key": "Minions deal #% increased Damage",
+     "value": 5,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Rings\nRarity: Magic\nWeak Ring\n--------\n+10 to maximum Life",
+  "parsed": {
+   "raw": "Item Class: Rings\nRarity: Magic\nWeak Ring\n--------\n+10 to maximum Life",
+   "itemClass": "Rings",
+   "rarity": "Magic",
+   "name": "Weak Ring",
+   "baseType": null,
+   "slot": "Ring",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "# to maximum Life": 10
+   },
+   "lines": [
+    {
+     "text": "+10 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 10,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Rings\nRarity: Rare\nStrong\nRing\n--------\n+200 to maximum Life",
+  "parsed": {
+   "raw": "Item Class: Rings\nRarity: Rare\nStrong\nRing\n--------\n+200 to maximum Life",
+   "itemClass": "Rings",
+   "rarity": "Rare",
+   "name": "Strong",
+   "baseType": "Ring",
+   "slot": "Ring",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "# to maximum Life": 200
+   },
+   "lines": [
+    {
+     "text": "+200 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 200,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: One Hand Maces\nRarity: Rare\nA\nB\n--------\nPhysical Damage: 10-20\nAttacks per Second: 1.50\n--------\n+30 to maximum Life",
+  "parsed": {
+   "raw": "Item Class: One Hand Maces\nRarity: Rare\nA\nB\n--------\nPhysical Damage: 10-20\nAttacks per Second: 1.50\n--------\n+30 to maximum Life",
+   "itemClass": "One Hand Maces",
+   "rarity": "Rare",
+   "name": "A",
+   "baseType": "B",
+   "slot": "Weapon",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "# to maximum Life": 30,
+    "[Weapon] Physical DPS": 22.5,
+    "[Weapon] Elemental DPS": 0,
+    "[Weapon] Total DPS": 22.5,
+    "[Weapon] Attacks per Second": 1.5
+   },
+   "lines": [
+    {
+     "text": "+30 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 30,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Shields\nRarity: Rare\nS\nT\n--------\nArmour: 200\n--------\n+50 to maximum Life",
+  "parsed": {
+   "raw": "Item Class: Shields\nRarity: Rare\nS\nT\n--------\nArmour: 200\n--------\n+50 to maximum Life",
+   "itemClass": "Shields",
+   "rarity": "Rare",
+   "name": "S",
+   "baseType": "T",
+   "slot": "Offhand",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Armour": 200,
+    "# to maximum Life": 50
+   },
+   "lines": [
+    {
+     "text": "Armour: 200",
+     "key": "[Base] Armour",
+     "value": 200,
+     "tag": "base"
+    },
+    {
+     "text": "+50 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 50,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Boots\nRarity: Rare\nOblivion Trail\nSorcerer Boots\n--------\nEnergy Shield: 414 (augmented)\nRunic Ward: 217 (augmented)\n--------\n+60(48-60) to maximum Energy Shield\n35% increased Movement Speed\n60% increased effect of Socketed Augment Items — Unscalable Value\nFractured Item",
+  "parsed": {
+   "raw": "Item Class: Boots\nRarity: Rare\nOblivion Trail\nSorcerer Boots\n--------\nEnergy Shield: 414 (augmented)\nRunic Ward: 217 (augmented)\n--------\n+60(48-60) to maximum Energy Shield\n35% increased Movement Speed\n60% increased effect of Socketed Augment Items — Unscalable Value\nFractured Item",
+   "itemClass": "Boots",
+   "rarity": "Rare",
+   "name": "Oblivion Trail",
+   "baseType": "Sorcerer Boots",
+   "slot": "Boots",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Energy Shield": 414,
+    "[Base] Runic Ward": 217,
+    "# to maximum Energy Shield": 60,
+    "#% increased Movement Speed": 35,
+    "#% increased effect of Socketed Augment Items": 60
+   },
+   "lines": [
+    {
+     "text": "Energy Shield: 414 (augmented)",
+     "key": "[Base] Energy Shield",
+     "value": 414,
+     "tag": "base"
+    },
+    {
+     "text": "Runic Ward: 217 (augmented)",
+     "key": "[Base] Runic Ward",
+     "value": 217,
+     "tag": "base"
+    },
+    {
+     "text": "+60(48-60) to maximum Energy Shield",
+     "key": "# to maximum Energy Shield",
+     "value": 60,
+     "tag": "explicit"
+    },
+    {
+     "text": "35% increased Movement Speed",
+     "key": "#% increased Movement Speed",
+     "value": 35,
+     "tag": "explicit"
+    },
+    {
+     "text": "60% increased effect of Socketed Augment Items — Unscalable Value",
+     "key": "#% increased effect of Socketed Augment Items",
+     "value": 60,
+     "tag": "explicit"
+    },
+    {
+     "text": "Fractured Item",
+     "key": null,
+     "value": null,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Helmets\nRarity: Rare\nA\nB\n--------\nEnergy Shield: 400\n--------\n+2 to Level of all Minion Skills\n+30 to Intelligence\n+10% to Fire Resistance (rune)",
+  "parsed": {
+   "raw": "Item Class: Helmets\nRarity: Rare\nA\nB\n--------\nEnergy Shield: 400\n--------\n+2 to Level of all Minion Skills\n+30 to Intelligence\n+10% to Fire Resistance (rune)",
+   "itemClass": "Helmets",
+   "rarity": "Rare",
+   "name": "A",
+   "baseType": "B",
+   "slot": "Helmet",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Energy Shield": 400,
+    "# to Level of all Minion Skills": 2,
+    "# to Intelligence": 30,
+    "#% to Fire Resistance": 10
+   },
+   "lines": [
+    {
+     "text": "Energy Shield: 400",
+     "key": "[Base] Energy Shield",
+     "value": 400,
+     "tag": "base"
+    },
+    {
+     "text": "+2 to Level of all Minion Skills",
+     "key": "# to Level of all Minion Skills",
+     "value": 2,
+     "tag": "explicit"
+    },
+    {
+     "text": "+30 to Intelligence",
+     "key": "# to Intelligence",
+     "value": 30,
+     "tag": "explicit"
+    },
+    {
+     "text": "+10% to Fire Resistance (rune)",
+     "key": "#% to Fire Resistance",
+     "value": 10,
+     "tag": "rune"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Gloves\nRarity: Rare\nC\nD\n--------\nEnergy Shield: 200\n--------\n+30 to Intelligence\n+40 to maximum Life",
+  "parsed": {
+   "raw": "Item Class: Gloves\nRarity: Rare\nC\nD\n--------\nEnergy Shield: 200\n--------\n+30 to Intelligence\n+40 to maximum Life",
+   "itemClass": "Gloves",
+   "rarity": "Rare",
+   "name": "C",
+   "baseType": "D",
+   "slot": "Gloves",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Energy Shield": 200,
+    "# to Intelligence": 30,
+    "# to maximum Life": 40
+   },
+   "lines": [
+    {
+     "text": "Energy Shield: 200",
+     "key": "[Base] Energy Shield",
+     "value": 200,
+     "tag": "base"
+    },
+    {
+     "text": "+30 to Intelligence",
+     "key": "# to Intelligence",
+     "value": 30,
+     "tag": "explicit"
+    },
+    {
+     "text": "+40 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 40,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Helmets\nRarity: Rare\nGreat Crown\nAncestral Tiara\n--------\nEnergy Shield: 520\n--------\n+3 to Level of all Minion Skills\n+42% to Cold Resistance\n+40% to Fire Resistance\n+90 to maximum Life\n+30% to Chaos Resistance\n80% increased Energy Shield",
+  "parsed": {
+   "raw": "Item Class: Helmets\nRarity: Rare\nGreat Crown\nAncestral Tiara\n--------\nEnergy Shield: 520\n--------\n+3 to Level of all Minion Skills\n+42% to Cold Resistance\n+40% to Fire Resistance\n+90 to maximum Life\n+30% to Chaos Resistance\n80% increased Energy Shield",
+   "itemClass": "Helmets",
+   "rarity": "Rare",
+   "name": "Great Crown",
+   "baseType": "Ancestral Tiara",
+   "slot": "Helmet",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Energy Shield": 520,
+    "# to Level of all Minion Skills": 3,
+    "#% to Cold Resistance": 42,
+    "#% to Fire Resistance": 40,
+    "# to maximum Life": 90,
+    "#% to Chaos Resistance": 30,
+    "#% increased Energy Shield": 80
+   },
+   "lines": [
+    {
+     "text": "Energy Shield: 520",
+     "key": "[Base] Energy Shield",
+     "value": 520,
+     "tag": "base"
+    },
+    {
+     "text": "+3 to Level of all Minion Skills",
+     "key": "# to Level of all Minion Skills",
+     "value": 3,
+     "tag": "explicit"
+    },
+    {
+     "text": "+42% to Cold Resistance",
+     "key": "#% to Cold Resistance",
+     "value": 42,
+     "tag": "explicit"
+    },
+    {
+     "text": "+40% to Fire Resistance",
+     "key": "#% to Fire Resistance",
+     "value": 40,
+     "tag": "explicit"
+    },
+    {
+     "text": "+90 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 90,
+     "tag": "explicit"
+    },
+    {
+     "text": "+30% to Chaos Resistance",
+     "key": "#% to Chaos Resistance",
+     "value": 30,
+     "tag": "explicit"
+    },
+    {
+     "text": "80% increased Energy Shield",
+     "key": "#% increased Energy Shield",
+     "value": 80,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Helmets\nRarity: Rare\nBad Hat\nAncestral Tiara\n--------\nEnergy Shield: 150\n--------\nAdds 1 to 4 Physical Damage to Attacks\n+10 to Strength\n12% increased Stun Threshold",
+  "parsed": {
+   "raw": "Item Class: Helmets\nRarity: Rare\nBad Hat\nAncestral Tiara\n--------\nEnergy Shield: 150\n--------\nAdds 1 to 4 Physical Damage to Attacks\n+10 to Strength\n12% increased Stun Threshold",
+   "itemClass": "Helmets",
+   "rarity": "Rare",
+   "name": "Bad Hat",
+   "baseType": "Ancestral Tiara",
+   "slot": "Helmet",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Energy Shield": 150,
+    "Adds # to # Physical Damage to Attacks": 2.5,
+    "# to Strength": 10,
+    "#% increased Stun Threshold": 12
+   },
+   "lines": [
+    {
+     "text": "Energy Shield: 150",
+     "key": "[Base] Energy Shield",
+     "value": 150,
+     "tag": "base"
+    },
+    {
+     "text": "Adds 1 to 4 Physical Damage to Attacks",
+     "key": "Adds # to # Physical Damage to Attacks",
+     "value": 2.5,
+     "tag": "explicit"
+    },
+    {
+     "text": "+10 to Strength",
+     "key": "# to Strength",
+     "value": 10,
+     "tag": "explicit"
+    },
+    {
+     "text": "12% increased Stun Threshold",
+     "key": "#% increased Stun Threshold",
+     "value": 12,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Boots\nRarity: Rare\nX\nY\n--------\nEnergy Shield: 100\n--------\n+30 to maximum Life",
+  "parsed": {
+   "raw": "Item Class: Boots\nRarity: Rare\nX\nY\n--------\nEnergy Shield: 100\n--------\n+30 to maximum Life",
+   "itemClass": "Boots",
+   "rarity": "Rare",
+   "name": "X",
+   "baseType": "Y",
+   "slot": "Boots",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Energy Shield": 100,
+    "# to maximum Life": 30
+   },
+   "lines": [
+    {
+     "text": "Energy Shield: 100",
+     "key": "[Base] Energy Shield",
+     "value": 100,
+     "tag": "base"
+    },
+    {
+     "text": "+30 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 30,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Belts\nRarity: Unique\nMageblood\nHeavy Belt\n--------\n+50 to maximum Life",
+  "parsed": {
+   "raw": "Item Class: Belts\nRarity: Unique\nMageblood\nHeavy Belt\n--------\n+50 to maximum Life",
+   "itemClass": "Belts",
+   "rarity": "Unique",
+   "name": "Mageblood",
+   "baseType": "Heavy Belt",
+   "slot": "Belt",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "# to maximum Life": 50
+   },
+   "lines": [
+    {
+     "text": "+50 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 50,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Gloves\r\nRarity: Rare\r\nGrim Crown\r\nVisored Helm\r\n--------\r\nArmour: 180\r\n--------\r\nItem Level: 50\r\n--------\r\n+55 to maximum Life\r\n+20% to Fire Resistance\r\n+18% to Lightning Resistance",
+  "parsed": {
+   "raw": "Item Class: Gloves\nRarity: Rare\nGrim Crown\nVisored Helm\n--------\nArmour: 180\n--------\nItem Level: 50\n--------\n+55 to maximum Life\n+20% to Fire Resistance\n+18% to Lightning Resistance",
+   "itemClass": "Gloves",
+   "rarity": "Rare",
+   "name": "Grim Crown",
+   "baseType": "Visored Helm",
+   "slot": "Gloves",
+   "twoHanded": false,
+   "itemLevel": 50,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Armour": 180,
+    "# to maximum Life": 55,
+    "#% to Fire Resistance": 20,
+    "#% to Lightning Resistance": 18
+   },
+   "lines": [
+    {
+     "text": "Armour: 180",
+     "key": "[Base] Armour",
+     "value": 180,
+     "tag": "base"
+    },
+    {
+     "text": "+55 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 55,
+     "tag": "explicit"
+    },
+    {
+     "text": "+20% to Fire Resistance",
+     "key": "#% to Fire Resistance",
+     "value": 20,
+     "tag": "explicit"
+    },
+    {
+     "text": "+18% to Lightning Resistance",
+     "key": "#% to Lightning Resistance",
+     "value": 18,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Gloves\nRarity: Rare\nDoom Vise\nSorcerer Gloves\n--------\nEnergy Shield: 280\n--------\n{ Prefix Modifier \"Hale\" (Tier: 3) — Life }\n+33(33-41) to maximum Life\n{ Prefix Modifier \"Shining\" (Tier: 2) — Defences, Energy Shield }\n75(68-79)% increased Energy Shield\n+20(18-22) to maximum Energy Shield\n{ Suffix Modifier \"of the Squall\" (Tier: 3) — Elemental, Lightning, Resistance }\n+39(36-40)% to Lightning Resistance",
+  "parsed": {
+   "raw": "Item Class: Gloves\nRarity: Rare\nDoom Vise\nSorcerer Gloves\n--------\nEnergy Shield: 280\n--------\n{ Prefix Modifier \"Hale\" (Tier: 3) — Life }\n+33(33-41) to maximum Life\n{ Prefix Modifier \"Shining\" (Tier: 2) — Defences, Energy Shield }\n75(68-79)% increased Energy Shield\n+20(18-22) to maximum Energy Shield\n{ Suffix Modifier \"of the Squall\" (Tier: 3) — Elemental, Lightning, Resistance }\n+39(36-40)% to Lightning Resistance",
+   "itemClass": "Gloves",
+   "rarity": "Rare",
+   "name": "Doom Vise",
+   "baseType": "Sorcerer Gloves",
+   "slot": "Gloves",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Energy Shield": 280,
+    "# to maximum Life": 33,
+    "#% increased Energy Shield": 75,
+    "# to maximum Energy Shield": 20,
+    "#% to Lightning Resistance": 39
+   },
+   "lines": [
+    {
+     "text": "Energy Shield: 280",
+     "key": "[Base] Energy Shield",
+     "value": 280,
+     "tag": "base"
+    },
+    {
+     "text": "+33(33-41) to maximum Life",
+     "key": "# to maximum Life",
+     "value": 33,
+     "tag": "explicit"
+    },
+    {
+     "text": "75(68-79)% increased Energy Shield",
+     "key": "#% increased Energy Shield",
+     "value": 75,
+     "tag": "explicit"
+    },
+    {
+     "text": "+20(18-22) to maximum Energy Shield",
+     "key": "# to maximum Energy Shield",
+     "value": 20,
+     "tag": "explicit"
+    },
+    {
+     "text": "+39(36-40)% to Lightning Resistance",
+     "key": "#% to Lightning Resistance",
+     "value": 39,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": true,
+    "prefixes": 2,
+    "suffixes": 1,
+    "openPrefix": 1,
+    "openSuffix": 2
+   }
+  }
+ },
+ {
+  "text": "Item Class: Rings\nRarity: Rare\nEmpyrean Gyre\nIron Ring\n--------\nItem Level: 81\n--------\n{ Implicit Modifier }\nAdds 1 to 4 Physical Damage to Attacks\n--------\n{ Prefix Modifier \"Sapphire\" (Tier: 2) — Mana }\n+56(55-64) to maximum Mana\n{ Suffix Modifier \"of the Sage\" (Tier: 1) — Attribute }\n+31(31-33) to Intelligence",
+  "parsed": {
+   "raw": "Item Class: Rings\nRarity: Rare\nEmpyrean Gyre\nIron Ring\n--------\nItem Level: 81\n--------\n{ Implicit Modifier }\nAdds 1 to 4 Physical Damage to Attacks\n--------\n{ Prefix Modifier \"Sapphire\" (Tier: 2) — Mana }\n+56(55-64) to maximum Mana\n{ Suffix Modifier \"of the Sage\" (Tier: 1) — Attribute }\n+31(31-33) to Intelligence",
+   "itemClass": "Rings",
+   "rarity": "Rare",
+   "name": "Empyrean Gyre",
+   "baseType": "Iron Ring",
+   "slot": "Ring",
+   "twoHanded": false,
+   "itemLevel": 81,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "Adds # to # Physical Damage to Attacks": 2.5,
+    "# to maximum Mana": 56,
+    "# to Intelligence": 31
+   },
+   "lines": [
+    {
+     "text": "Adds 1 to 4 Physical Damage to Attacks",
+     "key": "Adds # to # Physical Damage to Attacks",
+     "value": 2.5,
+     "tag": "implicit"
+    },
+    {
+     "text": "+56(55-64) to maximum Mana",
+     "key": "# to maximum Mana",
+     "value": 56,
+     "tag": "explicit"
+    },
+    {
+     "text": "+31(31-33) to Intelligence",
+     "key": "# to Intelligence",
+     "value": 31,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": true,
+    "prefixes": 1,
+    "suffixes": 1,
+    "openPrefix": 2,
+    "openSuffix": 2
+   }
+  }
+ },
+ {
+  "text": "Item Class: Belts\nRarity: Unique\nMageblood\nUtility Belt\n--------\nItem Level: 80\n--------\nHas 3 Charm Slots\n20% of Flask Recovery applied Instantly\n--------\nLegacy of Bismuth\nLegacy of Sulphur\nLegacy of Quicksilver\nLegacy of Jade\nAll Mage's Legacies have 50% increased effect per duplicate Mage's Legacy you have\n--------\nRivers of power coursed through their veins.",
+  "parsed": {
+   "raw": "Item Class: Belts\nRarity: Unique\nMageblood\nUtility Belt\n--------\nItem Level: 80\n--------\nHas 3 Charm Slots\n20% of Flask Recovery applied Instantly\n--------\nLegacy of Bismuth\nLegacy of Sulphur\nLegacy of Quicksilver\nLegacy of Jade\nAll Mage's Legacies have 50% increased effect per duplicate Mage's Legacy you have\n--------\nRivers of power coursed through their veins.",
+   "itemClass": "Belts",
+   "rarity": "Unique",
+   "name": "Mageblood",
+   "baseType": "Utility Belt",
+   "slot": "Belt",
+   "twoHanded": false,
+   "itemLevel": 80,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "Has # Charm Slots": 3,
+    "#% of Flask Recovery applied Instantly": 20,
+    "All Mage's Legacies have #% increased effect per duplicate Mage's Legacy you have": 50,
+    "#% to Fire Resistance": 45,
+    "#% to Cold Resistance": 45,
+    "#% to Lightning Resistance": 45,
+    "#% increased Damage": 60,
+    "#% increased Movement Speed": 30,
+    "# to Evasion Rating": 2000
+   },
+   "lines": [
+    {
+     "text": "Has 3 Charm Slots",
+     "key": "Has # Charm Slots",
+     "value": 3,
+     "tag": "explicit"
+    },
+    {
+     "text": "20% of Flask Recovery applied Instantly",
+     "key": "#% of Flask Recovery applied Instantly",
+     "value": 20,
+     "tag": "explicit"
+    },
+    {
+     "text": "Legacy of Bismuth",
+     "key": null,
+     "value": null,
+     "tag": "explicit"
+    },
+    {
+     "text": "Legacy of Sulphur",
+     "key": null,
+     "value": null,
+     "tag": "explicit"
+    },
+    {
+     "text": "Legacy of Quicksilver",
+     "key": null,
+     "value": null,
+     "tag": "explicit"
+    },
+    {
+     "text": "Legacy of Jade",
+     "key": null,
+     "value": null,
+     "tag": "explicit"
+    },
+    {
+     "text": "All Mage's Legacies have 50% increased effect per duplicate Mage's Legacy you have",
+     "key": "All Mage's Legacies have #% increased effect per duplicate Mage's Legacy you have",
+     "value": 50,
+     "tag": "explicit"
+    }
+   ],
+   "legacies": {
+    "names": [
+     "bismuth",
+     "sulphur",
+     "quicksilver",
+     "jade"
+    ],
+    "duplicates": 0,
+    "effect": 1
+   },
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Belts\nRarity: Unique\nMageblood\nUtility Belt\n--------\nItem Level: 80\n--------\nHas 3 Charm Slots\n20% of Flask Recovery applied Instantly\n--------\nLegacy of Bismuth\nLegacy of Ruby\nLegacy of Quicksilver\nLegacy of Ruby\nAll Mage's Legacies have 50% increased effect per duplicate Mage's Legacy you have\n--------\nRivers of power coursed through their veins.",
+  "parsed": {
+   "raw": "Item Class: Belts\nRarity: Unique\nMageblood\nUtility Belt\n--------\nItem Level: 80\n--------\nHas 3 Charm Slots\n20% of Flask Recovery applied Instantly\n--------\nLegacy of Bismuth\nLegacy of Ruby\nLegacy of Quicksilver\nLegacy of Ruby\nAll Mage's Legacies have 50% increased effect per duplicate Mage's Legacy you have\n--------\nRivers of power coursed through their veins.",
+   "itemClass": "Belts",
+   "rarity": "Unique",
+   "name": "Mageblood",
+   "baseType": "Utility Belt",
+   "slot": "Belt",
+   "twoHanded": false,
+   "itemLevel": 80,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "Has # Charm Slots": 3,
+    "#% of Flask Recovery applied Instantly": 20,
+    "All Mage's Legacies have #% increased effect per duplicate Mage's Legacy you have": 50,
+    "#% to Fire Resistance": 157.5,
+    "#% to Cold Resistance": 67.5,
+    "#% to Lightning Resistance": 67.5,
+    "#% to Maximum Fire Resistance": 7.5,
+    "#% increased Movement Speed": 45
+   },
+   "lines": [
+    {
+     "text": "Has 3 Charm Slots",
+     "key": "Has # Charm Slots",
+     "value": 3,
+     "tag": "explicit"
+    },
+    {
+     "text": "20% of Flask Recovery applied Instantly",
+     "key": "#% of Flask Recovery applied Instantly",
+     "value": 20,
+     "tag": "explicit"
+    },
+    {
+     "text": "Legacy of Bismuth",
+     "key": null,
+     "value": null,
+     "tag": "explicit"
+    },
+    {
+     "text": "Legacy of Ruby",
+     "key": null,
+     "value": null,
+     "tag": "explicit"
+    },
+    {
+     "text": "Legacy of Quicksilver",
+     "key": null,
+     "value": null,
+     "tag": "explicit"
+    },
+    {
+     "text": "Legacy of Ruby",
+     "key": null,
+     "value": null,
+     "tag": "explicit"
+    },
+    {
+     "text": "All Mage's Legacies have 50% increased effect per duplicate Mage's Legacy you have",
+     "key": "All Mage's Legacies have #% increased effect per duplicate Mage's Legacy you have",
+     "value": 50,
+     "tag": "explicit"
+    }
+   ],
+   "legacies": {
+    "names": [
+     "bismuth",
+     "ruby",
+     "quicksilver"
+    ],
+    "duplicates": 1,
+    "effect": 1.5
+   },
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Body Armours\nRarity: Rare\nGrim Coat\nExpert Hexer's Robe\n--------\nEnergy Shield: 300\n--------\n{ Suffix Modifier \"of the Ice\" (Tier: 1) }\n+2% to Maximum Cold Resistance\n(Maximum Resistances cannot be raised above 90%)\n{ Prefix Modifier \"Tough\" }\n+40 to maximum Life\n(reminder text that runs\nover 2 lines)",
+  "parsed": {
+   "raw": "Item Class: Body Armours\nRarity: Rare\nGrim Coat\nExpert Hexer's Robe\n--------\nEnergy Shield: 300\n--------\n{ Suffix Modifier \"of the Ice\" (Tier: 1) }\n+2% to Maximum Cold Resistance\n(Maximum Resistances cannot be raised above 90%)\n{ Prefix Modifier \"Tough\" }\n+40 to maximum Life\n(reminder text that runs\nover 2 lines)",
+   "itemClass": "Body Armours",
+   "rarity": "Rare",
+   "name": "Grim Coat",
+   "baseType": "Expert Hexer's Robe",
+   "slot": "Body Armour",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Energy Shield": 300,
+    "#% to Maximum Cold Resistance": 2,
+    "# to maximum Life": 40
+   },
+   "lines": [
+    {
+     "text": "Energy Shield: 300",
+     "key": "[Base] Energy Shield",
+     "value": 300,
+     "tag": "base"
+    },
+    {
+     "text": "+2% to Maximum Cold Resistance",
+     "key": "#% to Maximum Cold Resistance",
+     "value": 2,
+     "tag": "explicit"
+    },
+    {
+     "text": "+40 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 40,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": true,
+    "prefixes": 1,
+    "suffixes": 1,
+    "openPrefix": 2,
+    "openSuffix": 2
+   }
+  }
+ },
+ {
+  "text": "Item Class: Helmets\nRarity: Unique\nCrown of Eyes\nVelvet Cap\n--------\nEnergy Shield: 60\n--------\n+20 to maximum Mana\nIncreases and Reductions to Spell damage also apply to Attacks\n--------\nAn eye for an eye\nand 1000 more for the rest\n--------\nCorrupted",
+  "parsed": {
+   "raw": "Item Class: Helmets\nRarity: Unique\nCrown of Eyes\nVelvet Cap\n--------\nEnergy Shield: 60\n--------\n+20 to maximum Mana\nIncreases and Reductions to Spell damage also apply to Attacks\n--------\nAn eye for an eye\nand 1000 more for the rest\n--------\nCorrupted",
+   "itemClass": "Helmets",
+   "rarity": "Unique",
+   "name": "Crown of Eyes",
+   "baseType": "Velvet Cap",
+   "slot": "Helmet",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": true,
+   "unidentified": false,
+   "stats": {
+    "[Base] Energy Shield": 60,
+    "# to maximum Mana": 20
+   },
+   "lines": [
+    {
+     "text": "Energy Shield: 60",
+     "key": "[Base] Energy Shield",
+     "value": 60,
+     "tag": "base"
+    },
+    {
+     "text": "+20 to maximum Mana",
+     "key": "# to maximum Mana",
+     "value": 20,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Amulets\nRarity: Unique\nX\nGold Amulet\n--------\n+15 to Dexterity (implicit)\n--------\n+100 to maximum Life\nCannot be Frozen",
+  "parsed": {
+   "raw": "Item Class: Amulets\nRarity: Unique\nX\nGold Amulet\n--------\n+15 to Dexterity (implicit)\n--------\n+100 to maximum Life\nCannot be Frozen",
+   "itemClass": "Amulets",
+   "rarity": "Unique",
+   "name": "X",
+   "baseType": "Gold Amulet",
+   "slot": "Amulet",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "# to Dexterity": 15,
+    "# to maximum Life": 100
+   },
+   "lines": [
+    {
+     "text": "+15 to Dexterity (implicit)",
+     "key": "# to Dexterity",
+     "value": 15,
+     "tag": "implicit"
+    },
+    {
+     "text": "+100 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 100,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Belts\nRarity: Unique\nMageblood\nRawhide Belt\n--------\nHas 3 Charm Slots (implicit)\n--------\nLegacy of Ruby\n--------\nRivers of power flow\nthrough the veins of the ancient Vaal.",
+  "parsed": {
+   "raw": "Item Class: Belts\nRarity: Unique\nMageblood\nRawhide Belt\n--------\nHas 3 Charm Slots (implicit)\n--------\nLegacy of Ruby\n--------\nRivers of power flow\nthrough the veins of the ancient Vaal.",
+   "itemClass": "Belts",
+   "rarity": "Unique",
+   "name": "Mageblood",
+   "baseType": "Rawhide Belt",
+   "slot": "Belt",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "Has # Charm Slots": 3,
+    "#% to Fire Resistance": 60,
+    "#% to Maximum Fire Resistance": 5
+   },
+   "lines": [
+    {
+     "text": "Has 3 Charm Slots (implicit)",
+     "key": "Has # Charm Slots",
+     "value": 3,
+     "tag": "implicit"
+    },
+    {
+     "text": "Legacy of Ruby",
+     "key": null,
+     "value": null,
+     "tag": "explicit"
+    }
+   ],
+   "legacies": {
+    "names": [
+     "ruby"
+    ],
+    "duplicates": 0,
+    "effect": 1
+   },
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Body Armours\nRarity: Rare\nA\nB\n--------\nArmour: 500\n--------\n+80 to maximum Life\n+30% to Fire Resistance",
+  "parsed": {
+   "raw": "Item Class: Body Armours\nRarity: Rare\nA\nB\n--------\nArmour: 500\n--------\n+80 to maximum Life\n+30% to Fire Resistance",
+   "itemClass": "Body Armours",
+   "rarity": "Rare",
+   "name": "A",
+   "baseType": "B",
+   "slot": "Body Armour",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Armour": 500,
+    "# to maximum Life": 80,
+    "#% to Fire Resistance": 30
+   },
+   "lines": [
+    {
+     "text": "Armour: 500",
+     "key": "[Base] Armour",
+     "value": 500,
+     "tag": "base"
+    },
+    {
+     "text": "+80 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 80,
+     "tag": "explicit"
+    },
+    {
+     "text": "+30% to Fire Resistance",
+     "key": "#% to Fire Resistance",
+     "value": 30,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Body Armours\nRarity: Rare\nA\nB\n--------\nArmour: 500\n--------\n+80 to maximum Life\n+30% to Fire Resistance\n-20% to Chaos Resistance",
+  "parsed": {
+   "raw": "Item Class: Body Armours\nRarity: Rare\nA\nB\n--------\nArmour: 500\n--------\n+80 to maximum Life\n+30% to Fire Resistance\n-20% to Chaos Resistance",
+   "itemClass": "Body Armours",
+   "rarity": "Rare",
+   "name": "A",
+   "baseType": "B",
+   "slot": "Body Armour",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Armour": 500,
+    "# to maximum Life": 80,
+    "#% to Fire Resistance": 30,
+    "#% to Chaos Resistance": -20
+   },
+   "lines": [
+    {
+     "text": "Armour: 500",
+     "key": "[Base] Armour",
+     "value": 500,
+     "tag": "base"
+    },
+    {
+     "text": "+80 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 80,
+     "tag": "explicit"
+    },
+    {
+     "text": "+30% to Fire Resistance",
+     "key": "#% to Fire Resistance",
+     "value": 30,
+     "tag": "explicit"
+    },
+    {
+     "text": "-20% to Chaos Resistance",
+     "key": "#% to Chaos Resistance",
+     "value": -20,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Body Armours\nRarity: Rare\nA\nB\n--------\nArmour: 500\n--------\n+80 to maximum Life\n+30% to Fire Resistance\n-500% to Chaos Resistance",
+  "parsed": {
+   "raw": "Item Class: Body Armours\nRarity: Rare\nA\nB\n--------\nArmour: 500\n--------\n+80 to maximum Life\n+30% to Fire Resistance\n-500% to Chaos Resistance",
+   "itemClass": "Body Armours",
+   "rarity": "Rare",
+   "name": "A",
+   "baseType": "B",
+   "slot": "Body Armour",
+   "twoHanded": false,
+   "itemLevel": null,
+   "requiredLevel": null,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Armour": 500,
+    "# to maximum Life": 80,
+    "#% to Fire Resistance": 30,
+    "#% to Chaos Resistance": -500
+   },
+   "lines": [
+    {
+     "text": "Armour: 500",
+     "key": "[Base] Armour",
+     "value": 500,
+     "tag": "base"
+    },
+    {
+     "text": "+80 to maximum Life",
+     "key": "# to maximum Life",
+     "value": 80,
+     "tag": "explicit"
+    },
+    {
+     "text": "+30% to Fire Resistance",
+     "key": "#% to Fire Resistance",
+     "value": 30,
+     "tag": "explicit"
+    },
+    {
+     "text": "-500% to Chaos Resistance",
+     "key": "#% to Chaos Resistance",
+     "value": -500,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Body Armours\nRarity: Rare\nDoom Shell\nVile Robe\n--------\nEnergy Shield: 312 (augmented)\n--------\nRequires: Level 65, 121 Int\n--------\nSockets: S S\n--------\nItem Level: 81\n--------\n+80 to maximum Energy Shield\n+30% to Lightning Resistance\n+12% increased Energy Shield (rune)",
+  "parsed": {
+   "raw": "Item Class: Body Armours\nRarity: Rare\nDoom Shell\nVile Robe\n--------\nEnergy Shield: 312 (augmented)\n--------\nRequires: Level 65, 121 Int\n--------\nSockets: S S\n--------\nItem Level: 81\n--------\n+80 to maximum Energy Shield\n+30% to Lightning Resistance\n+12% increased Energy Shield (rune)",
+   "itemClass": "Body Armours",
+   "rarity": "Rare",
+   "name": "Doom Shell",
+   "baseType": "Vile Robe",
+   "slot": "Body Armour",
+   "twoHanded": false,
+   "itemLevel": 81,
+   "requiredLevel": 65,
+   "corrupted": false,
+   "unidentified": false,
+   "stats": {
+    "[Base] Energy Shield": 312,
+    "# to maximum Energy Shield": 80,
+    "#% to Lightning Resistance": 30,
+    "#% increased Energy Shield": 12
+   },
+   "lines": [
+    {
+     "text": "Energy Shield: 312 (augmented)",
+     "key": "[Base] Energy Shield",
+     "value": 312,
+     "tag": "base"
+    },
+    {
+     "text": "+80 to maximum Energy Shield",
+     "key": "# to maximum Energy Shield",
+     "value": 80,
+     "tag": "explicit"
+    },
+    {
+     "text": "+30% to Lightning Resistance",
+     "key": "#% to Lightning Resistance",
+     "value": 30,
+     "tag": "explicit"
+    },
+    {
+     "text": "+12% increased Energy Shield (rune)",
+     "key": "#% increased Energy Shield",
+     "value": 12,
+     "tag": "rune"
+    }
+   ],
+   "affixes": {
+    "known": false
+   }
+  }
+ },
+ {
+  "text": "Item Class: Quarterstaves\nRarity: Rare\nStorm Rod\nStriking Quarterstaff\n--------\nQuarterstaff\nQuality: +20% (augmented)\nPhysical Damage: 80-166 (augmented)\nLightning Damage: 5-90 (augmented)\nCritical Hit Chance: 10.00%\nAttacks per Second: 1.40\n--------\nRequires: Level 52, 89 Dex, 38 Int\n--------\nSockets: S S\n--------\nItem Level: 79\n--------\n{ Prefix Modifier \"Tempered\" (Tier: 3) — Damage, Physical, Attack }\n112(105-119)% increased Physical Damage\n{ Prefix Modifier \"Humming\" (Tier: 5) — Damage, Elemental, Lightning, Attack }\nAdds 5(3-6) to 90(85-97) Lightning Damage\n{ Suffix Modifier \"of Skill\" (Tier: 4) — Attack, Speed }\n14(14-16)% increased Attack Speed\n{ Suffix Modifier \"of the Fox\" — Attribute }\n+20(17-20) to Dexterity\n--------\nCorrupted",
+  "parsed": {
+   "raw": "Item Class: Quarterstaves\nRarity: Rare\nStorm Rod\nStriking Quarterstaff\n--------\nQuarterstaff\nQuality: +20% (augmented)\nPhysical Damage: 80-166 (augmented)\nLightning Damage: 5-90 (augmented)\nCritical Hit Chance: 10.00%\nAttacks per Second: 1.40\n--------\nRequires: Level 52, 89 Dex, 38 Int\n--------\nSockets: S S\n--------\nItem Level: 79\n--------\n{ Prefix Modifier \"Tempered\" (Tier: 3) — Damage, Physical, Attack }\n112(105-119)% increased Physical Damage\n{ Prefix Modifier \"Humming\" (Tier: 5) — Damage, Elemental, Lightning, Attack }\nAdds 5(3-6) to 90(85-97) Lightning Damage\n{ Suffix Modifier \"of Skill\" (Tier: 4) — Attack, Speed }\n14(14-16)% increased Attack Speed\n{ Suffix Modifier \"of the Fox\" — Attribute }\n+20(17-20) to Dexterity\n--------\nCorrupted",
+   "itemClass": "Quarterstaves",
+   "rarity": "Rare",
+   "name": "Storm Rod",
+   "baseType": "Striking Quarterstaff",
+   "slot": "Weapon",
+   "twoHanded": true,
+   "itemLevel": 79,
+   "requiredLevel": 52,
+   "corrupted": true,
+   "unidentified": false,
+   "stats": {
+    "#% increased Physical Damage": 112,
+    "Adds # to # Lightning Damage": 47.5,
+    "#% increased Attack Speed": 14,
+    "# to Dexterity": 20,
+    "[Weapon] Physical DPS": 172.2,
+    "[Weapon] Elemental DPS": 66.5,
+    "[Weapon] Total DPS": 238.7,
+    "[Weapon] Critical Hit Chance": 10,
+    "[Weapon] Attacks per Second": 1.4
+   },
+   "lines": [
+    {
+     "text": "Quarterstaff",
+     "key": null,
+     "value": null,
+     "tag": "explicit"
+    },
+    {
+     "text": "112(105-119)% increased Physical Damage",
+     "key": "#% increased Physical Damage",
+     "value": 112,
+     "tag": "explicit"
+    },
+    {
+     "text": "Adds 5(3-6) to 90(85-97) Lightning Damage",
+     "key": "Adds # to # Lightning Damage",
+     "value": 47.5,
+     "tag": "explicit"
+    },
+    {
+     "text": "14(14-16)% increased Attack Speed",
+     "key": "#% increased Attack Speed",
+     "value": 14,
+     "tag": "explicit"
+    },
+    {
+     "text": "+20(17-20) to Dexterity",
+     "key": "# to Dexterity",
+     "value": 20,
+     "tag": "explicit"
+    }
+   ],
+   "affixes": {
+    "known": true,
+    "prefixes": 2,
+    "suffixes": 2,
+    "openPrefix": 0,
+    "openSuffix": 0
+   }
+  }
+ }
+]

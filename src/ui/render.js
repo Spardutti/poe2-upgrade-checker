@@ -29,6 +29,7 @@
     same: { text: 'SIDEGRADE', cls: 'same' },
     new: { text: 'EMPTY SLOT', cls: 'new' },
     equipped: { text: 'EQUIPPED', cls: 'same' },
+    unjudged: { text: 'NOT JUDGED', cls: 'same' },
   };
 
   function equipButtons(r) {
@@ -183,7 +184,7 @@
           <span class="vchip up">SMALL UPGRADE</span> +3 to +5 ·
           <span class="vchip same">SIDEGRADE</span> within 2 ·
           <span class="vchip down">DOWNGRADE</span> −3 or worse ·
-          <span class="vchip risky">UPGRADE, BUT…</span> better, but it costs Spirit, drops a resistance below the cap, or loses minion levels ·
+          <span class="vchip risky">UPGRADE, BUT…</span> better, but it costs Spirit or reservation, links, a resistance below the cap, or minion levels ·
           <span class="vchip down">LOSES RESISTANCE</span> a resistance drops off the cap, or further under it ·
           <span class="vchip down">LOSES DAMAGE</span> your damage drops (when <i>Never lose damage</i> is on); both go to the bottom of the results.</li>
         ${opts.pobOn
@@ -250,9 +251,82 @@
       if (r.delta == null) return '';
       return `${r.delta > 0 ? '+' : ''}${r.delta} gear score`;
     }
+    if (r.delta == null || r.verdict === 'unjudged') return '';
     const pct = r.pct == null ? '' : ` (${fmt(r.pct)}%)`;
     return `${fmt(r.delta)}${pct}`;
   }
+
+  // a poe.ninja price: "≈ 0.8 div (120 ex)", or just ex/chaos below a divine
+  const nf = (v) => (v == null ? '' : Number(v).toLocaleString('en', { maximumFractionDigits: v >= 100 ? 0 : v >= 10 ? 1 : 2 }));
+  function ninjaPrice(p, total) {
+    if (!p) return '';
+    const v = total ? p.total : p.each; const d = total ? p.totalDiv : p.eachDiv;
+    if (d != null && d >= 1) return `≈ <b>${nf(d)} div</b>${v != null ? ` <span class="dim">(${nf(v)} ${esc(p.unit)})</span>` : ''}`;
+    return v != null ? `≈ <b>${nf(v)} ${esc(p.unit)}</b>${d != null ? ` <span class="dim">(${nf(d)} div)</span>` : ''}` : '';
+  }
+  function trend(p) {
+    if (!p || p.change == null) return '';
+    const c = p.change; const cls = c > 2 ? 'pos' : c < -2 ? 'neg' : 'unweighted';
+    return `<span class="chg ${cls}" title="Change over the last 7 days on poe.ninja">7 days ${c > 0 ? '+' : ''}${nf(c)}%</span>`;
+  }
+  window.ninjaLine = function (p) {
+    if (!p) return '';
+    return `<div class="ninja"><span class="pob-tag" title="poe.ninja, ${esc(p.league || '')}">NINJA</span> ${ninjaPrice(p)} ${trend(p)}${p.few ? ' <span class="dim" title="Few listed: the price is a rough guess">few listed</span>' : ''}</div>`;
+  };
+  const linksHtml = (links) => (links || []).map((l) => `<button class="link info-link" data-url="${esc(l.url)}">${esc(l.label)}</button>`).join('');
+  const bindLinks = (el) => el.querySelectorAll('.info-link').forEach((b) => b.addEventListener('click', () => window.api.openUrl(b.dataset.url)));
+
+  // something that isn't gear (currency, a gem, a map, a divination card...): what it's worth
+  window.renderPriceCard = function (el, r, opts) {
+    opts = opts || {};
+    const it = r.item || {};
+    const p = r.ninja;
+    const what = [p && p.gemLevel ? `level ${p.gemLevel}${p.gemQuality ? `, ${p.gemQuality}% quality` : ''}` : '', p && p.links ? `${p.links}-link` : '', p && p.mapTier ? `tier ${p.mapTier}` : '', p && p.variant && !p.gemLevel ? p.variant : ''].filter(Boolean).join(' · ');
+    el.innerHTML = `<div class="card price-card">
+        ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
+        <div class="name ${esc((it.rarity || '').toLowerCase())}">${esc(it.name || '')}</div>
+        <div class="meta">${esc(it.itemClass || '')}${p && p.stack > 1 ? ` · stack of ${nf(p.stack)}` : ''}${r.gameBeta ? ` <span class="beta-tag">${esc(r.gameShort || 'PoE1')} BETA</span>` : ''}</div>
+        ${r.pricePending ? '<div class="note"><span class="spinner"></span> Getting the price from poe.ninja…</div>' : ''}
+        ${p ? `<div class="price-big">${ninjaPrice(p)} <span class="dim">each</span></div>
+          ${p.stack > 1 ? `<div>Stack: ${ninjaPrice(p, true)}</div>` : ''}
+          <div class="dim small">${trend(p)}${what ? ` · priced as ${esc(what)}` : ''}${p.few ? ' · few listed, so a rough guess' : ''} · poe.ninja${p.league ? `, ${esc(p.league)}` : ''}</div>` : ''}
+        ${r.priceNote ? `<div class="note">${esc(r.priceNote)}</div>` : ''}
+        ${r.links && r.links.length ? `<div class="actions">${linksHtml(r.links)}</div>` : ''}
+      </div>`;
+    bindLinks(el);
+    const c = el.querySelector('#closeBtn');
+    if (c) c.addEventListener('click', () => window.api.close());
+  };
+
+  // a map or waystone: each mod and what it means for your build; click a mod to mark it
+  const MAPV = { danger: ['DANGER', 'down'], warn: ['CAREFUL', 'risky'], ok: ['LOOKS FINE', 'up'] };
+  const MAPICON = { danger: '☠', warn: '⚠', ok: '✓', info: '·' };
+  const NEXT = { '': 'd', d: 'w', w: 'g', g: '' };
+  window.renderMapCard = function (el, r, opts) {
+    opts = opts || {};
+    const it = r.item || {};
+    const c = r.check || { rows: [] };
+    const [vt, vc] = MAPV[c.verdict] || MAPV.ok;
+    const tier = (it.lines || []).map((l) => l.text || '').find((t) => /^(Map|Waystone) Tier:/i.test(t));
+    el.innerHTML = `<div class="card map-card">
+        ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
+        <div class="name ${esc((it.rarity || '').toLowerCase())}">${esc(it.name || '')}</div>
+        <div class="meta">${esc(it.baseType && it.baseType !== it.name ? it.baseType + ' · ' : '')}${esc(tier || it.itemClass || '')}${r.gameBeta ? ` <span class="beta-tag">${esc(r.gameShort || 'PoE1')} BETA</span>` : ''}</div>
+        <div class="verdict ${vc}"><span class="badge">${vt}</span>${c.all ? `<span class="dim">for your build: ${esc(c.all.text)}</span>` : ''}</div>
+        ${r.pending ? '<div class="note"><span class="spinner"></span> Checking the mods with Path of Building…</div>' : ''}
+        ${r.noBuild ? '<div class="dim small">Load your Path of Building build on My gear and each mod is worked out for your character.</div>' : ''}
+        ${r.pobError ? `<div class="note">${esc(r.pobError)}</div>` : ''}
+        <div class="map-mods">${c.rows.map((m) => `<div class="map-mod lv-${esc(m.level)}" data-key="${esc(m.key)}" data-mark="${esc(m.mark || '')}" title="Click to mark this mod: dangerous → careful → fine → no mark">
+            <span class="mi">${MAPICON[m.level] || '·'}</span><span class="mt">${esc(m.text)}${m.mark ? ' <small class="dim">(your mark)</small>' : ''}${m.note ? `<br><small class="${m.level === 'ok' ? 'dim' : ''}">${esc(m.note)}</small>` : ''}</span></div>`).join('') || '<div class="dim">No mods.</div>'}</div>
+        ${r.ninja ? window.ninjaLine(r.ninja) : ''}
+        <div class="dim small">${c.calculated ? `${c.calculated} mod${c.calculated === 1 ? '' : 's'} worked out by Path of Building; ` : ''}click a mod to mark it dangerous, careful or fine for this game.</div>
+        ${r.links && r.links.length ? `<div class="actions">${linksHtml(r.links)}</div>` : ''}
+      </div>`;
+    bindLinks(el);
+    el.querySelectorAll('.map-mod').forEach((m) => m.addEventListener('click', () => window.api.mapMark(m.dataset.key, NEXT[m.dataset.mark || ''])));
+    const x = el.querySelector('#closeBtn');
+    if (x) x.addEventListener('click', () => window.api.close());
+  };
 
   // Popup / test view. Compact by default: item, verdict, gear score, top
   // changes and two buttons; "More" shows everything else.
@@ -260,6 +334,8 @@
     opts = opts || {};
     const ui = (r && r.ui) || {};
     document.body.classList.toggle('cb', !!ui.colorblind);
+    if (r && r.kind === 'price') return window.renderPriceCard(el, r, opts);
+    if (r && r.kind === 'map' && window.renderMapCard) return window.renderMapCard(el, r, opts);
     if (!r || !r.ok) {
       el.innerHTML = `<div class="card ${r && r.loading ? 'loading' : ''}">${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
         <div class="note">${r && r.loading ? '<span class="spinner"></span> ' : ''}${esc((r && r.reason) || 'Nothing to show.')}</div></div>`;
@@ -309,7 +385,8 @@
       ? `<button class="find" id="priceFind">What's it worth?</button><button id="likeFind" title="This unique on the trade site, cheapest first">Find cheaper copies</button>`
       : `${r.replacing.length ? `<button class="find" id="quickFind" title="Listings that score higher for your build than your equipped ${esc(r.targetSlot)}">Find upgrades${esc(budget)}</button>`
         : `<button class="find" id="likeFind" title="Listings with this item's stats">Find items like this${esc(budget)}</button>`}
-         <button id="priceFind" title="What similar items sell for">What's it worth?</button>`;
+         <button id="priceFind" title="What similar items sell for">What's it worth?</button>
+         <button class="link" id="pricePick" title="Choose which stats the price check matches, and their minimums">Choose stats…</button>`;
 
     const lossRows = r.isEquipped ? [] : r.pob ? (r.pob.resLoss || []) : ((r.character && r.character.res) || []).filter((x) => x.from != null && x.delta < 0 && x.under && (x.el !== 'chaos' || !x.wasUnder));
     const dmgLoss = !r.isEquipped && r.pob ? r.pob.dmgLoss : null;
@@ -318,7 +395,7 @@
       <div class="card ${lossRows.length || dmgLoss ? 'res-loss' : ''}">
         ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
         <div class="name ${esc(rarity)}">${esc(it.name || '')}</div>
-        <div class="meta">${it.baseType && it.baseType !== it.name ? `${esc(it.baseType)} · ` : ''}${esc(it.itemClass || '')}${it.itemLevel ? ` · ilvl ${it.itemLevel}` : ''}</div>
+        <div class="meta">${it.baseType && it.baseType !== it.name ? `${esc(it.baseType)} · ` : ''}${esc(it.itemClass || '')}${it.itemLevel ? ` · ilvl ${it.itemLevel}` : ''}${r.gameBeta ? ` <span class="beta-tag" title="Path of Exile 1 support is new: if a verdict looks wrong, send the log (Tray → Open log) to support@poe2upgrade.com">${esc(r.gameShort || 'PoE1')} BETA</span>` : ''}</div>
         ${unique && !r.pob ? `<div class="verdict same"><span class="badge">UNIQUE</span>${r.replacing.length && !r.isEquipped ? `<span class="dim">vs ${esc(r.replacing.join(' + '))}</span>` : ''}</div>
           <div class="dim">${r.pobPending ? 'Checking with Path of Building…' : "Uniques have fixed mods, so there's no gear score – check its price, or compare the changes below."}</div>`
           : `<div class="verdict ${v.cls}">
@@ -327,15 +404,20 @@
           ${r.isEquipped ? '' : r.replacing.length ? `<span class="dim">vs ${esc(r.replacing.join(' + '))}</span>` : `<span class="dim">${esc(r.targetSlot)} slot is empty</span>`}
         </div>`}
         ${lossBanner}
+        ${r.ninja ? window.ninjaLine(r.ninja) : ''}
         ${gearLine}
         ${craft}
         ${r.isEquipped ? `<div class="note">This is your equipped ${esc(r.targetSlot)}.</div>` : ''}
         ${top && !r.isEquipped ? `<div class="chgs">${top}</div>` : ''}
-        ${r.pobNudge && !r.isEquipped ? '<div class="dim small">For exact verdicts, paste your Path of Building export on <b>My gear</b>.</div>' : ''}
+        ${r.unjudged && !r.pobNudge && !r.pob ? `<div class="note">${esc(r.unjudged)}</div>` : ''}
+        ${r.pobNudge && !r.isEquipped ? (r.game === 'poe1'
+    ? '<div class="note">PoE1 items are judged by Path of Building: paste your <b>Path of Building Community</b> export on <b>My gear</b> (this character is your PoE1 one).</div>'
+    : '<div class="dim small">For exact verdicts, paste your Path of Building export on <b>My gear</b>.</div>') : ''}
         ${r.isEquipped ? '' : r.pob || r.pobPending || r.pobError ? window.pobBlock(r.pob, { pending: r.pobPending, error: r.pobError, compact: !full, noBanner: true }) : window.characterBlock(r.character, { compact: !full, risks: r.risks, noBanner: true })}
         ${r.notes.filter((n) => !/^Nothing saved/.test(n) || !emptySlot).filter((n) => full || /unidentified|two-handed|Two-handed/i.test(n)).map((n) => `<div class="note">${esc(n)}</div>`).join('')}
         ${emptySlot ? `<div class="actions">${equipButtons(r)}</div>` : ''}
         <div class="actions main-actions">${primary}</div>
+        <div class="price-pick hidden" id="pricePickBox"></div>
         <div class="note" id="findMsg"></div>
         <button class="link more" id="moreBtn">${full ? 'Less ▴' : 'More ▾'}</button>
         <div class="more-box ${full ? '' : 'hidden'}" id="moreBox">
@@ -350,6 +432,7 @@
             ${r.replacing.length && !gearMode ? '<button class="link" id="weightFind" title="Listings that beat your equipped item by your stat weights">By my weights</button>' : ''}
             ${!unique && it.slot ? '<button class="link" id="craftFind" title="Bases with your key stats and an open affix to craft">Craftable bases</button>' : ''}
             <button class="link" id="customFind" title="Pick which of this item\'s stats to search for">Custom search…</button>
+            ${linksHtml(r.links)}
             ${opts.closable ? '<button class="link" id="settingsBtn">Settings</button>' : ''}
           </div>
         </div>
@@ -373,8 +456,30 @@
     run(el.querySelector('#likeFind2'), () => window.api.quickFind(ref, 'similar'), 'Searching the trade site…');
     run(el.querySelector('#craftFind'), () => window.api.quickFind(ref, 'craft'), 'Looking for craftable bases…');
     run(el.querySelector('#priceFind'), () => window.api.priceCheck(ref), 'Checking prices…');
+    // "Choose stats…": tick the stats the price check should match, with their minimums
+    const pp = el.querySelector('#pricePick');
+    if (pp) pp.addEventListener('click', async () => {
+      const box = el.querySelector('#pricePickBox');
+      if (!box.classList.contains('hidden')) { box.classList.add('hidden'); resize(); return; }
+      const f = await window.api.findRows(ref);
+      const rows = ((f && f.rows) || []).filter((x) => x.source !== 'base' || /^\[(Base|Weapon)\]/.test(x.key));
+      if (!rows.length) { msgEl().textContent = 'No stats to choose from.'; resize(); return; }
+      box.innerHTML = `<div class="dim small">Match these stats (at least the value shown):</div>
+        ${rows.map((x, i) => `<label class="pp-row"><input type="checkbox" data-i="${i}" ${x.source === 'socket' ? '' : 'checked'}> <span>${esc(x.key.replace(/^\[(Base|Weapon)\] /, ''))}</span>
+          <input type="number" class="num pp-min" data-i="${i}" value="${esc(Math.floor(Number(x.value) * 10) / 10)}" step="any"></label>`).join('')}
+        <div class="actions"><button class="find" id="pricePickGo">Price with these</button></div>`;
+      box.classList.remove('hidden');
+      resize();
+      run(box.querySelector('#pricePickGo'), () => {
+        const picks = rows.map((x, i) => ({ x, on: box.querySelector(`input[type=checkbox][data-i="${i}"]`).checked, min: box.querySelector(`.pp-min[data-i="${i}"]`).value }))
+          .filter((p) => p.on).map((p) => ({ key: p.x.key, min: p.min === '' ? null : Number(p.min), source: p.x.source }));
+        if (!picks.length) return Promise.resolve({ ok: false, error: 'Tick at least one stat.' });
+        return window.api.priceCheck(ref, picks);
+      }, 'Checking prices…');
+    });
     window.__popupResize = opts.onResize || null;
     window.bindGearWhy(el);
+    bindLinks(el);
     const mb = el.querySelector('#moreBtn');
     if (mb) mb.addEventListener('click', () => {
       const box = el.querySelector('#moreBox');

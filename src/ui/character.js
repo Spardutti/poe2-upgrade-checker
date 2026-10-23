@@ -14,7 +14,7 @@
   const row = (k, v, hint) => (v == null || v === '–' ? '' : `<tr><td>${esc(k)}${hint ? ` <small>${esc(hint)}</small>` : ''}</td><td>${v}</td></tr>`);
   const card = (title, body, extra) => (body ? `<div class="card-p ${extra || ''}"><h3>${esc(title)}</h3>${body}</div>` : '');
   const table = (rows) => { const r = rows.filter(Boolean).join(''); return r ? `<table class="kv">${r}</table>` : ''; };
-  const SLOT_ORDER = ['Weapon', 'Offhand', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring 1', 'Ring 2', 'Belt'];
+  const SLOT_ORDER = ['Weapon', 'Offhand', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring 1', 'Ring 2', 'Ring 3', 'Belt', 'Flask 1', 'Flask 2', 'Flask 3', 'Flask 4', 'Flask 5'];
   const POB_SLOT = { Weapon: 'Weapon 1', Offhand: 'Weapon 2' };
 
   let busy = false;
@@ -70,7 +70,9 @@
       isNum(p.EnergyShield) && p.EnergyShield > 0 ? ['Energy Shield', n0(p.EnergyShield)] : null,
       !ci ? ['Life', n0(p.Life)] : null,
       ['Mana', n0(p.Mana)],
-      ['Spirit free', `${n0(p.SpiritUnreserved)} <small class="dim tile-sub">/ ${n0(p.Spirit)}</small>`],
+      // PoE2: Spirit; PoE1 has none, its auras reserve mana or life
+      isNum(p.Spirit) ? ['Spirit free', `${n0(p.SpiritUnreserved)} <small class="dim tile-sub">/ ${n0(p.Spirit)}</small>`]
+        : isNum(p.ManaUnreservedPercent) ? ['Mana unreserved', `${n0(p.ManaUnreservedPercent)}%`] : null,
       isNum(p.MovementSpeedMod) ? ['Movement speed', `${p.MovementSpeedMod >= 1 ? '+' : ''}${n0((p.MovementSpeedMod - 1) * 100)}%`] : null,
     ].filter(Boolean).map(([k, v]) => `<div class="tile"><b>${v}</b><span>${esc(k)}</span></div>`).join('');
     const hero = `<div class="card-p"><div class="char-hero"><div class="who">${esc(s.ascendancy || s.className || 'Your character')}<small>${esc(s.ascendancy && s.className ? s.className + ' · ' : '')}Level ${esc(s.level || '?')}${s.tree && s.tree.points ? ` · ${s.tree.points} passive points` : ''}</small></div><div class="char-tags">${tags}</div></div><div class="char-big">${tiles}</div></div>`;
@@ -123,8 +125,12 @@
     ]) + '<div class="dim small">From full energy shield / life, after your resistances and mitigation.</div>');
 
     const spPct = isNum(p.Spirit) && p.Spirit > 0 && isNum(p.SpiritReserved) ? Math.min(100, (p.SpiritReserved / p.Spirit) * 100) : 0;
-    const resources = card('Spirit & mana', `<div class="resbar spiritbar"><div class="rl"><span>Spirit</span><span><b>${n0(p.SpiritReserved)}</b> reserved of ${n0(p.Spirit)} · <b class="${isNum(p.SpiritUnreserved) && p.SpiritUnreserved < 0 ? 'neg' : 'pos'}">${n0(p.SpiritUnreserved)}</b> free</span></div><div class="track"><div class="fill" data-w="${spPct}"></div></div></div>` + table([
+    const spiritBar = isNum(p.Spirit) ? `<div class="resbar spiritbar"><div class="rl"><span>Spirit</span><span><b>${n0(p.SpiritReserved)}</b> reserved of ${n0(p.Spirit)} · <b class="${isNum(p.SpiritUnreserved) && p.SpiritUnreserved < 0 ? 'neg' : 'pos'}">${n0(p.SpiritUnreserved)}</b> free</span></div><div class="track"><div class="fill" data-w="${spPct}"></div></div></div>` : '';
+    const resources = card(isNum(p.Spirit) ? 'Spirit & mana' : 'Mana & reservation', spiritBar + table([
       row('Mana', n0(p.Mana), isNum(p.ManaUnreserved) && p.ManaUnreserved !== p.Mana ? `${n0(p.ManaUnreserved)} unreserved` : ''),
+      isNum(p.ManaReserved) && p.ManaReserved > 0 ? row('Mana reserved', n0(p.ManaReserved), isNum(p.ManaUnreservedPercent) ? `${n0(p.ManaUnreservedPercent)}% free` : '') : '',
+      isNum(p.LifeReserved) && p.LifeReserved > 0 ? row('Life reserved', n0(p.LifeReserved), isNum(p.LifeUnreservedPercent) ? `${n0(p.LifeUnreservedPercent)}% free` : '') : '',
+      isNum(p.SpellSuppressionChance) && p.SpellSuppressionChance > 0 ? row('Spell suppression', `${n0(p.SpellSuppressionChance)}%`) : '',
       row('Mana regeneration', isNum(p.ManaRegenRecovery) ? `${n1(p.ManaRegenRecovery)}/s` : null),
     ]));
 

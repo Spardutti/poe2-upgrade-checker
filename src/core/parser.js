@@ -1,7 +1,8 @@
 'use strict';
 
-// Parses the text PoE2 puts on the clipboard when you hover an item and press
-// Ctrl+C (or Ctrl+Alt+C for the advanced version with mod tiers).
+// Parses the text PoE2 (and PoE1) puts on the clipboard when you hover an item and press
+// Ctrl+C (or Ctrl+Alt+C for the advanced version with mod tiers; since PoE1 3.29 a plain
+// Ctrl+C gives the advanced text there).
 //
 // Output:
 // {
@@ -10,12 +11,19 @@
 //   stats: { "<template>": number, ... },   // what gets scored
 //   lines: [ { text, key, value, tag } ]    // for display
 // }
+//
+// PoE1 extras, set only when the item has them (so PoE2 items keep their exact shape):
+//   sockets: "R-R-G-B B", links: 3, socketCount: 5,
+//   influences: ['shaper', 'elder', ...], eldritch: { exarch, eater, exarchRank, eaterRank },
+//   synthesised, fractured, veiled, mirrored, split, unmodifiable, foulborn, talismanTier,
+//   flask (all flasks), abyss (abyss jewels), cluster: { size, passives, jewelSockets, smallGrants, notables }
+// Socket, influence, flask-charge, requirement, cluster-structure and help lines never become stats.
 
 const { slotForClass, isTwoHanded } = require('./slots');
 
 const SEPARATOR = /^-{4,}\s*$/;
 const NUM = /[+-]?\d+(?:\.\d+)?/g;
-const TAG = /\s*\((implicit|rune|enchant|crafted|fractured|desecrated|augmented|unmet|veiled|mutated)\)\s*$/i;
+const TAG = /\s*\((implicit|rune|enchant|crafted|fractured|desecrated|augmented|unmet|veiled|mutated|scourge|crucible)\)\s*$/i;
 
 const SKIP_LINE = [
   /^Requirements:?$/i, /^Requires\b/i, /^Level:/i, /^Str:/i, /^Dex:/i, /^Int:/i,
@@ -33,6 +41,7 @@ const PROPERTY_KEYS = {
   'chance to block': '[Base] Block Chance',
   'spirit': '[Base] Spirit',
   'runic ward': '[Base] Runic Ward',
+  'ward': '[Base] Ward', // PoE1
 };
 
 // Mods that really mean several stats at once. Expanded so you only have to
@@ -113,8 +122,22 @@ function applyLegacies(item, names, add) {
   for (const n of unique) for (const [k, v] of LEGACIES[n] || []) add(k, Math.round(v * mult * 10) / 10);
 }
 
+// PoE1: influence lines (their own section), and the Eldritch lines that the game appends to the
+// end of another section.
+const INFLUENCE_LINE = /^(Shaper|Elder|Crusader|Hunter|Redeemer|Warlord) Item$/;
+const ELDRITCH_LINE = /^(Searing Exarch|Eater of Worlds) Item$/;
+// PoE1-only lines that say something about the item and are never mods.
+const POE1_FLAG_LINE = /^(Synthesised Item|Split|Foil Unique(?: \(.*\))?|Abyss)$/;
+// Help text at the bottom of jewels, flasks etc.
+const HELP_LINE = /^(Place into an? |Right[ -]click to |Can only hold charges )/i;
+// PoE1/PoE2 weapon property blocks start with the weapon type ("Claw", "Two Handed Sword")
+const WEAPON_TYPE_LINE = /^(Bow|Claw|Dagger|Rune Dagger|Wand|Sceptre|Staff|Warstaff|Quarterstaff|Crossbow|Spear|Flail|Fishing Rod|Thrusting One Handed Sword|(?:One|Two) Hand(?:ed)? (?:Sword|Axe|Mace))$/;
+// Flask / charm base properties
+const FLASK_PROP = /^(Currently has \d+ Charges?|Consumes \d+ of \d+ Charges? on use|Lasts [\d.]+(?: \(augmented\))? Seconds?|Recovers [\d.,]+(?: \(augmented\))? (?:Life|Mana|Life and Mana)(?: over [\d.]+(?: \(augmented\))? Seconds?)?)$/i;
+const CANNOT_USE = /^You cannot use this item\. Its stats will be ignored\.?$/i;
+
 // Lines that only carry information: they never hold a mod.
-const META_LINE = /^(Corrupted|Unidentified|Mirrored|Unmodifiable|Sanctified|Twice Corrupted|Note:.*|Sockets:.*|Item Level:.*)$/i;
+const META_LINE = /^(Corrupted|Unidentified|Mirrored|Unmodifiable|Sanctified|Twice Corrupted|Split|Synthesised Item|Fractured Item|Foil Unique.*|(?:Shaper|Elder|Crusader|Hunter|Redeemer|Warlord|Searing Exarch|Eater of Worlds) Item|Note:.*|Sockets:.*|Item Level:.*)$/i;
 // Prose: a flavour-text line starts lower case or with a quote, or ends with punctuation. Mod lines don't.
 const PROSE = /^[a-z"'“‘«]|[.,;:!?"'”’»…]$/;
 
@@ -133,6 +156,57 @@ function flavourBlock(blocks, rarity) {
   return lines.some((l) => PROSE.test(l)) ? last : -1;
 }
 
+// "R-R-G-B B" -> { sockets, links: 4, socketCount: 5 }. PoE1 colours: R G B W, A (abyssal), D (delve).
+function readSockets(text) {
+  const m = text.match(/^Sockets:\s*([RGBWAD](?:[- ][RGBWAD])*)\s*$/m);
+  if (!m) return null;
+  const groups = m[1].split(' ');
+  return {
+    sockets: m[1],
+    links: Math.max(...groups.map((g) => g.split('-').length)),
+    socketCount: groups.reduce((n, g) => n + g.split('-').length, 0),
+  };
+}
+
+// Cluster jewel structure lines: recorded on item.cluster, never stats.
+function clusterLine(c, text) {
+  let m;
+  if ((m = text.match(/^Adds (\d+) Passive Skills?$/i))) { c.passives = Number(m[1]); return true; }
+  if ((m = text.match(/^(\d+) Added Passive Skills? (?:is a|are) Jewel Sockets?$/i))) { c.jewelSockets = Number(m[1]); return true; }
+  if ((m = text.match(/^Added Small Passive Skills (?:also )?grant: (.+)$/i))) { c.smallGrants.push(m[1]); return true; }
+  if ((m = text.match(/^1 Added Passive Skill is (.+)$/i))) { c.notables.push(m[1]); return true; }
+  return false;
+}
+
+// PoE1-only things about the item as a whole (each field only when the item has it).
+function readPoe1Extras(item, text, names) {
+  const cls = String(item.itemClass || '').toLowerCase();
+  const sock = readSockets(text);
+  if (sock) Object.assign(item, sock);
+  const infl = [...text.matchAll(/^(Shaper|Elder|Crusader|Hunter|Redeemer|Warlord) Item$/gm)].map((m) => m[1].toLowerCase());
+  if (infl.length) item.influences = [...new Set(infl)];
+  const exarch = /^Searing Exarch Item$/m.test(text) || /Searing Exarch Implicit Modifier/.test(text);
+  const eater = /^Eater of Worlds Item$/m.test(text) || /Eater of Worlds Implicit Modifier/.test(text);
+  if (exarch || eater) item.eldritch = { exarch, eater, exarchRank: null, eaterRank: null };
+  if (/^Synthesised Item$/m.test(text)) {
+    item.synthesised = true;
+    if (names[1]) item.baseType = names[1].replace(/^Synthesised /, '');
+  }
+  if (/^Fractured Item$/m.test(text)) item.fractured = true;
+  if (/^Mirrored$/m.test(text)) item.mirrored = true;
+  if (/^Split$/m.test(text)) item.split = true;
+  if (/^Unmodifiable$/m.test(text)) item.unmodifiable = true;
+  const tier = text.match(/^Talisman Tier:\s*(\d+)/m);
+  if (tier) item.talismanTier = Number(tier[1]);
+  if (/unique/i.test(item.rarity || '') && /^Foulborn /.test(item.name || '')) {
+    item.foulborn = true; item.name = item.name.replace(/^Foulborn /, '');
+  }
+  if (/flask/.test(cls)) item.flask = true;
+  if (cls === 'abyss jewels') item.abyss = true;
+  const cm = String(item.baseType || '').match(/^(Small|Medium|Large) Cluster Jewel$/);
+  if (cm) item.cluster = { size: cm[1].toLowerCase(), passives: null, jewelSockets: 0, smallGrants: [], notables: [] };
+}
+
 function parseItem(raw) {
   if (typeof raw !== 'string') return null;
   const text = raw.replace(/\r\n?/g, '\n').trim();
@@ -145,6 +219,11 @@ function parseItem(raw) {
     else if (line.trim()) cur.push(line.trim());
   }
   blocks.push(cur);
+  // "You cannot use this item. Its stats will be ignored" sits under Rarity, and the name lines
+  // follow in the next section
+  if (blocks[0] && blocks[0].some((l) => CANNOT_USE.test(l)) && blocks[1]) {
+    blocks.splice(0, 2, [...blocks[0].filter((l) => !CANNOT_USE.test(l)), ...blocks[1]]);
+  }
 
   const header = blocks[0] || [];
   const item = {
@@ -170,6 +249,7 @@ function parseItem(raw) {
   if (item.baseType && rarLower === 'normal') item.baseType = item.baseType.replace(/^Superior /, '');
   item.slot = slotForClass(item.itemClass);
   item.twoHanded = isTwoHanded(item.itemClass);
+  readPoe1Extras(item, text, names);
 
   const add = (key, value) => {
     for (const [k, v] of expand(key, value)) {
@@ -198,6 +278,8 @@ function parseItem(raw) {
     // in advanced text the header line says what kind of mod follows; the line itself has no tag
     let headerTag = null;
     let inReminder = false;
+    // a flask's (or charm's) property block: charges, duration, recovery and the flask's own buff
+    const flaskBlock = block.some((l) => /^(Currently has \d+ Charges?|Consumes \d+ of \d+ Charges? on use)$/i.test(l));
     block.forEach((line) => {
       // reminder text, "(Maximum Resistances cannot be raised above 90%)", is never a mod;
       // it can run over several lines
@@ -211,8 +293,15 @@ function parseItem(raw) {
         sawHeaders = true;
         if (/Prefix Modifier/i.test(line)) prefixes++;
         else if (/Suffix Modifier/i.test(line)) suffixes++;
+        const eld = line.match(/(Searing Exarch|Eater of Worlds) Implicit Modifier(?: \((\w+)\))?/i);
+        if (eld && item.eldritch) {
+          const which = /exarch/i.test(eld[1]) ? 'exarch' : 'eater';
+          item.eldritch[which] = true;
+          if (eld[2]) item.eldritch[which + 'Rank'] = eld[2];
+        }
         headerTag = /Implicit Modifier/i.test(line) ? 'implicit'
           : /Enchant/i.test(line) ? 'enchant'
+          : /Master Crafted/i.test(line) ? 'crafted'
           : /Rune Modifier|Augment/i.test(line) ? 'rune'
           : /Fractured/i.test(line) ? 'fractured'
           : /Desecrated/i.test(line) ? 'desecrated'
@@ -230,6 +319,18 @@ function parseItem(raw) {
       if (/^Corrupted$/i.test(clean)) { item.corrupted = true; return; }
       if (/^Unidentified$/i.test(clean)) { item.unidentified = true; return; }
       if (SKIP_LINE.some((r) => r.test(clean))) return;
+      // PoE1 section lines (read in readPoe1Extras) are never mods
+      if (INFLUENCE_LINE.test(clean) || ELDRITCH_LINE.test(clean) || POE1_FLAG_LINE.test(clean)) return;
+      if (/^Talisman Tier:/i.test(clean)) return;
+      if (flaskBlock) {
+        item.lines.push({ text: line, key: null, value: null, tag: FLASK_PROP.test(clean) ? 'info' : 'flask' });
+        return;
+      }
+      if (item.cluster && clusterLine(item.cluster, clean.replace(TAG, ''))) {
+        const t = clean.match(TAG);
+        item.lines.push({ text: line, key: null, value: null, tag: t ? t[1].toLowerCase() : (headerTag || 'explicit') });
+        return;
+      }
 
       // "Key: value" property lines
       const prop = clean.match(/^([A-Za-z ]+):\s*(.+)$/);
@@ -269,8 +370,11 @@ function parseItem(raw) {
       const stat = modToStat(modText);
       if (!stat) {
         // flavour text / keyword mods with no numbers - keep a flag stat for keyword mods
+        if (/^Veiled (Prefix|Suffix)$/.test(modText)) item.veiled = true;
         if (block.length <= 6 && item.rarity !== 'Unique') {
-          item.lines.push({ text: line, key: null, value: null, tag });
+          // help text, the weapon-type line and "Fractured Item" are shown as info, not as mods
+          const info = HELP_LINE.test(modText) || WEAPON_TYPE_LINE.test(modText) || /^Fractured Item$/i.test(modText);
+          item.lines.push({ text: line, key: null, value: null, tag: info ? 'info' : tag });
         }
         return;
       }
@@ -280,6 +384,7 @@ function parseItem(raw) {
   });
 
   if (legacies.length) applyLegacies(item, legacies, add);
+  if (!item.fractured && item.lines.some((l) => l.tag === 'fractured')) item.fractured = true;
 
   const rar = String(item.rarity || '').toLowerCase();
   if (sawHeaders && (rar === 'rare' || rar === 'magic')) {

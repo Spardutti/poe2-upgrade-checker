@@ -2,8 +2,10 @@
 REM Builds a portable test copy of the app from this folder and starts it. Nothing is uploaded or released.
 cd /d "%~dp0"
 where npm >nul 2>nul || (echo Node.js is needed to build. Get the LTS version from https://nodejs.org && pause && exit /b 1)
-echo Quitting any running PoE2 Upgrade Checker (only one copy can run at a time)...
+echo Quitting any running PoE Upgrade Checker (only one copy can run at a time)...
+taskkill /im "PoE Upgrade Checker.exe" /f >nul 2>nul
 taskkill /im "PoE2 Upgrade Checker.exe" /f >nul 2>nul
+taskkill /im "PoE-Upgrade-Checker-TEST.exe" /f >nul 2>nul
 taskkill /im "PoE2-Upgrade-Checker-TEST.exe" /f >nul 2>nul
 echo Installing build tools (first time takes a few minutes)...
 call npm install --no-audit --no-fund || (echo npm install failed. & pause & exit /b 1)
@@ -21,7 +23,7 @@ if errorlevel 1 (
   call npm test >test-results.txt 2>&1 || (echo Some tests failed - see test-results.txt & pause & exit /b 1)
 )
 echo Building the test .exe...
-call npx --yes electron-builder@25.1.8 --win portable --publish never -c.portable.artifactName=PoE2-Upgrade-Checker-TEST.exe || (echo Build failed - see the messages above. & pause & exit /b 1)
+call npx --yes electron-builder@25.1.8 --win portable --publish never -c.portable.artifactName=PoE-Upgrade-Checker-TEST.exe || (echo Build failed - see the messages above. & pause & exit /b 1)
 echo.
-echo Done: dist\PoE2-Upgrade-Checker-TEST.exe - starting it now.
-start "" "dist\PoE2-Upgrade-Checker-TEST.exe"
+echo Done: dist\PoE-Upgrade-Checker-TEST.exe - starting it now.
+start "" "dist\PoE-Upgrade-Checker-TEST.exe"

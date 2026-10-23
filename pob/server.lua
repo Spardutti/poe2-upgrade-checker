@@ -1,4 +1,4 @@
--- PoE2 Upgrade Checker <-> Path of Building bridge.
+-- PoE Upgrade Checker <-> Path of Building bridge.
 -- Runs Path of Building's own calculations headless and answers JSON requests, one per line:
 --   {"id":1,"cmd":"load","xml":"<PathOfBuilding2>…"}        -> summary of the build
 --   {"id":2,"cmd":"eval","items":[{"slot":"Gloves","text":"Item Class: …"}]} -> what each item changes
@@ -16,6 +16,10 @@ if hostDir and hostDir ~= "" then
 end
 local luaPath = os.getenv("POB_LUA_PATH")
 if luaPath and luaPath ~= "" then package.path = luaPath .. ";" .. package.path end
+
+-- which Path of Building this is: "poe2" (Path of Building 2) or "poe1" (Path of Building Community);
+-- set by the app (pobengine.js). The commands are the same for both.
+local GAME = os.getenv("POB_GAME") == "poe1" and "poe1" or "poe2"
 
 local out = io.stdout
 local function reply(t) out:write("@@", t, "\n"); out:flush() end
@@ -53,6 +57,46 @@ if not pcall(require, "lua-utf8") then
   end
 end
 
+-- PoB1 headless: _SimpleGraphic.def.lua stubs Inflate() to return "", which breaks timeless jewel
+-- data (Data/TimelessJewelData/*.zip are zlib streams). Give it a real one through LuaJIT's FFI and zlib.
+local function installInflate()
+  local ok, ffi = pcall(require, "ffi")
+  if not ok then return end
+  pcall(ffi.cdef, [[
+    typedef struct { const unsigned char *next_in; unsigned int avail_in; unsigned long total_in;
+      unsigned char *next_out; unsigned int avail_out; unsigned long total_out;
+      const char *msg; void *state; void *zalloc; void *zfree; void *opaque;
+      int data_type; unsigned long adler; unsigned long reserved; } pob_z_stream;
+    const char *zlibVersion(void);
+    int inflateInit2_(pob_z_stream *strm, int windowBits, const char *version, int stream_size);
+    int inflate(pob_z_stream *strm, int flush);
+    int inflateEnd(pob_z_stream *strm);
+  ]])
+  local z
+  for _, name in ipairs({ "z", "libz.so.1", "zlib1", "zlib" }) do
+    local okl, lib = pcall(ffi.load, name); if okl then z = lib; break end
+  end
+  if not z then io.stderr:write("zlib not found: timeless jewels won't work\n"); return end
+  local CHUNK = 1048576
+  local buf = ffi.new("unsigned char[?]", CHUNK)
+  return function(data)
+    if not data or #data == 0 then return "" end
+    local strm = ffi.new("pob_z_stream")
+    if z.inflateInit2_(strm, 15 + 32, z.zlibVersion(), ffi.sizeof(strm)) ~= 0 then return "" end
+    strm.next_in = ffi.cast("const unsigned char *", data); strm.avail_in = #data
+    local parts, rc = {}, 0
+    repeat
+      strm.next_out = buf; strm.avail_out = CHUNK
+      rc = z.inflate(strm, 0)
+      if rc ~= 0 and rc ~= 1 then break end
+      parts[#parts + 1] = ffi.string(buf, CHUNK - strm.avail_out)
+    until rc == 1
+    z.inflateEnd(strm)
+    return rc == 1 and table.concat(parts) or ""
+  end
+end
+local realInflate = GAME == "poe1" and installInflate() or nil
+
 -- PoB waits for Enter when it can't start; we're not a console, so don't let it block
 local rawRead = io.read
 local starting = true
@@ -60,7 +104,18 @@ io.read = function(...) if starting then return nil end; return rawRead(...) end
 dofile("HeadlessWrapper.lua")
 starting = false
 io.read = rawRead
+if realInflate then Inflate = realInflate end
 local dkjson = require("dkjson")
+-- PoB's launch object (it holds promptMsg, PoB's error message). PoB2's HeadlessWrapper keeps it in a
+-- local, PoB1's in the global __mainObject__; SetMainObject has it as an upvalue in both.
+local mainObject = rawget(_G, "mainObject") or rawget(_G, "__mainObject__")
+if not mainObject and type(SetMainObject) == "function" then
+  for i = 1, 20 do
+    local n, v = debug.getupvalue(SetMainObject, i)
+    if not n then break end
+    if n == "mainObject" then mainObject = v; break end
+  end
+end
 if not build or (mainObject and mainObject.promptMsg) then
   local msg = tostring(mainObject and mainObject.promptMsg or table.concat(recent, "\n"))
   msg = msg:gsub("%^%d", ""):gsub("%^x%x%x%x%x%x%x", "")
@@ -81,9 +136,13 @@ local function pick(o)
     Life = num(o.Life), EnergyShield = num(o.EnergyShield), Mana = num(o.Mana), Ward = num(o.Ward),
     TotalEHP = num(o.TotalEHP), Armour = num(o.Armour), Evasion = num(o.Evasion),
     Spirit = num(o.Spirit), SpiritUnreserved = num(o.SpiritUnreserved), ManaUnreserved = num(o.ManaUnreserved),
+    -- PoE1: reservation instead of Spirit, block and spell suppression
+    ManaUnreservedPercent = num(o.ManaUnreservedPercent), LifeUnreserved = num(o.LifeUnreserved), LifeUnreservedPercent = num(o.LifeUnreservedPercent),
+    ManaReserved = num(o.ManaReserved), LifeReserved = num(o.LifeReserved),
+    BlockChance = num(o.BlockChance), SpellSuppressionChance = num(o.SpellSuppressionChance),
     Str = num(o.Str), Dex = num(o.Dex), Int = num(o.Int),
     ReqStr = num(o.ReqStr), ReqDex = num(o.ReqDex), ReqInt = num(o.ReqInt),
-    MovementSpeedMod = num(o.MovementSpeedMod),
+    MovementSpeedMod = num(o.MovementSpeedMod), LifeRegenRecovery = num(o.LifeRegenRecovery),
   }
   for _, el in ipairs({ "Fire", "Cold", "Lightning", "Chaos" }) do
     r[el .. "Resist"] = num(o[el .. "Resist"])
@@ -97,6 +156,23 @@ local function pick(o)
 end
 
 -- PoB releases build items with new("Item", text); its dev branch with new("Item"):Item(text)
+-- the bundled Path of Building's version ("2.67.2"), from its launch object or its manifest
+local pobVersionCache
+local function pobVersion()
+  if pobVersionCache ~= nil then return pobVersionCache or nil end
+  local o = mainObject or rawget(_G, "launch")
+  local v = o and o.versionNumber
+  if not v then
+    for _, p in ipairs({ "../manifest.xml", "manifest.xml" }) do
+      local f = io.open(p, "r")
+      if f then v = (f:read("*a") or ""):match('<Version number="([%d%.]+)"'); f:close() end
+      if v then break end
+    end
+  end
+  pobVersionCache = v or false
+  return v
+end
+
 local function makeItem(text)
   local ok, item = pcall(new, "Item", text)
   if ok and item and item.base then return item end
@@ -113,6 +189,7 @@ local function pobSlot(name)
 end
 
 local SLOTS = { "Weapon 1", "Weapon 2", "Helmet", "Body Armour", "Gloves", "Boots", "Amulet", "Ring 1", "Ring 2", "Belt" }
+if GAME == "poe1" then for _, n in ipairs({ "Ring 3", "Flask 1", "Flask 2", "Flask 3", "Flask 4", "Flask 5" }) do SLOTS[#SLOTS + 1] = n end end
 local function gearNames()
   local g = {}
   for _, name in ipairs(SLOTS) do
@@ -157,18 +234,69 @@ local function jewelSockets()
       -- sockets made by cluster-style jewels (containJewelSocket) aren't on the main tree
       if not (node and node.containJewelSocket) then
         local jewel = sock.selItemId and sock.selItemId ~= 0 and it.items[sock.selItemId] or nil
-        list[#list + 1] = { slot = sock.slotName, nodeId = nodeId, label = "Socket #" .. n, jewel = jewel and (jewel.title or jewel.name) or nil }
+        list[#list + 1] = { slot = sock.slotName, nodeId = nodeId, label = "Socket #" .. n, jewel = jewel and (jewel.title or jewel.name) or nil,
+          -- PoE1: swapping out a cluster jewel keeps its passives allocated in PoB's quick calculation,
+          -- so a result there overstates; the app doesn't trust it
+          cluster = (jewel and jewel.clusterJewel) and true or nil }
+      end
+    end
+  end
+  -- PoE1: abyssal sockets on your gear ("Belt Abyssal Socket 1"…), for items that have them
+  for _, name in ipairs(SLOTS) do
+    local parent = it.slots[pobSlot(name)]
+    local item = parent and parent.selItemId and it.items[parent.selItemId]
+    for i = 1, (item and item.abyssalSocketCount or 0) do
+      local s = parent.abyssalSocketList and parent.abyssalSocketList[i]
+      if s then
+        local jewel = s.selItemId and s.selItemId ~= 0 and it.items[s.selItemId] or nil
+        list[#list + 1] = { slot = s.slotName, label = name .. " Abyssal #" .. i, abyssal = true, jewel = jewel and (jewel.title or jewel.name) or nil }
       end
     end
   end
   return list
 end
 
+-- PoE1: how many gems your biggest socket group in each gear slot uses, so an item with fewer
+-- links can be flagged (PoB's quick calculation keeps your gems linked whatever the new item has)
+local function slotGems()
+  if GAME ~= "poe1" then return nil end
+  local r = {}
+  for _, g in ipairs(build.skillsTab.socketGroupList or {}) do
+    -- weapon swap: only the weapon set the build is using counts
+    local swap = tostring(g.slot or ""):match(" Swap$") ~= nil
+    local set = build.itemsTab.activeItemSet
+    local second = set and set.useSecondWeaponSet
+    if g.slot and g.enabled ~= false and not g.source and (not tostring(g.slot):match("^Weapon") or swap == (second and true or false)) then
+      local n = 0
+      for _, gem in ipairs(g.gemList or {}) do if gem.enabled ~= false and (gem.gemData or gem.grantedEffect) then n = n + 1 end end
+      local slot = tostring(g.slot):gsub(" Swap$", "")
+      if n > 0 and (not r[slot] or n > r[slot].gems) then r[slot] = { gems = n, label = g.displayLabel or g.label } end
+    end
+  end
+  return r
+end
+
+-- PoE1: what kind of weapon/offhand each weapon slot holds ("Two Handed Axe", "One Handed Sword"
+-- + "Thrusting"), so imported items get their real item class (the export doesn't say)
+local function gearTypes()
+  if GAME ~= "poe1" then return nil end
+  local r = {}
+  for _, name in ipairs({ "Weapon 1", "Weapon 2", "Weapon 1 Swap", "Weapon 2 Swap" }) do
+    local slot = build.itemsTab.slots[name]
+    local it = slot and slot.selItemId and build.itemsTab.items[slot.selItemId]
+    if it and it.base then r[name] = { type = it.base.type, subType = it.base.subType, name = it.title or it.name } end
+  end
+  return r
+end
+
 local function summary()
   local o = build.calcsTab.mainOutput
+  local okt, types = pcall(gearTypes)
   local skill = build.mainSocketGroup and build.skillsTab.socketGroupList[build.mainSocketGroup]
+  local okg, gems = pcall(slotGems)
   return {
-    ok = true,
+    slotGems = okg and gems or nil, gearTypes = okt and types or nil,
+    ok = true, game = GAME, treeVersion = build.spec and build.spec.treeVersion,
     className = build.spec and build.spec.curClassName, ascendancy = build.spec and build.spec.curAscendClassName,
     level = build.characterLevel,
     mainSkill = skill and skill.displayLabel or nil,
@@ -195,6 +323,7 @@ local PLAYER_KEYS = {
   "Life", "LifeUnreserved", "LifeRegenRecovery", "EnergyShield", "EnergyShieldRecharge", "EnergyShieldRechargeDelay", "EnergyShieldRegenRecovery",
   "Mana", "ManaUnreserved", "ManaRegenRecovery", "Ward", "WardRechargeDelay",
   "Spirit", "SpiritReserved", "SpiritUnreserved",
+  "LifeUnreservedPercent", "ManaUnreservedPercent", "LifeReserved", "ManaReserved", "SpellSuppressionChance", "EffectiveSpellSuppressionChance",
   "TotalEHP", "EHPSurvivalTime", "Armour", "Evasion", "EvadeChance", "PhysicalDamageReduction",
   "BlockChance", "BlockChanceMax", "SpellBlockChance", "DeflectChance", "DeflectionRating", "StunAvoidChance", "StunThreshold", "AilmentThreshold",
   "PhysicalMaximumHitTaken", "FireMaximumHitTaken", "ColdMaximumHitTaken", "LightningMaximumHitTaken", "ChaosMaximumHitTaken",
@@ -266,7 +395,7 @@ local function evalItems(items)
   for i, it in ipairs(items) do
     local ok, r = pcall(function()
       local item = makeItem(it.text)
-      if not item then return { ok = false, error = "Path of Building couldn't read this item" } end
+      if not item then return { ok = false, error = "Path of Building couldn't read this item" .. (pobVersion() and (" (it may be newer than the Path of Building " .. pobVersion() .. " in this app)") or "") } end
       local slot = it.slot
       if slot == "Jewel" then
         -- try it in every allocated socket: replacing the jewel there, or in an empty one
@@ -274,7 +403,7 @@ local function evalItems(items)
         for _, s in ipairs(jewelSockets()) do
           if build.itemsTab:IsItemValidForSlot(item, s.slot) then
             local new_ = calcFunc({ repSlotName = s.slot, repItem = item })
-            multi[#multi + 1] = { slot = s.slot, label = s.label, replacing = s.jewel, after = pick(new_) }
+            multi[#multi + 1] = { slot = s.slot, label = s.label, replacing = s.jewel, replacingCluster = s.cluster, abyssal = s.abyssal, after = pick(new_) }
           end
         end
         if #multi == 0 then return { ok = false, error = "You have no allocated jewel socket this jewel fits" } end
@@ -284,8 +413,11 @@ local function evalItems(items)
       -- PoB empties the offhand itself for most two-handers, but not crossbows or quarterstaves
       local off, offId
       local info = item.base and data.weaponTypeInfo[item.base.type]
-      if pslot:match("^Weapon 1") and info and not info.oneHand and (item.base.type == "Crossbow" or item.base.type == "Warstaff" or item.base.type == "Fishing Rod") then
+      if pslot:match("^Weapon 1") and info and not info.oneHand and (item.base.type == "Crossbow" or item.base.type == "Warstaff" or item.base.type == "Fishing Rod" or item.base.type == "Bow") then
         off = build.itemsTab.slots[pslot:gsub("^Weapon 1", "Weapon 2")]
+        local offItem = off and off.selItemId and build.itemsTab.items[off.selItemId]
+        -- a bow keeps its quiver; anything else in the offhand goes
+        if item.base.type == "Bow" and offItem and offItem.base and offItem.base.type == "Quiver" then off = nil end
         if off then offId = off.selItemId; off.selItemId = 0 end
       end
       local okc, new_ = pcall(calcFunc, { repSlotName = pslot, repItem = item })
@@ -298,6 +430,156 @@ local function evalItems(items)
   return res
 end
 
+-- Two items at once ("a ring and boots that cap your resistances together"): each first item is
+-- put on for real, every second item is tried with it, then your gear goes back as it was.
+--   pairs: { { a = {slot, text}, bs = { {slot, text}, ... } }, ... } -> { { before, results = { after|error } } }
+local function evalPairs(pairs)
+  local _, base0 = build.calcsTab:GetMiscCalculator()
+  local before = pick(base0)
+  local out = {}
+  for i, p in ipairs(pairs or {}) do
+    local res = { results = {} }
+    local ok, err = pcall(function()
+      local slotA = build.itemsTab.slots[pobSlot(p.a.slot)]
+      local itemA = makeItem(p.a.text)
+      if not (slotA and itemA) then error("Path of Building couldn't read the first item") end
+      local orig = slotA.selItemId
+      build.itemsTab:AddItem(itemA, true)
+      slotA:SetSelItemId(itemA.id)
+      build.itemsTab:PopulateSlots(); build.buildFlag = true; runCallback("OnFrame")
+      local okc, e2 = pcall(function()
+        local calcFunc = build.calcsTab:GetMiscCalculator()
+        for k, b in ipairs(p.bs or {}) do
+          local itemB = makeItem(b.text)
+          if itemB then
+            local okb, new_ = pcall(calcFunc, { repSlotName = pobSlot(b.slot), repItem = itemB })
+            res.results[k] = okb and { ok = true, after = pick(new_) } or { ok = false, error = tostring(new_) }
+          else res.results[k] = { ok = false, error = "Path of Building couldn't read this item" } end
+        end
+      end)
+      -- your gear back as it was, whatever happened
+      slotA:SetSelItemId(orig or 0)
+      if build.itemsTab.DeleteItem then pcall(build.itemsTab.DeleteItem, build.itemsTab, itemA) end
+      build.itemsTab:PopulateSlots(); build.buildFlag = true; runCallback("OnFrame")
+      if not okc then error(e2) end
+    end)
+    if not ok then res.error = tostring(err) end
+    res.ok = ok
+    res.before = before
+    out[i] = res
+  end
+  return out
+end
+
+-- What a map's or waystone's mods do to you. Mods that act on the player ("Players have -10% to all
+-- maximum Resistances") are read by PoB's own mod parser and added for the calculation, one at a
+-- time and then all together; the rest are only reported as not calculated. Also: what your main
+-- skill's damage is made of and whether it leeches, for the app's own checks (reflect, no leech).
+local function variants(text)
+  local t = tostring(text or ""):gsub("%s+$", "")
+  local out = { t }
+  local rest = t:match("^[Pp]layers have (.+)$")
+  if rest then out[#out + 1] = rest end
+  rest = t:match("^[Pp]layers are (.+)$")
+  if rest then out[#out + 1] = "You are " .. rest; out[#out + 1] = rest end
+  rest = t:match("^[Pp]layers (.+)$")
+  if rest then out[#out + 1] = rest end
+  rest = t:match("^[Pp]layer (.+)$")
+  if rest then out[#out + 1] = rest end
+  return out
+end
+local function parsePlayerMod(text)
+  if not tostring(text or ""):match("^[Pp]layer") then return nil end
+  for _, v in ipairs(variants(text)) do
+    local ok, mods, extra = pcall(modLib.parseMod, v)
+    if ok and mods and #mods > 0 and not extra then return mods, v end
+  end
+  return nil
+end
+-- PoB's calculator reads the Configuration's mods each time it runs: add the map's for one run
+local function withMods(modsList)
+  local cfg = build.configTab
+  local saved = cfg.modList
+  local ml = new("ModList")
+  ml:AddList(saved)
+  for _, mods in ipairs(modsList) do for _, m in ipairs(mods) do ml:AddMod(modLib.setSource(m, "Map")) end end
+  cfg.modList = ml
+  local calcFunc = build.calcsTab:GetMiscCalculator()
+  local ok, out = pcall(calcFunc, {})
+  cfg.modList = saved
+  if not ok then error(out) end
+  return out
+end
+local function mapCheck(mods)
+  local calcFunc = build.calcsTab:GetMiscCalculator()
+  local base = calcFunc({}) -- the same calculation as with the mods, so the two compare
+  local results, all = {}, {}
+  for i, text in ipairs(mods or {}) do
+    local parsed, as = parsePlayerMod(text)
+    if parsed then
+      local okc, out = pcall(withMods, { parsed })
+      results[i] = okc and { text = text, as = as, after = pick(out) } or { text = text, as = as, error = tostring(out) }
+      all[#all + 1] = parsed
+    else
+      results[i] = { text = text }
+    end
+  end
+  local r = { ok = true, before = pick(base), results = results }
+  if #all > 0 then local okc, out = pcall(withMods, all); if okc then r.all = pick(out) end end
+  -- your main skill: its damage by type, whether it's a minion skill, leech and regeneration
+  local o = build.calcsTab.mainOutput or {}
+  local hand = o.MainHand or o
+  local dmg = {}
+  for _, t in ipairs({ "Physical", "Lightning", "Cold", "Fire", "Chaos" }) do
+    local avg = num(hand[t .. "HitAverage"] or o[t .. "HitAverage"])
+    local mn, mx = num(hand[t .. "Min"] or o[t .. "Min"]), num(hand[t .. "Max"] or o[t .. "Max"])
+    if avg or mn or mx then dmg[t] = avg or ((mn or 0) + (mx or 0)) / 2 end
+  end
+  r.damage = dmg
+  r.minion = (num(o.Minion and o.Minion.CombinedDPS) or 0) > 0 and not ((num(o.CombinedDPS) or 0) > (num(o.Minion.CombinedDPS) or 0))
+  r.leech = num(o.LifeLeechGainRate) or num(o.LifeLeechRate) or num(o.LifeLeech)
+  r.regen = num(o.LifeRegenRecovery)
+  r.life = num(o.Life)
+  return r
+end
+
+-- PoE1 loot filter: the affix names ("Virile", "of the Rainbow") of the higher tiers of trade stats,
+-- for mods that can roll on an item with these tags (ring, amulet, belt, helmet, gloves...).
+--   req: { ids = { "explicit.stat_3299347043", ... }, tags = { "ring" }, tiers = 3 } -> { [id] = { {affix, level, type}, ... } }
+local function affixNames(req)
+  local want = {}
+  for _, id in ipairs(req.ids or {}) do local h = tostring(id):match("stat_(%d+)$"); if h then want[tonumber(h)] = id end end
+  local tags = {}
+  for _, t in ipairs(req.tags or {}) do tags[t] = true end
+  local function spawns(mod)
+    for i, k in ipairs(mod.weightKey or {}) do
+      if tags[k] or k == "default" then return (mod.weightVal and mod.weightVal[i] or 0) > 0 end
+    end
+    return false
+  end
+  local found = {}
+  for _, mod in pairs((data.itemMods and data.itemMods.Item) or {}) do
+    if (mod.type == "Prefix" or mod.type == "Suffix") and mod.affix and mod.tradeHashes and spawns(mod) then
+      for hash in pairs(mod.tradeHashes) do
+        local id = want[tonumber(hash)]
+        if id then found[id] = found[id] or {}; table.insert(found[id], { affix = mod.affix, level = mod.level or 0, type = mod.type }) end
+      end
+    end
+  end
+  local tiers = tonumber(req.tiers) or 3
+  local out = {}
+  for id, list in pairs(found) do
+    table.sort(list, function(a, b) return a.level > b.level end)
+    local seen, top = {}, {}
+    for _, m in ipairs(list) do
+      if not seen[m.affix] then seen[m.affix] = true; top[#top + 1] = m end
+      if #top >= tiers then break end
+    end
+    out[id] = top
+  end
+  return { ok = true, affixes = out }
+end
+
 -- Path of Building's own trade search generator ("Trader"): it tries every mod that can roll on
 -- the slot's item type on your build and weights each by how much it raises your damage and
 -- effective HP, then builds a weighted trade search from that.
@@ -305,7 +587,9 @@ end
 local function genQuery(req)
   local slot = build.itemsTab.slots[pobSlot(req.slot)]
   if not slot then return { ok = false, error = "unknown slot " .. tostring(req.slot) } end
-  local gen = new("TradeQueryGenerator", { itemsTab = build.itemsTab })
+  -- PoB2 takes the arguments in new(); PoB1 wants them in the constructor call
+  local okg, gen = pcall(new, "TradeQueryGenerator", { itemsTab = build.itemsTab })
+  if not okg then gen = new("TradeQueryGenerator"):TradeQueryGenerator({ itemsTab = build.itemsTab }) end
   local result, err
   gen.requesterCallback = function(_, q, e) result = q; err = e end
   gen.requesterContext = {}
@@ -314,6 +598,9 @@ local function genQuery(req)
   if #weights == 0 then weights = { { stat = "FullDPS", weightMult = 1.0 }, { stat = "TotalEHP", weightMult = 0.5 } } end
   local options = {
     statWeights = weights, includeCorrupted = req.includeCorrupted ~= false, includeMirrored = false, includeRunes = false,
+    -- PoE1 only (PoB2 ignores them)
+    includeEldritch = req.includeEldritch or "None", includeScourge = req.includeScourge, includeTalisman = req.includeTalisman,
+    influence1 = req.influence1 or 1, influence2 = req.influence2 or 1, -- 1: no influence
     maxPrice = req.maxPrice, maxPriceType = req.maxPriceType, jewelType = req.jewelType or "Base",
   }
   local t0 = os.clock()
@@ -330,7 +617,7 @@ local function genQuery(req)
   return { ok = true, query = result, error = err, modWeights = mw, seconds = os.clock() - t0 }
 end
 
-reply(enc({ ready = true, version = launch and launch.versionNumber or nil }))
+reply(enc({ ready = true, version = pobVersion() }))
 
 while true do
   local line = io.read("*l")
@@ -340,22 +627,54 @@ while true do
   local ok, res = pcall(function()
     if req.cmd == "load" then
       local xml = tostring(req.xml or "")
-      if not xml:match("^%s*<%?xml[^>]*>%s*<PathOfBuilding2[%s>]") and not xml:match("^%s*<PathOfBuilding2[%s>]") then
-        if xml:match("<PathOfBuilding[%s>]") then return { ok = false, error = "That's a Path of Building build for Path of Exile 1. Export it from Path of Building 2 (PoE2) instead." } end
-        return { ok = false, error = "That isn't a Path of Building 2 build." }
+      local root = GAME == "poe1" and "PathOfBuilding" or "PathOfBuilding2"
+      if not xml:match("^%s*<%?xml[^>]*>%s*<" .. root .. "[%s>]") and not xml:match("^%s*<" .. root .. "[%s>]") then
+        if GAME == "poe2" and xml:match("<PathOfBuilding[%s>]") then return { ok = false, wrongGame = "poe1", error = "That's a Path of Building build for Path of Exile 1. Export it from Path of Building 2 (PoE2) instead." } end
+        if GAME == "poe1" and xml:match("<PathOfBuilding2[%s>]") then return { ok = false, wrongGame = "poe2", error = "That's a Path of Building 2 build (Path of Exile 2). Export it from Path of Building Community (PoE1) instead." } end
+        return { ok = false, error = GAME == "poe1" and "That isn't a Path of Building build." or "That isn't a Path of Building 2 build." }
       end
       -- PoB's XML reader quietly accepts a cut-off export as an empty character
-      if not xml:match("</PathOfBuilding2>%s*$") then return { ok = false, error = "That build looks cut off (the export code wasn't copied whole). Copy it again from Path of Building 2." } end
+      if not xml:match("</" .. root .. ">%s*$") then return { ok = false, error = "That build looks cut off (the export code wasn't copied whole). Copy it again from Path of Building." } end
+      -- PoE1: only the newest passive trees come with the app; a build on an older one is moved to
+      -- the newest (as Path of Building's own "convert to latest" does)
+      local converted, newer, timeless
+      if GAME == "poe1" and latestTreeVersion then
+        local function ver(v) local a, b = tostring(v):match("^(%d+)_(%d+)"); return (tonumber(a) or 0) * 1000 + (tonumber(b) or 0) end
+        xml = xml:gsub('treeVersion="([%w_]+)"', function(v)
+          local f = io.open("TreeData/" .. v .. "/tree.lua", "r")
+          if f then f:close(); return nil end
+          converted = converted or v
+          if ver(v) > ver(latestTreeVersion) then newer = true end
+          return 'treeVersion="' .. latestTreeVersion .. '"'
+        end)
+        -- timeless jewels need lookup tables that don't come with the app (hundreds of MB):
+        -- take them out of their sockets so the rest of the build still loads
+        local ids = {}
+        for id, body in xml:gmatch('<Item%s[^>]-id="(%d+)"[^>]*>(.-)</Item>') do
+          if body:match("\nTimeless Jewel%s*\n") or body:match("\nTimeless Jewel%s*$") then ids[id] = true end
+        end
+        if next(ids) then
+          xml = xml:gsub("<Socket [^>]*>", function(tag)
+            local id = tag:match('itemId="(%d+)"')
+            if id and ids[id] then timeless = (timeless or 0) + 1; return (tag:gsub('itemId="%d+"', 'itemId="0"')) end
+            return nil
+          end)
+        end
+      end
       if mainObject then mainObject.promptMsg = nil end
       loadBuildFromXML(xml, req.name or "build")
       local msg = mainObject and mainObject.promptMsg
       if msg then
         mainObject.promptMsg = nil
-        msg = tostring(msg):gsub("%^%d", ""):gsub("%^x%x%x%x%x%x%x", "")
+        -- just PoB's error, without its "Press Enter/Escape…" help and version lines
+        msg = tostring(msg):gsub("%^%d", ""):gsub("%^x%x%x%x%x%x%x", ""):gsub("\n[^\n]*Press [^\n]*", ""):gsub("\nv%d[%w%.%-]*", ""):gsub("^%s*Error:%s*", ""):gsub("%s+$", "")
         return { ok = false, error = "Path of Building couldn't load this build: " .. msg }
       end
       if not (build and build.spec and build.calcsTab and build.calcsTab.mainOutput) then return { ok = false, error = "Path of Building couldn't load this build." } end
-      return summary()
+      local r = summary()
+      if converted then r.treeConverted = { from = converted, to = latestTreeVersion, newer = newer or nil } end
+      if timeless then r.timelessRemoved = timeless end
+      return r
     elseif req.cmd == "equip" then
       local done = equip(req.items)
       local r = summary(); r.equipped = done
@@ -364,6 +683,12 @@ while true do
       return genQuery(req)
     elseif req.cmd == "summary" then
       return summary()
+    elseif req.cmd == "affixes" then
+      return affixNames(req)
+    elseif req.cmd == "mapcheck" then
+      return mapCheck(req.mods or {})
+    elseif req.cmd == "pairs" then
+      return { ok = true, results = evalPairs(req.pairs or {}) }
     elseif req.cmd == "eval" then
       return { ok = true, results = evalItems(req.items or {}) }
     elseif req.cmd == "sheet" then

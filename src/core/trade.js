@@ -11,6 +11,7 @@
 //   results page: https://www.pathofexile.com/trade2/search/poe2/<league>/<id>
 
 const BASE = 'https://www.pathofexile.com';
+const games = require('./games');
 const { expand } = require('./parser');
 const ignoreLib = require('./ignore');
 
@@ -28,6 +29,7 @@ const EQUIPMENT_FILTERS = {
   '[Base] Block Chance': 'block',
   '[Base] Spirit': 'spirit',
   '[Base] Runic Ward': 'ward',
+  '[Base] Ward': 'ward', // PoE1
   '[Weapon] Total DPS': 'dps',
   '[Weapon] Physical DPS': 'pdps',
   '[Weapon] Elemental DPS': 'edps',
@@ -46,7 +48,12 @@ const CATEGORY_FALLBACK = {
   'staves': 'weapon.staff', 'two hand swords': 'weapon.twosword', 'two hand axes': 'weapon.twoaxe', 'two hand maces': 'weapon.twomace',
   'one hand swords': 'weapon.onesword', 'spears': 'weapon.spear', 'flails': 'weapon.flail', 'one hand axes': 'weapon.oneaxe',
   'one hand maces': 'weapon.onemace', 'sceptres': 'weapon.sceptre', 'wands': 'weapon.wand', 'daggers': 'weapon.dagger', 'claws': 'weapon.claw',
+  // PoE1
+  'thrusting one hand swords': 'weapon.onesword', 'rune daggers': 'weapon.runedagger', 'warstaves': 'weapon.warstaff',
+  'abyss jewels': 'jewel.abyss', 'hybrid flasks': 'flask', 'utility flasks': 'flask', 'fishing rods': 'weapon.rod',
 };
+// the sites name some categories differently from the item class: "One-Handed Sword", "Base Dagger"
+const catText = (t) => String(t || '').toLowerCase().replace(/-handed\b/g, ' hand').replace(/^(base|thrusting) /, '').replace(/\s+/g, ' ').trim();
 
 const { norm } = require('./statnorm');
 const COND = /\b(if you've|if you have|while|when|recently)\b|\bper (?!second)/i; // same as gearscore.COND
@@ -146,15 +153,21 @@ function singular(cls) {
 // filtersData: response of /api/trade2/data/filters
 function categoryFor(itemClass, filtersData) {
   const want = singular(itemClass);
+  const cls = String(itemClass || '').toLowerCase();
+  // PoE1 classes with no category of their own: abyss jewels have one, hybrid/utility flasks don't
+  const special = { 'abyss jewels': 'jewel.abyss', 'rune daggers': 'weapon.runedagger', 'warstaves': 'weapon.warstaff' }[cls];
   for (const group of (filtersData && filtersData.result) || []) {
     for (const f of group.filters || []) {
       if (f.id !== 'category') continue;
       const opts = (f.option && f.option.options) || [];
-      const hit = opts.find((o) => o.id && String(o.text || '').toLowerCase() === want);
+      if (special && opts.some((o) => o.id === special)) return special;
+      const hit = opts.find((o) => o.id && String(o.text || '').toLowerCase() === want)
+        || opts.find((o) => o.id && catText(o.text) === catText(want));
       if (hit) return hit.id;
+      if (/flasks$/.test(cls) && opts.some((o) => o.id === 'flask')) return 'flask';
     }
   }
-  return CATEGORY_FALLBACK[String(itemClass || '').toLowerCase()] || null;
+  return CATEGORY_FALLBACK[cls] || null;
 }
 
 // picks: [{ key, min, max }] - our stat keys with the values you want
@@ -168,7 +181,9 @@ function buildQuery(picks, opts) {
     let m = p.id ? { kind: 'stat', id: p.id, type: p.idType } : matchStat(p.key, opts.statIndex, { preferLocal });
     if (!p.id && m && m.kind === 'stat' && m.type !== 'pseudo' && p.source) {
       const type = p.source === 'implicit' ? 'implicit' : p.source === 'socket' ? 'augment' : 'explicit';
-      m = matchStat(p.key, opts.statIndex, { preferLocal, type }) || m;
+      // PoE1 has no runes: its enchants and bench crafts are their own types
+      const alt = (t) => p.source === 'socket' && matchStat(p.key, opts.statIndex, { preferLocal, type: t });
+      m = matchStat(p.key, opts.statIndex, { preferLocal, type }) || alt(p.tag === 'crafted' ? 'crafted' : 'enchant') || alt('crafted') || m;
     }
     if (!m) { unmatched.push(p.key); continue; }
     const value = {};
@@ -336,7 +351,8 @@ const CURRENCIES = { divine: 'Divine Orb', exalted: 'Exalted Orb', chaos: 'Chaos
 // [{ key, value, source }] where source is 'mod' (explicit/crafted/fractured/
 // desecrated...), 'implicit', or 'socket' (runes / enchants - a buyer can add
 // those themselves, so they're left out of "same stats" searches).
-const SOCKET_TAGS = ['rune', 'enchant'];
+// PoE1 bench crafts too: they're on their own trade ids (crafted.*), and the buyer can craft them
+const SOCKET_TAGS = ['rune', 'enchant', 'crafted'];
 function statSources(item) {
   const lines = (item && item.lines) || [];
   if (!lines.some((l) => l.key)) {
@@ -460,6 +476,16 @@ function buildSimilarQuery(item, opts) {
       qf.type_filters.filters.rarity = { option: rar };
     }
     qf.misc_filters = { filters: { corrupted: { option: item.corrupted ? 'true' : 'false' } } };
+    if (opts.game === 'poe1') {
+      // what moves a PoE1 price most: links, influences, fractured and synthesised bases
+      if (item.links >= 5) qf.socket_filters = { filters: { links: { min: item.links } } };
+      for (const inf of item.influences || []) {
+        const id = `${String(inf).toLowerCase()}_item`;
+        if (/^(shaper|elder|crusader|redeemer|hunter|warlord)_item$/.test(id)) qf.misc_filters.filters[id] = { option: 'true' };
+      }
+      if (item.fractured) qf.misc_filters.filters.fractured_item = { option: 'true' };
+      if (item.synthesised) qf.misc_filters.filters.synthesised_item = { option: 'true' };
+    }
   }
   const query = {
     status: { option: opts.forPrice ? 'available' : statusOpt(opts.status) },
@@ -515,7 +541,9 @@ function buildCraftQuery(item, opts) {
 // Budget: { min?, max?, currency, divineRate? } - either end can be left empty.
 function num(v) { const n = Number(v); return v !== '' && v != null && Number.isFinite(n) && n > 0 ? n : null; }
 
-function priceFilter(budget) {
+// game: 'poe2' (prices counted in exalts) or 'poe1' (in chaos)
+function priceFilter(budget, game) {
+  const baseCur = games.gameOf(game).base;
   if (!budget) return null;
   let min = num(budget.min);
   let max = num(budget.max);
@@ -524,6 +552,15 @@ function priceFilter(budget) {
   const currency = CURRENCIES[budget.currency] ? budget.currency : 'divine';
   const rate = Number(budget.divineRate);
   const out = {};
+  // PoE1: no currency named means "Chaos Orb equivalent", which the PoE1 site works out close to the
+  // market, so a divine budget also finds the items priced in chaos (and the other way round)
+  if (games.gameOf(game).id === 'poe1' && (currency === 'chaos' || (currency === 'divine' && Number.isFinite(rate) && rate > 0))) {
+    const c = (v) => (v == null ? null : currency === 'divine' ? Math.max(1, Math.round(v * rate)) : v);
+    if (min != null) out.min = c(min);
+    if (max != null) out.max = c(max);
+    if (out.min != null && out.max != null && out.min > out.max) out.min = out.max;
+    return out;
+  }
   // Don't use the site's "Exalted Orb equivalent": it converts divines with its own rate, far
   // from the market's (a 10 div minimum came out as ~27 div). Ask for the currency itself:
   // divine-priced listings in divines; small budgets (most such items are priced in exalts)
@@ -532,7 +569,7 @@ function priceFilter(budget) {
     // round both ends the same way so min <= max, and a tiny max is still at least 1 ex
     out.max = Math.max(1, Math.round(max * rate));
     if (min != null) out.min = Math.min(out.max, Math.max(1, Math.round(min * rate)));
-    out.option = 'exalted';
+    out.option = baseCur;
     return out;
   }
   if (min != null) out.min = min;
@@ -541,36 +578,72 @@ function priceFilter(budget) {
   return out;
 }
 
-function applyBudget(body, budget) {
-  const price = priceFilter(budget);
+function applyBudget(body, budget, game) {
+  const price = priceFilter(budget, game);
   if (!price || !body || !body.query) return body;
   body.query.filters = body.query.filters || {};
   body.query.filters.trade_filters = { filters: { price } };
   return body;
 }
 
-function budgetLabel(budget) {
-  const price = priceFilter(budget);
+function budgetLabel(budget, game) {
+  const price = priceFilter(budget, game);
   if (!price) return null;
   const name = { divine: 'div', exalted: 'ex', chaos: 'chaos' }[budget.currency] || 'div';
   let min = num(budget.min); let max = num(budget.max);
   if (min != null && max != null && min > max) [min, max] = [max, min];
   const range = min != null && max != null ? `${min}–${max} ${name}` : max != null ? `≤ ${max} ${name}` : `≥ ${min} ${name}`;
-  return range + (price.option && !['divine', 'exalted'].includes(price.option) ? ` (${name} listings only)` : '');
+  if (!price.option) return range; // PoE1: any currency, counted in chaos
+  return range + (price.option && (price.option !== games.gameOf(game).base || games.gameOf(game).id === 'poe1') && price.option !== 'divine' ? ` (${name} listings only)` : '');
 }
 
-function searchUrl(league) {
-  return `${BASE}/api/trade2/search/poe2/${encodeURIComponent(league)}`;
+// PoE2: /api/trade2/search/poe2/<league>; PoE1: /api/trade/search/<league>
+const realmPart = (game) => { const r = games.gameOf(game).trade.realm; return r ? r + '/' : ''; };
+function apiUrl(game, what) { return `${BASE}/api/${games.gameOf(game).trade.api}/${what}`; }
+function pageUrl(game, league) { return `${BASE}/${games.gameOf(game).trade.page}/search/${realmPart(game)}${encodeURIComponent(league)}`; }
+function searchUrl(league, game) {
+  return `${BASE}/api/${games.gameOf(game).trade.api}/search/${realmPart(game)}${encodeURIComponent(league)}`;
 }
-function resultsUrl(league, id) {
-  return `${BASE}/trade2/search/poe2/${encodeURIComponent(league)}/${encodeURIComponent(id)}`;
+function fetchUrl(ids, searchId, game) {
+  const realm = games.gameOf(game).trade.realm;
+  return `${BASE}/api/${games.gameOf(game).trade.api}/fetch/${ids.map(encodeURIComponent).join(',')}?query=${encodeURIComponent(searchId)}${realm ? '&realm=' + realm : ''}`;
+}
+function resultsUrl(league, id, game) {
+  return `${pageUrl(game, league)}/${encodeURIComponent(id)}`;
 }
 // Fallback if the POST fails: the site also accepts the query in the URL.
-function prefilledUrl(league, body) {
-  return `${BASE}/trade2/search/poe2/${encodeURIComponent(league)}?q=${encodeURIComponent(JSON.stringify(body))}`;
+function prefilledUrl(league, body, game) {
+  return `${pageUrl(game, league)}?q=${encodeURIComponent(JSON.stringify(body))}`;
+}
+// is this a trade site page of this app's games (for opening links)
+function isTradePage(url) {
+  return typeof url === 'string' && Object.values(games.GAMES).some((g) => url.startsWith(`${BASE}/${g.trade.page}/`));
+}
+
+// The searches are built in PoE2's shape; PoE1's trade site splits PoE2's equipment_filters into
+// armour_filters and weapon_filters and has no Spirit or rune sockets.
+const POE1_ARMOUR = ['ar', 'ev', 'es', 'block', 'ward'];
+const POE1_WEAPON = ['dps', 'pdps', 'edps', 'aps', 'crit'];
+function adaptQuery(body, game) {
+  if (!body || !body.query || games.gameOf(game).id !== 'poe1') return body;
+  const f = body.query.filters || {};
+  const eq = f.equipment_filters && f.equipment_filters.filters;
+  if (eq) {
+    const armour = {}; const weapon = {};
+    for (const [k, v] of Object.entries(eq)) {
+      if (POE1_ARMOUR.includes(k)) armour[k] = v;
+      else if (POE1_WEAPON.includes(k)) weapon[k] = v;
+    }
+    delete f.equipment_filters;
+    if (Object.keys(armour).length) f.armour_filters = { filters: armour };
+    if (Object.keys(weapon).length) f.weapon_filters = { filters: weapon };
+  }
+  if (f.misc_filters && f.misc_filters.filters) delete f.misc_filters.filters.rune_sockets;
+  body.query.filters = f;
+  return body;
 }
 
 module.exports = {
   BASE, EQUIPMENT_FILTERS, localFor, LOWER_BETTER, CURRENCIES, priceFilter, applyBudget, budgetLabel, norm, buildStatIndex, matchStat, categoryFor, buildQuery, buildUpgradeQuery, buildGearQuery, buildSimilarQuery, buildCraftQuery, statSources, baseWithoutSockets, RELAX, STATUSES, statusOpt,
-  searchUrl, resultsUrl, prefilledUrl,
+  searchUrl, resultsUrl, prefilledUrl, fetchUrl, apiUrl, pageUrl, isTradePage, adaptQuery,
 };

@@ -114,12 +114,11 @@ function convertItem(raw, slot) {
 
 function parsePob(xml) {
   xml = String(xml || '');
-  // a Path of Exile 1 build (or anything else) would load as an empty character and judge nothing
-  if (!/<PathOfBuilding2[\s>]/.test(xml)) {
-    if (/<PathOfBuilding[\s>]/.test(xml)) throw new Error("That's a Path of Building build for Path of Exile 1. Export it from Path of Building 2 (PoE2) instead.");
-    throw new Error("That isn't a Path of Building 2 build. In Path of Building 2, use Import/Export Build → Generate, then Copy.");
-  }
-  if (!/<\/PathOfBuilding2>\s*$/.test(xml)) throw new Error("That build looks cut off (the export code wasn't copied whole). Copy it again from Path of Building 2.");
+  // Path of Building 2 (PoE2) or Path of Building Community (PoE1); anything else would load as an
+  // empty character and judge nothing
+  const root = /<PathOfBuilding2[\s>]/.test(xml) ? 'PathOfBuilding2' : /<PathOfBuilding[\s>]/.test(xml) ? 'PathOfBuilding' : null;
+  if (!root) throw new Error("That isn't a Path of Building build. In Path of Building, use Import/Export Build → Generate, then Copy.");
+  if (!new RegExp(`</${root}>\\s*$`).test(xml)) throw new Error("That build looks cut off (the export code wasn't copied whole). Copy it again from Path of Building.");
   const items = {};
   for (const m of xml.matchAll(/<Item\b([^>]*)>([\s\S]*?)<\/Item>/g)) {
     const id = attr(m[1], 'id');
@@ -137,6 +136,8 @@ function parsePob(xml) {
     const name = attr(m[0], 'name'); const itemId = attr(m[0], 'itemId');
     if (!name || !itemId || itemId === '0' || !items[itemId]) continue;
     const ours = SLOT_MAP[name];
+    // PoE1 flasks aren't judged yet, and its five flask slots aren't PoE2's life and mana flask
+    if (root === 'PathOfBuilding' && /^Flask \d/.test(name)) continue;
     if (ours) slots[ours] = items[itemId];
   }
   // jewels socketed in the passive tree

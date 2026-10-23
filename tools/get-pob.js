@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 'use strict';
-// Fetches the pinned Path of Building (PoE2) version into vendor/pob and builds its host:
+// Fetches the pinned Path of Building versions: PoE2's into vendor/pob, PoE1's (Path of Building
+// Community) into vendor/pob1, and builds the host both run in:
 // pobhost.exe on Windows; on Linux, LuaJIT and the lua-utf8 module built from pinned sources
 // (needs git, gcc and make) into vendor/pob/runtime/linux.
-// Only the parts the calculations need are downloaded (Lua + data, no images): about 50 MB.
+// Only the parts the calculations need are downloaded (Lua + data, no images): about 50 MB for
+// PoE2; for PoE1 also only the newest passive trees and no timeless jewel data, about 60 MB.
 // Run by test-build.bat, build-exe.bat and the release build. Safe to run again: it skips
 // the download when the right version is already there.
 //
@@ -14,11 +16,27 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const POB_REPO = 'https://github.com/PathOfBuildingCommunity/PathOfBuilding-PoE2.git';
-const POB_TAG = 'v0.23.1'; // update together with a test run against a real build
 const ROOT = path.join(__dirname, '..');
-const DEST = path.join(ROOT, 'vendor', 'pob');
-const STAMP = path.join(DEST, '.pob-version');
+// update a tag together with a test run against a real build (npm test runs PoB1's own test builds)
+const TARGETS = [
+  {
+    name: 'Path of Building (PoE2)', repo: 'https://github.com/PathOfBuildingCommunity/PathOfBuilding-PoE2.git', tag: 'v0.23.1',
+    dest: path.join(ROOT, 'vendor', 'pob'),
+    paths: ['/src/**/*.lua', '/src/**/*.json', '!/src/Export/',
+      '/runtime/lua/', '/runtime/lua51.dll', '/runtime/lua-utf8.dll', '/runtime/vcruntime140.dll', '/LICENSE.md', '/manifest.xml'],
+  },
+  {
+    // PoE1. Runs in the same host and LuaJIT as PoE2's (vendor/pob/runtime). Older passive trees
+    // are left out (a build made on one is moved to the newest tree when it loads), and so is the
+    // 170 MB of timeless jewel data (zips): those jewels aren't judged.
+    name: 'Path of Building Community (PoE1)', repo: 'https://github.com/PathOfBuildingCommunity/PathOfBuilding.git', tag: 'v2.67.2',
+    dest: path.join(ROOT, 'vendor', 'pob1'),
+    paths: ['/src/**/*.lua', '/src/**/*.json', '/src/**/*.jsonc', '!/src/Export/**', '!/src/TreeData/**', '/src/TreeData/*.lua',
+      '/src/TreeData/3_29/*.lua', '/src/TreeData/3_28/*.lua', '/src/TreeData/3_19/Assets.lua', '/src/TreeData/legion/*', '!/src/TreeData/legion/*.png',
+      '/runtime/lua/', '/LICENSE.md', '/manifest.xml'],
+  },
+];
+const DEST = TARGETS[0].dest; // the host and LuaJIT live with PoE2's copy
 
 // Linux: the same LuaJIT 2.1 Path of Building ships for Windows, and lua-utf8 (its one native module)
 const LUAJIT_REPO = 'https://github.com/LuaJIT/LuaJIT.git';
@@ -27,9 +45,12 @@ const LUAUTF8_REPO = 'https://github.com/starwing/luautf8.git';
 const LUAUTF8_TAG = '0.1.6';
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: 'inherit', ...opts });
 
-function fetchPob() {
+function fetchPob(t) {
+  const STAMP = path.join(t.dest, '.pob-version');
+  const DEST = t.dest; const POB_TAG = t.tag; const POB_REPO = t.repo;
+  const rel = path.relative(ROOT, DEST).replace(/\\/g, '/');
   if (!process.argv.includes('--force') && fs.existsSync(STAMP) && fs.readFileSync(STAMP, 'utf8').trim() === POB_TAG) {
-    console.log(`Path of Building ${POB_TAG} is already in vendor/pob.`);
+    console.log(`${t.name} ${POB_TAG} is already in ${rel}.`);
     return;
   }
   try { execFileSync('git', ['--version'], { stdio: 'ignore' }); } catch (_) {
@@ -40,12 +61,9 @@ function fetchPob() {
   }
   fs.rmSync(DEST, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(DEST), { recursive: true });
-  console.log(`Downloading Path of Building ${POB_TAG} (Lua and data only)...`);
+  console.log(`Downloading ${t.name} ${POB_TAG} (Lua and data only)...`);
   run('git', ['clone', '--quiet', '--depth', '1', '--branch', POB_TAG, '--filter=blob:none', '--no-checkout', POB_REPO, DEST]);
-  run('git', ['-C', DEST, 'sparse-checkout', 'set', '--no-cone',
-    '/src/**/*.lua', '/src/**/*.json', '!/src/Export/',
-    '/runtime/lua/', '/runtime/lua51.dll', '/runtime/lua-utf8.dll', '/runtime/vcruntime140.dll',
-    '/LICENSE.md', '/manifest.xml']);
+  run('git', ['-C', DEST, 'sparse-checkout', 'set', '--no-cone', ...t.paths]);
   run('git', ['-C', DEST, 'checkout', '--quiet']);
   fs.rmSync(path.join(DEST, '.git'), { recursive: true, force: true });
   fs.writeFileSync(STAMP, POB_TAG + '\n');
@@ -95,6 +113,6 @@ function buildLinuxRuntime() {
   console.log('Built LuaJIT and lua-utf8 for Linux.');
 }
 
-fetchPob();
+for (const t of TARGETS) fetchPob(t);
 buildHost();
 buildLinuxRuntime();

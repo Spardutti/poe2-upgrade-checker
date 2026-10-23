@@ -1,7 +1,9 @@
 'use strict';
 
-// Maps the "Item Class:" line from PoE2 item text to an equipment slot, and
-// lists every slot the app tracks.
+// Maps the "Item Class:" line from PoE2 (and PoE1) item text to an equipment slot, and
+// lists every slot the app tracks. The slot lists are PoE2's (its UI uses them); PoE1 items map
+// onto them where they fit (life/mana flasks, abyss and cluster jewels -> Jewel, quivers -> Offhand)
+// and get no slot otherwise (utility and hybrid flasks, tinctures).
 
 // Main gear first (these make up your gear score), then the extras.
 const MAIN_SLOTS = [
@@ -43,19 +45,27 @@ const CLASS_TO_SLOT = {
   'charms': 'Charm',
   'life flasks': 'Life Flask',
   'mana flasks': 'Mana Flask',
+  // PoE1
+  'abyss jewels': 'Jewel',
+  'fishing rods': 'Weapon',
 };
+// PoE1 classes that are gear but have no slot in the shared lists
+const NO_SLOT = ['utility flasks', 'hybrid flasks', 'tinctures'];
 
 const WEAPON_WORDS = [
   'mace', 'sword', 'axe', 'bow', 'crossbow', 'quarterstave', 'staves', 'stave',
   'wand', 'sceptre', 'spear', 'flail', 'dagger', 'claw', 'talisman', 'warstave',
 ];
 
-const TWO_HANDED_PREFIXES = ['two hand', 'quarterstaves', 'staves', 'crossbows', 'warstaves', 'talismans'];
+// Bows are two-handed in both games but stay off this list: a bow is used with a quiver in the
+// offhand, so it is compared with your weapon alone.
+const TWO_HANDED_PREFIXES = ['two hand', 'quarterstaves', 'staves', 'crossbows', 'warstaves', 'talismans', 'fishing rods'];
 
 function slotForClass(itemClass) {
   if (!itemClass) return null;
   const c = itemClass.trim().toLowerCase();
   if (CLASS_TO_SLOT[c]) return CLASS_TO_SLOT[c];
+  if (NO_SLOT.includes(c)) return null;
   if (/jewel/.test(c)) return 'Jewel';
   if (/flask/.test(c)) return /mana/.test(c) ? 'Mana Flask' : 'Life Flask';
   if (WEAPON_WORDS.some((w) => c.includes(w))) return 'Weapon';

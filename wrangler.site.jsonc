@@ -1,0 +1,14 @@
+// The website (poe2upgrade.com): a Cloudflare Worker that serves the files in site/ and, under
+// /ninja/, a small caching proxy for poe.ninja's prices (worker/site-worker.js) that the app uses.
+// Deployed by deploy-site.bat. The name is the Worker created in the Cloudflare dashboard.
+{
+  "name": "rough-sun-a9b2",
+  "compatibility_date": "2026-09-01",
+  "main": "worker/site-worker.js",
+  "assets": { "directory": "./site", "binding": "ASSETS" },
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "poe2upgrade.com", "custom_domain": true },
+    { "pattern": "www.poe2upgrade.com", "custom_domain": true }
+  ]
+}

@@ -51,6 +51,10 @@ const MOD_GROUPS = [
   ['explicitMods', ''],
   ['desecratedMods', '(desecrated)'],
   ['craftedMods', '(crafted)'],
+  // PoE1
+  ['scourgeMods', '(scourge)'],
+  ['crucibleMods', '(crucible)'],
+  ['veiledMods', ''],
 ];
 
 function rarityOf(it) {
@@ -69,11 +73,19 @@ function listingToItem(result, itemClass) {
   const blocks = [lines.join('\n')];
   const props = arr(it.properties).map(propLine).filter(Boolean);
   if (props.length) blocks.push(props.join('\n'));
+  // PoE1 sockets: [{ group, sColour }] -> "Sockets: R-G-B B" (same group = linked)
+  const socks = arr(it.sockets).filter((x) => x && x.sColour);
+  if (socks.length) blocks.push('Sockets: ' + socks.map((x, i) => (i && socks[i - 1].group === x.group ? '-' : i ? ' ' : '') + x.sColour).join(''));
   if (it.ilvl) blocks.push(`Item Level: ${it.ilvl}`);
   for (const [field, tag] of MOD_GROUPS) {
     const mods = arr(it[field]).flatMap(modLines);
     if (mods.length) blocks.push(mods.map((m) => (tag ? `${m} ${tag}` : m)).join('\n'));
   }
+  // PoE1 influences ({ shaper: true }) and the like, as the game prints them
+  const inf = it.influences && typeof it.influences === 'object' ? Object.keys(it.influences).filter((k) => it.influences[k]) : [];
+  if (inf.length) blocks.push(inf.map((k) => k.charAt(0).toUpperCase() + k.slice(1) + ' Item').join('\n'));
+  if (it.synthesised) blocks.push('Synthesised Item');
+  if (it.fractured && !arr(it.fracturedMods).length) blocks.push('Fractured Item');
   if (it.corrupted) blocks.push('Corrupted');
   if (it.identified === false) blocks.push('Unidentified');
   const text = blocks.join('\n--------\n');
@@ -92,11 +104,11 @@ function validPrice(price) {
   return Number.isFinite(n) && n > 0;
 }
 
-// Price in exalted orbs using { currencyId: exaltsEach } rates.
-function priceInEx(price, rates) {
+// Price in exalted orbs using { currencyId: exaltsEach } rates (PoE1: base 'chaos', chaos each).
+function priceInEx(price, rates, base = 'exalted') {
   if (!validPrice(price)) return null;
   const cur = String(price.currency || '').toLowerCase();
-  const r = (rates && rates[cur]) || (cur === 'exalted' || cur === 'exalt' ? 1 : null);
+  const r = (rates && rates[cur]) || (cur === base || (base === 'exalted' && cur === 'exalt') ? 1 : null);
   return r ? Number(price.amount) * r : null;
 }
 
@@ -107,7 +119,7 @@ function formatPrice(price) {
   return `${Number(price.amount)} ${names[cur.toLowerCase()] || cur}`;
 }
 
-function summarise(result, itemClass, rates) {
+function summarise(result, itemClass, rates, base) {
   const listing = (result && result.listing) || {};
   const item = listingToItem(result, itemClass);
   const acct = listing.account || {};
@@ -116,7 +128,7 @@ function summarise(result, itemClass, rates) {
     item,
     price: validPrice(listing.price) ? listing.price : null,
     priceText: formatPrice(listing.price),
-    priceEx: priceInEx(listing.price, rates),
+    priceEx: priceInEx(listing.price, rates, base),
     seller: acct.lastCharacterName || acct.name || '',
     account: acct.name || '',
     online: !!(acct.online),

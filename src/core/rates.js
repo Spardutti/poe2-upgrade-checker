@@ -5,14 +5,35 @@
 // documented /exchange/current/overview and the older /currencyexchange/overview)
 // so this accepts either.
 
-const NINJA = 'https://poe.ninja/poe2/api/economy';
+// PoE1 works the same way at poe.ninja/poe1 (and the old poe.ninja/api/data/currencyoverview),
+// with prices counted in chaos instead of exalts ("base").
+const ninjaBase = (game) => `https://poe.ninja/${game === 'poe1' ? 'poe1' : 'poe2'}/api/economy`;
 
-function ninjaUrls(league) {
+function ninjaUrls(league, game) {
   const l = encodeURIComponent(league);
-  return [
+  const NINJA = ninjaBase(game);
+  const urls = [
+    // the app's caching proxy first (poe.ninja asks desktop apps not to call it from every PC)
+    `https://poe2upgrade.com/ninja/${game === 'poe1' ? 'poe1' : 'poe2'}/exchange/current/overview?league=${l}&type=Currency`,
     `${NINJA}/exchange/current/overview?league=${l}&type=Currency`,
     `${NINJA}/currencyexchange/overview?leagueName=${l}&overviewName=Currency`,
   ];
+  if (game === 'poe1') urls.push(`https://poe.ninja/api/data/currencyoverview?league=${l}&type=Currency`);
+  return urls;
+}
+
+// the old PoE1 API: { lines: [{ currencyTypeName, chaosEquivalent }] } -> the new shape
+function normalise(data) {
+  if (data && Array.isArray(data.lines) && data.lines.length && data.lines[0].currencyTypeName && !data.lines[0].id) {
+    // the trade site's own short ids ("alch", "fusing", "chrome") come with it as currencyDetails[].tradeId
+    const trade = new Map((Array.isArray(data.currencyDetails) ? data.currencyDetails : []).filter((c) => c && c.name && c.tradeId).map((c) => [c.name, c.tradeId]));
+    const id = (n) => trade.get(n) || String(n).toLowerCase().replace(/ orb$/, '').replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
+    return {
+      core: { primary: 'chaos', items: data.lines.map((l) => ({ id: id(l.currencyTypeName), name: l.currencyTypeName })) },
+      lines: data.lines.map((l) => ({ id: id(l.currencyTypeName), primaryValue: Number(l.chaosEquivalent) })),
+    };
+  }
+  return data;
 }
 
 function findId(data, wantId, wantName) {
@@ -22,11 +43,12 @@ function findId(data, wantId, wantName) {
   return wantId;
 }
 
-// Returns exalts per divine, or null if it can't be worked out.
-function divineInExalts(data) {
+// Returns exalts per divine (PoE1: base 'chaos', chaos per divine), or null if it can't be worked out.
+function divineInExalts(data, base = 'exalted') {
+  data = normalise(data);
   if (!data || typeof data !== 'object') return null;
   const div = findId(data, 'divine', 'divine orb');
-  const ex = findId(data, 'exalted', 'exalted orb');
+  const ex = findId(data, base, base + ' orb');
   const lines = data.lines || [];
   const line = (id) => lines.find((l) => l.id === id);
   const primary = data.core && data.core.primary;
@@ -50,15 +72,21 @@ function divineInExalts(data) {
   return Math.round(rate * 10) / 10;
 }
 
-// { currencyId: exalts each } for every currency in the overview.
-function currencyRatesInExalts(data) {
+// { currencyId: exalts each } for every currency in the overview (PoE1: chaos each).
+function currencyRatesInExalts(data, base = 'exalted') {
+  data = normalise(data);
   if (!data || typeof data !== 'object') return null;
   const lines = data.lines || [];
   const primary = data.core && data.core.primary;
-  const exLine = lines.find((l) => l.id === 'exalted');
-  const exVal = exLine && Number(exLine.primaryValue) > 0 ? Number(exLine.primaryValue) : (primary === 'exalted' || !primary ? 1 : null);
-  if (!exVal) return null;
-  const out = { exalted: 1 };
+  // the base currency's value, found the same ways divineInExalts finds it (its line, being the
+  // primary currency, or the primary's exchange rates)
+  const baseId = findId(data, base, base + ' orb');
+  const exLine = lines.find((l) => l.id === baseId);
+  const rts = data.core && data.core.rates;
+  const exVal = exLine && Number(exLine.primaryValue) > 0 ? Number(exLine.primaryValue)
+    : primary === baseId || !primary ? 1 : rts && Number(rts[baseId]) > 0 ? 1 / Number(rts[baseId]) : null;
+  if (!exVal || !lines.length) return null;
+  const out = { [base]: 1 };
   for (const l of lines) {
     const v = Number(l.primaryValue);
     if (l.id && v > 0) out[l.id] = Math.round((v / exVal) * 10000) / 10000;

@@ -1,6 +1,6 @@
 # Wraeclast Iron
 
-The design language of PoE2 Upgrade Checker. It takes its mood from Path of Exile 2's dark ARPG world: black and moonlit blue, stone-grey text, carved capitals in parchment gold, cast-iron frames with gold filigree, and blood red for the one thing you came to do. It borrows the mood, not GGG's property: no logos, artwork or fonts from the game, and everything is drawn in CSS.
+The design language of PoE Upgrade Checker. It takes its mood from Path of Exile 2's dark ARPG world: black and moonlit blue, stone-grey text, carved capitals in parchment gold, cast-iron frames with gold filigree, and blood red for the one thing you came to do. It borrows the mood, not GGG's property: no logos, artwork or fonts from the game, and everything is drawn in CSS.
 
 All of it lives in [`src/ui/style.css`](src/ui/style.css), which the popup, the results window and the app pages share. Use the tokens; don't add new hex values in components.
 

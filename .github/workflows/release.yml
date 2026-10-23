@@ -35,6 +35,15 @@ jobs:
       - run: node tools/get-pob.js
       - run: node tools/pob-smoke.js
       - run: npm test
+      # a beta (0.5.0-beta.1) is published as a GitHub pre-release: installed copies of the normal
+      # version never update to it, only copies that are betas themselves
+      - name: Mark betas as pre-releases
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            if (/-/.test(p.version)) { p.build.publish = p.build.publish.map((x) => ({ ...x, releaseType: "prerelease" })); fs.writeFileSync("package.json", JSON.stringify(p, null, 2)); console.log("beta " + p.version + ": pre-release"); }
+          '
       - name: Build and upload the installer and portable .exe
         run: npx electron-builder@25.1.8 --win nsis portable --publish always
         env:
@@ -49,15 +58,17 @@ jobs:
             const fs = require("fs"); const v = process.argv[1];
             const log = fs.existsSync("CHANGELOG.md") ? fs.readFileSync("CHANGELOG.md", "utf8") : "";
             const lines = log.split(/\r?\n/); let out = []; let on = false;
+            const beta = /-/.test(v); // a beta's notes are the changelog's Unreleased section
             for (const l of lines) {
-              if (/^## /.test(l)) { if (on) break; on = l.slice(3).trim() === v || l.slice(3).startsWith(v + " "); continue; }
+              if (/^## /.test(l)) { if (on) break; const h = l.slice(3).trim(); on = h === v || h.startsWith(v + " ") || (beta && /^Unreleased/i.test(h)); continue; }
               if (on) out.push(l);
             }
             const notes = out.join("\n").trim() || "Fixes and improvements.";
-            const head = "## Download\n\n- **`PoE2-Upgrade-Checker-Setup-" + v + ".exe`**: installs for your user (no admin) and **updates itself**. Recommended.\n- `PoE2-Upgrade-Checker-Portable-" + v + ".exe`: no install, no auto-update.\n\nWindows may say the app is unrecognised (it isn\x27t code-signed): click *More info → Run anyway*. In PoE2, use **Windowed Fullscreen**.\n\n**Linux (experimental):** `PoE2-Upgrade-Checker.AppImage` for the game under Steam/Proton. `chmod +x` it and run it; it updates itself in place. See the README\x27s Linux section.\n\n## What\x27s new\n\n";
+            const betaHead = beta ? "> **This is a beta for testing.** Copies of the normal version don\x27t update to it. Install it from this page; it then updates itself to the next betas and to the release.\n\n" : "";
+            const head = betaHead + "## Download\n\n- **`PoE-Upgrade-Checker-Setup-" + v + ".exe`**: installs for your user (no admin) and **updates itself**. Recommended.\n- `PoE-Upgrade-Checker-Portable-" + v + ".exe`: no install, no auto-update.\n\nWindows may say the app is unrecognised (it isn\x27t code-signed): click *More info → Run anyway*. In the game, use **Windowed Fullscreen**.\n\n**Linux (experimental):** `PoE-Upgrade-Checker.AppImage` for the game under Steam/Proton. `chmod +x` it and run it; it updates itself in place. See the README\x27s Linux section.\n\n## What\x27s new\n\n";
             fs.writeFileSync("notes.md", head + notes + "\n\nFull guide: [README](https://github.com/" + process.env.GITHUB_REPOSITORY + "#readme)\n");
           ' "$VER"
-          gh release edit "v$VER" --title "$VER" --notes-file notes.md
+          if [[ "$VER" == *-* ]]; then gh release edit "v$VER" --title "$VER (beta)" --notes-file notes.md --prerelease; else gh release edit "v$VER" --title "$VER" --notes-file notes.md; fi
 
   # Linux AppImage (experimental): built on the oldest supported Ubuntu so it runs on older distros
   # too, after the Windows job has created the release; uploaded with its auto-update file.
@@ -83,4 +94,4 @@ jobs:
         run: |
           VER=$(node -p "require('./package.json').version")
           ls -la dist
-          gh release upload "v$VER" dist/*.AppImage dist/latest-linux.yml --clobber
+          gh release upload "v$VER" dist/*.AppImage dist/*-linux.yml --clobber

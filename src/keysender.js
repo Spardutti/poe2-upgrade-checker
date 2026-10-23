@@ -30,6 +30,9 @@ public static class PoeKeys {
   [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT p);
   [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
   [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+  // the window title tells PoE1 ("Path of Exile") from PoE2 ("Path of Exile 2"): both use the same exe names
+  static string Title(IntPtr h) { var sb = new System.Text.StringBuilder(256); GetWindowText(h, sb, 256); return sb.ToString().Replace(";", ","); }
   [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
   [DllImport("advapi32.dll")] static extern bool OpenProcessToken(IntPtr h, uint access, out IntPtr token);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
@@ -63,7 +66,7 @@ public static class PoeKeys {
   //    the results window, or Discord has focus): bring the game to the front
   //  - nudge: the app just hid its popup from under the mouse, so move the mouse 1 pixel and back
   //    for the game to see the item under it again (and show its tooltip)
-  // Returns "fg=<process the keystroke goes to>;over=<process under the mouse>[;refocused][;nudged]".
+  // Returns "fg=<process the keystroke goes to>;over=<process under the mouse>[;refocused][;nudged][;title=<game window title>]".
   public static string Prepare(int appPid, bool nudge) {
     IntPtr fg = GetForegroundWindow(); uint fgPid; uint fgThread = GetWindowThreadProcessId(fg, out fgPid);
     string fgName = ProcName(fgPid);
@@ -82,7 +85,10 @@ public static class PoeKeys {
     }
     if (nudge) System.Threading.Thread.Sleep(70); // the game redraws the tooltip
     IntPtr f2 = GetForegroundWindow(); uint f2Pid; GetWindowThreadProcessId(f2, out f2Pid);
-    if (IsGame(ProcName(f2Pid)) && Elevated(f2Pid)) extra += ";game-admin";
+    bool f2Game = IsGame(ProcName(f2Pid));
+    if (f2Game && Elevated(f2Pid)) extra += ";game-admin";
+    IntPtr titled = f2Game ? f2 : (IsGame(underName) ? under : IntPtr.Zero);
+    if (titled != IntPtr.Zero) extra += ";title=" + Title(titled);
     return "fg=" + fgName + ";over=" + underName + extra;
   }
   const uint UP = 2;
@@ -119,7 +125,7 @@ while ($true) {
 
 // Linux: the same job for the game under Proton (an X11 window, also on Wayland desktops via
 // XWayland), with XTest through Python's ctypes, so there's nothing to install.
-const PY_SCRIPT = String.raw`# PoE2 Upgrade Checker - Linux key helper (X11 / XWayland, via XTest; no installs needed).
+const PY_SCRIPT = String.raw`# PoE Upgrade Checker - Linux key helper (X11 / XWayland, via XTest; no installs needed).
 # Reads one command per line: "copy <app pid> [nudge]" or "advanced <app pid> [nudge]".
 # Answers "ok fg=<window that got the keystroke>;over=<window under the mouse>[;refocused|;refocus-failed][;nudged]"
 # The game runs under Proton/Wine as an X11 window, so this works on X11 and on Wayland desktops.
@@ -170,7 +176,7 @@ def codes(*syms):
 SHIFTS = codes(0xffe1, 0xffe2)                                   # Shift_L, Shift_R
 ALTGR = codes(0xfe03)                                            # ISO_Level3_Shift (AltGr)
 ALTS = [k for k in codes(0xffe9, 0xffea) if k not in ALTGR]      # Alt_L, Alt_R
-GAME_HINTS = ('pathofexile', 'steam_app_2694490')  # PoE2's window class under Proton (Steam app 2694490)
+GAME_HINTS = ('pathofexile', 'steam_app_2694490', 'steam_app_238960')  # the window class under Proton: PoE2 is Steam app 2694490, PoE1 238960
 
 def prop(w, name):
     a = X.XInternAtom(d, name.encode(), 0); at = Atom(); af = c_int(); n = c_ulong(); rest = c_ulong(); data = c_void_p()
@@ -202,6 +208,25 @@ def comm(pid):
 def is_game(w):
     s = (wm_class(w) + ' ' + comm(pid_of(w))).lower()
     return any(h in s for h in GAME_HINTS)
+
+def title(w):
+    # _NET_WM_NAME (UTF-8), else WM_NAME
+    for name in ('_NET_WM_NAME', 'WM_NAME'):
+        a = X.XInternAtom(d, name.encode(), 0); at = Atom(); af = c_int(); n = c_ulong(); rest = c_ulong(); data = c_void_p()
+        if X.XGetWindowProperty(d, w, a, 0, 256, 0, 0, byref(at), byref(af), byref(n), byref(rest), byref(data)) == 0 and data.value:
+            try:
+                if af.value == 8 and n.value: return ctypes.string_at(data, n.value).decode('utf8', 'replace')
+            finally:
+                X.XFree(data)
+    return ''
+
+def which_game(w):
+    # PoE1 or PoE2: the Steam app id in the window class under Proton, else the exact window title
+    c = wm_class(w).lower()
+    if 'steam_app_2694490' in c: return 'poe2'
+    if 'steam_app_238960' in c: return 'poe1'
+    t = title(w).strip()
+    return 'poe2' if t == 'Path of Exile 2' else 'poe1' if t == 'Path of Exile' else ''
 
 def describe(w, app_pid):
     if not w: return '?'
@@ -278,6 +303,9 @@ def prepare(app_pid, nudge):
             else: extra += ';refocus-failed'
         else: extra += ';refocus-failed'
     if nudge: time.sleep(0.07)
+    now = active()
+    g = which_game(now) if is_game(now) else (which_game(under) if under_name == 'PathOfExile' else '')
+    if g: extra += ';game=' + g
     return 'fg=%s;over=%s%s' % (fg_name, under_name, extra)
 
 def copy(advanced):

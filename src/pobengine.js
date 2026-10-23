@@ -14,11 +14,17 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
-function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
-  const base = packaged ? path.join(resourcesPath, 'pob') : path.join(appPath, 'vendor', 'pob');
+// game: 'poe2' (Path of Building 2, in pob/) or 'poe1' (Path of Building Community, in pob1/).
+// Both run in the same host and LuaJIT, which live with PoE2's copy (pob/runtime).
+function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game = 'poe2' }) {
+  const dir = game === 'poe1' ? 'pob1' : 'pob';
+  const base = packaged ? path.join(resourcesPath, dir) : path.join(appPath, 'vendor', dir);
   const serverLua = packaged ? path.join(resourcesPath, 'pob', 'server.lua') : path.join(appPath, 'pob', 'server.lua');
   const srcDir = path.join(base, 'src');
-  const runtimeDir = path.join(base, 'runtime');
+  const runtimeDir = packaged ? path.join(resourcesPath, 'pob', 'runtime') : path.join(appPath, 'vendor', 'pob', 'runtime'); // the host
+  const luaDir = path.join(base, 'runtime', 'lua'); // this PoB's own Lua libraries
+  const tag = game === 'poe1' ? 'pob1' : 'pob';
+  log = ((l) => (m) => l(String(m).replace(/^pob:/, tag + ':')))(log);
 
   let proc = null; let ready = null; let buf = ''; let nextId = 1;
   const waiting = new Map();
@@ -58,7 +64,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
       log('pob: starting the Path of Building engine');
       const me = spawn(h.cmd, h.args, {
         cwd: srcDir, windowsHide: true,
-        env: (() => { const rt = path.relative(srcDir, runtimeDir); return { ...process.env, POBHOST_DIR: process.env.POBHOST_DIR || (h.moduleDir ? path.relative(srcDir, h.moduleDir) : rt), POB_LUA_PATH: [path.join(rt, 'lua', '?.lua'), path.join(rt, 'lua', '?', 'init.lua')].join(';') }; })(),
+        env: (() => { const rt = path.relative(srcDir, runtimeDir); const ld = path.relative(srcDir, luaDir); return { ...process.env, POB_GAME: game, POBHOST_DIR: process.env.POBHOST_DIR || (h.moduleDir ? path.relative(srcDir, h.moduleDir) : rt), POB_LUA_PATH: [path.join(ld, '?.lua'), path.join(ld, '?', 'init.lua')].join(';') }; })(),
       });
       proc = me;
       proc.stdin.on('error', (err) => log('pob: ' + err.message));
@@ -164,6 +170,28 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
     return r.results;
   }
 
+  // two items together: pairs [{ a: {slot, text}, bs: [{slot, text}] }] -> [{ ok, before, results: [{ ok, after }] }]
+  async function evalPairs(pairs) {
+    if (!buildXml) throw new Error('No Path of Building build loaded.');
+    const n = pairs.reduce((k, p) => k + 2 + (p.bs || []).length, 0);
+    const r = await request({ cmd: 'pairs', pairs }, 30000 + n * 3000);
+    if (!r.ok) throw new Error(r.error || 'Path of Building could not compare the items.');
+    return r.results;
+  }
+  // PoE1 affix names of the top tiers of trade stats: { ids, tags, tiers } -> { [id]: [{ affix, level, type }] }
+  async function affixes(req) {
+    const r = await request({ cmd: 'affixes', ...req }, 60000);
+    if (!r.ok) throw new Error(r.error || 'Path of Building could not read the affixes.');
+    return r.affixes || {};
+  }
+  // what map or waystone mods do to your character: mods ["text", ...] -> { ok, before, results: [{ text, after | error }] }
+  async function mapCheck(mods) {
+    if (!buildXml) throw new Error('No Path of Building build loaded.');
+    const r = await request({ cmd: 'mapcheck', mods }, 30000 + mods.length * 3000);
+    if (!r.ok) throw new Error(r.error || 'Path of Building could not check the map.');
+    return r;
+  }
+
   // PoB's own weighted trade search for a slot
   async function makeQuery(opts) {
     if (!buildXml) throw new Error('No Path of Building build loaded.');
@@ -173,7 +201,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
   }
 
   return {
-    available, start, stop, resetFailure, loadBuild, setBuild, evalItems, makeQuery,
+    available, start, stop, resetFailure, loadBuild, setBuild, evalItems, evalPairs, mapCheck, affixes, makeQuery,
     kill, sheet: async () => { if (!buildXml) return null; const r = await request({ cmd: "sheet" }, 60000); if (!r.ok) throw new Error(r.error || "Path of Building could not read the character."); return r; },
     ensureLoaded: async () => {
       if (!buildXml) return null;
@@ -183,7 +211,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged }) {
     hasBuild: () => !!buildXml,
     info: () => buildInfo,
     lastError: () => lastError,
-    paths: { base, srcDir, runtimeDir, serverLua },
+    game, paths: { base, srcDir, runtimeDir, luaDir, serverLua },
   };
 }
 

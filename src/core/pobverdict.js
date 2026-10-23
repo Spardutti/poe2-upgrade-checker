@@ -86,6 +86,11 @@ function judge(before, after, opts = {}) {
   if (dmgLoss) breaks.push(`${dmgLoss.minion ? 'Minion damage' : 'Damage'} drops ${Math.abs(dmgLoss.pct)}%`);
   const spA = n(before.SpiritUnreserved); const spB = n(after.SpiritUnreserved);
   if (pr.spirit && spA != null && spB != null && spB < 0 && spB < spA) breaks.push(`Not enough Spirit for your minions and auras (${Math.round(-spB)} short)`);
+  // PoE1 has no Spirit: auras reserve mana or life, and an item can leave too little for them
+  if (pr.spirit && spA == null && spB == null) for (const k of ['Mana', 'Life']) {
+    const ra = n(before[`${k}Unreserved`]); const rb = n(after[`${k}Unreserved`]);
+    if (ra != null && rb != null && rb < 0 && ra >= 0) breaks.push(`Not enough ${k.toLowerCase()} to reserve your auras (${Math.round(-rb)} short)`);
+  }
   if (pr.attrs) for (const at of ['Str', 'Dex', 'Int']) {
     const have = n(after[at]); const need = n(after[`Req${at}`]);
     const hadOk = n(before[at]) == null || n(before[`Req${at}`]) == null || n(before[at]) >= n(before[`Req${at}`]);

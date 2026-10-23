@@ -3,17 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; img-src 'self' data:">
-  <title>PoE2 Upgrade Checker</title>
+  <title>PoE Upgrade Checker</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="app">
   <aside class="side">
-    <div class="brand"><img src="../../assets/icon.png" alt=""><span>PoE2 Upgrade<br>Checker</span></div>
-    <label class="side-char"><span>Character</span><select id="profileSel"></select></label>
+    <div class="brand"><img src="../../assets/icon.png" alt=""><span>PoE Upgrade<br>Checker</span></div>
+    <label class="side-char"><span>Character <span id="gameBeta" class="beta-tag hidden" title="Path of Exile 1 support is new: if something looks wrong, send the log (Tray → Open log) to support@poe2upgrade.com">PoE1 BETA</span></span><select id="profileSel"></select></label>
     <nav class="tabs side-nav" aria-label="Pages">
       <button data-tab="gear" class="active"><i>⚔</i>My gear</button>
       <button data-tab="char"><i>☰</i>Character</button>
       <button data-tab="find"><i>⌕</i>Find upgrades</button>
+      <button data-tab="spend"><i>◈</i>Where to spend</button>
       <button data-tab="build"><i>✦</i>Build &amp; stats</button>
       <button data-tab="test"><i>✎</i>Check an item</button>
       <button data-tab="options"><i>⚙</i>Settings</button>
@@ -44,7 +45,7 @@
         <div class="col side-col">
           <div class="card-p">
             <h3>Your build in Path of Building</h3>
-          <div class="help">Paste your PoB2 export code (Import/Export Build → Generate) or a <b>pobb.in</b> link. The app then judges every item with <b>Path of Building's own calculations</b>: what it does to your minion DPS, effective HP, resistances and Spirit. Make sure PoB's gear, tree, skills and Configuration match how you really play. Items you copy in game (F2) replace PoB's, so it always uses what you're wearing.</div>
+          <div class="help">Paste your Path of Building export code (Import/Export Build → Generate: <b>Path of Building 2</b> for PoE2, <b>Path of Building Community</b> for PoE1) or a <b>pobb.in</b> link. The app then judges every item with <b>Path of Building's own calculations</b>: what it does to your minion DPS, effective HP, resistances and Spirit. Make sure PoB's gear, tree, skills and Configuration match how you really play. Items you copy in game (F2) replace PoB's, so it always uses what you're wearing.</div>
           <div class="row">
             <input id="pobInput" class="grow" placeholder="https://pobb.in/abc123  or  eNrtXd…">
             <button id="pobImport" class="primary">Import</button>
@@ -56,13 +57,19 @@
             <label title="How much damage counts against survivability when the app weighs an item">Damage <input type="range" id="pobBalance" min="0" max="100" step="10"> Survivability</label>
           </div>
           </div>
+          <div class="card-p" id="filterCard">
+            <h3>Loot filter for this build</h3>
+            <div class="help">Highlights drops that could be upgrades: rares on the bases you wear, and identified rares with two or more of the mods Path of Building values most for that slot. Pick your current filter and the app saves a copy with this section in front (your filter itself isn't changed). Then choose the new file in the game's options.</div>
+            <div class="row"><button id="filterMake">Make loot filter…</button></div>
+            <div class="note" id="filterMsg"></div>
+          </div>
           <div class="card-p">
             <h3>Priorities</h3>
           <div class="row prio">
             <label title="While a resistance is under the cap, items that fill it score much higher and Find upgrades looks for it first"><input type="checkbox" id="prRes"> Cap my resistances first</label>
             <label title="Count chaos resistance as one to cap too"><input type="checkbox" id="prChaos"> including chaos</label>
             <label title="An item that costs more than 5% of your damage (e.g. it doesn't have your minion damage mods) is LOSES DAMAGE, however much resistance or life it adds"><input type="checkbox" id="prDmg"> Never lose damage <span class="dim small">(needs PoB)</span></label>
-            <label title="An item that leaves you without enough Spirit for your minions and auras is never an upgrade"><input type="checkbox" id="prSpirit"> Never run short of Spirit <span class="dim small">(needs PoB)</span></label>
+            <label title="An item that leaves you without enough Spirit for your minions and auras is never an upgrade"><input type="checkbox" id="prSpirit"> <span id="prSpiritText">Never run short of Spirit</span> <span class="dim small">(needs PoB)</span></label>
             <label title="An item that leaves you without the Strength / Dexterity / Intelligence your gear and gems need is never an upgrade"><input type="checkbox" id="prAttrs"> Keep attribute requirements met <span class="dim small">(needs PoB)</span></label>
           </div>
           <div class="dim small" id="prNote"></div>
@@ -95,6 +102,14 @@
       <div id="charBody"><div class="card-p dim">Loading…</div></div>
     </section>
 
+    <section class="tab" id="tab-spend">
+      <header class="page-head">
+        <div><h2>Where to spend</h2><div class="sub">Every slot searched within your price range and checked with your build: which upgrade gives you the most for your divines. If resistances are short, pairs of items that cap them together.</div></div>
+        <div class="page-actions"><button class="primary" id="spendRun">Find where to spend</button></div>
+      </header>
+      <div id="spendBody"><div class="card-p dim">Press <b>Find where to spend</b>. It runs one trade search per slot, so it takes a few minutes (the trade site allows only a few searches a minute). Your price range is the one on Find upgrades.</div></div>
+    </section>
+
     <section class="tab" id="tab-find">
       <header class="page-head">
         <div><h2>Find upgrades</h2><div class="sub">Pick an item, set what you'll pay, then search. Results open scored against your gear.</div></div>
@@ -123,7 +138,7 @@
         </div>
         <div class="fb-row fb-sub">
           <span id="rateWrap">
-            <label>1 Divine = <input type="number" id="divineRate" class="num" min="0" placeholder="?"> Exalted</label>
+            <label>1 Divine = <input type="number" id="divineRate" class="num" min="0" placeholder="?"> <span id="rateUnit">Exalted</span></label>
             <label><input type="checkbox" id="autoRate" checked> auto from poe.ninja</label>
             <button id="rateRefresh" title="Get the latest rate now" class="link">refresh</button>
           </span>
@@ -316,7 +331,7 @@
         <button id="openLog">Open log file</button>
       </div>
       <div class="help">
-        If the test popup appears here but not in game, switch PoE2 to <b>Windowed Fullscreen</b> (Options → Graphics).
+        If the test popup appears here but not in game, switch the game to <b>Windowed Fullscreen</b> (Options → Graphics).
         If the hotkey does nothing, open the log. Your data is saved in <span id="dataDirText">%APPDATA%\poe2-upgrade-checker</span>.
       </div>
       </div>
@@ -358,6 +373,7 @@
   <script src="render.js"></script>
   <script src="settings.js"></script>
   <script src="character.js"></script>
+  <script src="spend.js"></script>
   <script src="picker.js"></script>
 </body>
 </html>

@@ -97,7 +97,7 @@ function renderSlots() {
         <button data-clear="${esc(s)}">Clear</button>` : ''}${it && it.fromPob ? '<div class="dim small">from PoB</div>' : ''}</td></tr>`;
   };
   $('#slots').innerHTML = '<tr><th>Slot</th><th>Gear score</th><th>Item</th><th></th></tr>' + main.map(row).join('')
-    + `<tr><td colspan="4"><button class="link" id="extraToggle">${extraOpen ? '▾' : '▸'} Weapon swap, flasks, charms &amp; jewels (${showExtras.length} saved)</button></td></tr>`
+    + `<tr><td colspan="4"><button class="link" id="extraToggle">${extraOpen ? '▾' : '▸'} ${state && state.game === 'poe1' ? 'Weapon swap, flasks &amp; jewels' : 'Weapon swap, flasks, charms &amp; jewels'} (${showExtras.length} saved)</button></td></tr>`
     + (extraOpen ? extras.map(row).join('') : '')
     + '<tr><td colspan="4" class="note" id="gearMsg"></td></tr>';
   $('#extraToggle').addEventListener('click', () => { window.__extraOpen = !extraOpen; renderSlots(); });
@@ -134,9 +134,12 @@ function showTab(name) {
 }
 
 async function ensureTradeInfo(force) {
-  if (tradeInfo && !force) return tradeInfo;
+  // leagues and stats are each game's own: never reuse the other game's
+  if (tradeInfo && !force && tradeInfo.forGame === (state && state.game)) return tradeInfo;
   $('#findMsg').textContent = 'Loading trade site data…';
+  const forGame = state && state.game;
   tradeInfo = await window.api.tradeData(!!force);
+  if (tradeInfo) tradeInfo.forGame = forGame;
   if (!tradeInfo.ok) {
     $('#findMsg').textContent = 'Could not reach the trade site: ' + tradeInfo.error;
     const failed = tradeInfo; tradeInfo = null; // try again next time
@@ -336,6 +339,23 @@ $('#autoHide').addEventListener('change', () => window.api.setSetting('autoHideS
 $('#paused').addEventListener('change', () => window.api.setSetting('paused', $('#paused').checked));
 
 window.api.onChanged(load);
+// ---------- loot filter from your build ----------
+$('#filterMake').addEventListener('click', async () => {
+  const b = $('#filterMake'); b.disabled = true;
+  $('#filterMsg').innerHTML = '<span class="spinner"></span> Asking Path of Building which mods matter for each slot (about half a minute)…';
+  try {
+    const r = await window.api.filterMake();
+    $('#filterMsg').textContent = r && r.ok ? r.message : (r && r.error) || 'Something went wrong.';
+  } catch (err) { $('#filterMsg').textContent = err.message; }
+  b.disabled = false;
+});
+// you changed game: forget this window's copy of the other game's leagues, stats and recent items
+if (window.api.onGameChanged) window.api.onGameChanged(async () => {
+  tradeInfo = null; budgetGame = null;
+  if (window.__pickerRefresh) window.__pickerRefresh();
+  await load();
+  if ($('#tab-find') && $('#tab-find').classList.contains('active')) { try { await ensureTradeInfo(false); await fillFindSlots(); } catch (_) { /* shown on the page */ } }
+});
 load();
 
 // ---------- hotkey capture ----------
@@ -381,6 +401,12 @@ $('#testPopup').addEventListener('click', () => window.api.testPopup());
 $('#openLog').addEventListener('click', () => window.api.openLog());
 
 // ---------- budget ----------
+// PoE1 budgets are in divines or chaos (exalts aren't an everyday currency there)
+function gameBudgetOptions() {
+  const o = document.querySelector('#budgetCurrency option[value="exalted"]');
+  if (o) o.hidden = !!(state && state.game === 'poe1');
+  if (o && o.hidden && $('#budgetCurrency').value === 'exalted') $('#budgetCurrency').value = 'divine';
+}
 function readBudget() {
   const n = (id) => { const v = Number($(id).value.trim()); return $(id).value.trim() && v > 0 ? v : null; };
   let min = n('#budgetMin'); let max = n('#budgetMax');
@@ -397,19 +423,37 @@ function budgetHelp() {
   let t;
   const f = (x) => Number(x).toLocaleString();
   // matches trade.priceFilter: the trade site's own "exalted equivalent" is far off the market rate
-  if (b.currency === 'divine' && b.max != null && b.max <= 2 && b.divineRate) t = `Listings priced in exalts, ${range} (${b.min != null ? f(Math.ceil(b.min * b.divineRate)) + '–' : 'up to '}${f(Math.floor(b.max * b.divineRate))} ex at today's rate). At these prices almost everything is listed in exalts.`;
-  else if (b.currency === 'divine') t = `Listings priced in Divine Orbs, ${range}. (Items priced only in exalts aren't included – at these prices almost everything is listed in divines.)`;
+  // PoE1 counts everyday prices in chaos, PoE2 in exalts
+  const p1 = state && state.game === 'poe1';
+  const bw = p1 ? 'chaos' : 'exalts'; const bs = p1 ? 'chaos' : 'ex';
+  // PoE1: every currency, counted in chaos the way the PoE1 trade site does (trade.priceFilter)
+  if (p1 && (b.currency === 'chaos' || (b.currency === 'divine' && b.divineRate))) {
+    const c = (v) => f(b.currency === 'divine' ? Math.round(v * b.divineRate) : v);
+    const conv = b.max != null ? `${b.min != null ? c(b.min) + '–' : 'up to '}${c(b.max)} chaos` : `${c(b.min)}+ chaos`;
+    t = `Listings in any currency, ${range}${b.currency === 'divine' ? ` (${conv} at today's rate)` : ''}, counted in chaos the way the trade site does.`;
+  } else if (b.currency === 'divine' && b.max != null && b.max <= 2 && b.divineRate) t = `Listings priced in ${bw}, ${range} (${b.min != null ? f(Math.ceil(b.min * b.divineRate)) + '–' : 'up to '}${f(Math.floor(b.max * b.divineRate))} ${bs} at today's rate). At these prices almost everything is listed in ${bw}.`;
+  else if (b.currency === 'divine') t = `Listings priced in Divine Orbs, ${range}. (Items priced only in ${bw} aren't included – at these prices almost everything is listed in divines.)`;
   else if (b.currency === 'exalted') t = `Listings priced in Exalted Orbs, ${range}.`;
   else t = `Only listings priced in Chaos Orbs, ${range}.`;
   if (b.min != null) t += ' Cheaper junk is filtered out.';
   $('#budgetHelp').textContent = t;
 }
+let budgetGame = null; // the game the budget form shows
 function loadBudget() {
   const b = state.settings.budget;
-  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.filterbar')) return;
+  const p1g = state.game === 'poe1';
+  if ($('#rateUnit')) $('#rateUnit').textContent = p1g ? 'Chaos' : 'Exalted';
+  if ($('#prSpiritText')) {
+    $('#prSpiritText').textContent = p1g ? 'Never run short of mana or life for your auras' : 'Never run short of Spirit';
+    $('#prSpirit').parentNode.title = p1g ? 'An item that leaves too little unreserved mana or life for your auras is never an upgrade' : 'An item that leaves you without enough Spirit for your minions and auras is never an upgrade';
+  }
+  // don't overwrite what you're typing, unless the form still shows the other game's budget
+  if (budgetGame === state.game && document.activeElement && document.activeElement.closest && document.activeElement.closest('.filterbar')) return;
+  budgetGame = state.game;
   $('#budgetMax').value = b && b.max != null ? b.max : '';
   $('#budgetMin').value = b && b.min != null ? b.min : '';
   $('#budgetCurrency').value = (b && b.currency) || 'divine';
+  gameBudgetOptions();
   const auto = state.settings.autoRate !== false;
   $('#autoRate').checked = auto;
   $('#divineRate').readOnly = auto;
@@ -427,8 +471,8 @@ async function showRate(force) {
   const r = await window.api.getRate(!!force);
   if (r.rate) { $('#divineRate').value = r.rate; budgetHelp(); }
   $('#rateStatus').textContent = r.ok
-    ? `1 Divine ≈ ${r.rate} Exalted (${r.league || 'current league'}, poe.ninja, ${ago(r.at)}). Updates every hour.`
-    : `Couldn't get the rate from poe.ninja (${r.error}).` + (r.rate ? ` Using the last known rate, ${r.rate} ex.` : ' Untick Auto and type the rate in.');
+    ? `1 Divine ≈ ${r.rate} ${state && state.game === 'poe1' ? 'Chaos' : 'Exalted'} (${r.league || 'current league'}, poe.ninja, ${ago(r.at)}). Updates every hour.`
+    : `Couldn't get the rate from poe.ninja (${r.error}).` + (r.rate ? ` Using the last known rate, ${r.rate} ${state && state.game === 'poe1' ? 'chaos' : 'ex'}.` : ' Untick Auto and type the rate in.');
 }
 async function saveBudget() {
   budgetHelp();
@@ -657,14 +701,14 @@ function renderSetup() {
 let wizStep = 0;
 const WIZ = [
   {
-    title: 'Welcome to PoE2 Upgrade Checker',
+    title: 'Welcome to PoE Upgrade Checker',
     body: () => `<p>Hover any item in game and press your hotkey: a popup tells you if it's an <b>upgrade for your build</b> – worked out by Path of Building with your own build – and finds better items on the trade site in one click.</p>
       <p class="help">This guide takes about a minute. You can run it again from <b>My gear → Setup guide</b>.</p>
-      <p class="help"><b>Game setting:</b> set PoE2 to <b>Windowed Fullscreen</b> (Options → Graphics), or the popup can't show over the game.</p>`,
+      <p class="help"><b>Game setting:</b> set the game to <b>Windowed Fullscreen</b> (Options → Graphics), or the popup can't show over the game.</p>`,
   },
   {
     title: 'Your build',
-    body: () => `<p><b>Best:</b> paste your <b>Path of Building</b> export (PoB2: Import/Export Build → Generate) or a pobb.in link. The app then judges every item with Path of Building's own calculations for <i>your</i> build – any class, any skill – and loads your gear.</p>
+    body: () => `<p><b>Best:</b> paste your <b>Path of Building</b> export (in Path of Building: Import/Export Build → Generate; Path of Building 2 for PoE2, Path of Building Community for PoE1) or a pobb.in link. The app then judges every item with Path of Building's own calculations for <i>your</i> build – any class, any skill – and loads your gear.</p>
       <div class="row"><input id="wizPob" class="grow" placeholder="https://pobb.in/…  or  eNrt…"><button id="wizPobBtn" class="primary gilded">Import</button></div><div class="note" id="wizPobMsg"></div>
       <p class="help">No PoB? Pick the closest profile for a rough gear score instead, and save your gear in the next steps:</p>
       <div class="row"><select id="wizBuild">${(state.builds || []).map((b) => `<option value="${esc(b.id)}" ${b.id === (state.settings.build || state.defaultBuild) ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}<option value="off">None – score by my own stat weights</option></select></div>
@@ -726,7 +770,15 @@ window.api.getState().then((st) => { if (!st.settings.wizardDone && !Object.keys
 // ---------- characters ----------
 async function renderProfiles() {
   const list = state.profiles || [];
-  $('#profileSel').innerHTML = list.map((p) => `<option value="${esc(p.id)}" ${p.active ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+  // with characters from both games, group them by game
+  const opt = (p) => `<option value="${esc(p.id)}" ${p.active ? 'selected' : ''}>${esc(p.name)}</option>`;
+  const games = [...new Set(list.map((p) => p.game || 'poe2'))];
+  if ($('#gameBeta')) $('#gameBeta').classList.toggle('hidden', state.game !== 'poe1');
+  // with one game only, each name says which game it's for
+  const tagged = (p) => `<option value="${esc(p.id)}" ${p.active ? 'selected' : ''}>${esc(p.name)}${/PoE ?[12]/i.test(p.name || '') ? '' : ` (${(p.game || 'poe2') === 'poe1' ? 'PoE1' : 'PoE2'})`}</option>`;
+  $('#profileSel').innerHTML = games.length < 2 ? list.map(tagged).join('')
+    : [['poe2', 'Path of Exile 2'], ['poe1', 'Path of Exile 1']].filter(([g]) => games.includes(g))
+      .map(([g, name]) => `<optgroup label="${name}">${list.filter((p) => (p.game || 'poe2') === g).map(opt).join('')}</optgroup>`).join('');
   $('#profileDelete').disabled = list.length < 2;
   // switched character (here, from the tray or by creating one): drop the last one's PoB code and message
   const act = (list.find((p) => p.active) || {}).id;
@@ -818,9 +870,10 @@ async function renderPob(load) {
   $('#pobBalance').value = Math.round((1 - (state.settings.pobDamageWeight == null ? 0.6 : state.settings.pobDamageWeight)) * 100);
   const st = await window.api.pobStatus(!!load);
   $('#pobControls').classList.toggle('hidden', !(st.available && st.hasBuild));
-  if (!st.available) { el.innerHTML = '<div class="note">The Path of Building engine isn\'t included in this copy of the app – items are judged by the gear score instead.</div>'; return; }
+  const p1s = state && state.game === 'poe1';
+  if (!st.available) { el.innerHTML = `<div class="note">The Path of Building engine${p1s ? ' for PoE1' : ''} isn't included in this copy of the app – ${p1s ? "PoE1 items can't be judged without it. Reinstall the app or run test-build.bat again." : 'items are judged by the gear score instead.'}</div>`; return; }
   if (!st.hasBuild) { el.innerHTML = '<div class="note">No build yet: paste your PoB export above so items are judged by Path of Building.</div>'; return; }
-  if (!st.enabled) { el.innerHTML = '<div class="dim">Turned off – items are judged by the gear score.</div>'; return; }
+  if (!st.enabled) { el.innerHTML = `<div class="dim">Turned off – ${p1s ? "PoE1 items aren't judged while it's off." : 'items are judged by the gear score.'}</div>`; return; }
   if (st.error) { el.innerHTML = `<div class="note">Path of Building: ${esc(st.error)}</div>`; return; }
   const m = st.summary;
   if (!m) {
@@ -832,7 +885,7 @@ async function renderPob(load) {
   $('#prChaos').disabled = !!m.ci || !$('#prRes').checked;
   if (m.ci) { $('#prChaos').checked = false; $('#prChaos').parentNode.title = 'Chaos Inoculation: you are immune to chaos damage, so chaos resistance is ignored'; }
   el.innerHTML = `<div class="pob"><span class="pob-tag">PoB</span> <b>${esc(m.ascendancy || m.className || '')}</b> level ${esc(m.level)}${m.mainSkill ? ` · ${esc(m.mainSkill)}` : ''}${m.ci ? ' · <span title="Life is 1 in your build: chaos resistance is ignored everywhere">Chaos Inoculation</span>' : ''}</div>
-    <div class="dim">${m.dpsKey === 'MinionDPS' ? 'Minion DPS' : 'DPS'} <b>${kfmt(m.dps)}</b> · Effective HP <b>${kfmt(m.ehp)}</b> · ES <b>${kfmt(m.es)}</b> · Spirit free <b>${m.spiritFree == null ? '–' : Math.round(m.spiritFree)}</b> of ${m.spirit == null ? '–' : Math.round(m.spirit)}</div>
+    <div class="dim">${m.dpsKey === 'MinionDPS' ? 'Minion DPS' : 'DPS'} <b>${kfmt(m.dps)}</b> · Effective HP <b>${kfmt(m.ehp)}</b> · ES <b>${kfmt(m.es)}</b>${m.spirit == null ? '' : ` · Spirit free <b>${m.spiritFree == null ? '–' : Math.round(m.spiritFree)}</b> of ${Math.round(m.spirit)}`}</div>
     <div class="dim">Resistances: ${res}</div>
     ${m.overridden && m.overridden.length ? `<div class="dim">Using your in-game copies for: ${esc(m.overridden.join(', '))}</div>` : ''}
     ${m.mismatch.map((x) => `<div class="note">⚠ ${esc(x)}</div>`).join('')}`;
@@ -874,7 +927,7 @@ function renderResists() {
   const rec = state.settings.resists;
   const when = rec && rec.at ? new Date(rec.at).toLocaleDateString() : '';
   $('#resSource').textContent = !rec ? '' : rec.source === 'pob'
-    ? `From Path of Building${when ? ` (${when})` : ''}, adjusted for gear you've changed since. PoB can count charms and buffs that aren't always on – check them against your character sheet and type the real numbers here.`
+    ? `From Path of Building${when ? ` (${when})` : ''}, adjusted for gear you've changed since. PoB can count flasks, charms and buffs that aren't always on – check them against your character sheet and type the real numbers here.`
     : `From your character sheet${when ? ` (${when})` : ''}, adjusted for gear you've changed since.`;
 }
 ['#resFire', '#resCold', '#resLightning', '#resChaos', '#resCap', '#resBuffer'].forEach((id) => $(id).addEventListener('change', async () => {
@@ -931,7 +984,7 @@ async function renderUpdate(st) {
   const msg = {
     dev: `${v}. Running from source (start.bat), so updates don't apply – pull the new files instead.`,
     portable: state && state.platform === 'linux'
-      ? `${v}. Only the AppImage updates itself – download PoE2-Upgrade-Checker.AppImage from the releases page to get updates.`
+      ? `${v}. Only the AppImage updates itself – download PoE-Upgrade-Checker.AppImage from the releases page to get updates.`
       : `${v}. The portable .exe can't update itself – install the Setup version from the releases page to get updates.`,
     unavailable: `${v}. The updater isn't installed in this copy.`,
     idle: `${v}.`,

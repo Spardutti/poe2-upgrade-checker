@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/banner.png" alt="PoE2 Upgrade Checker: is it really an upgrade for your build? Path of Building decides." width="100%"></p>
+<p align="center"><img src="docs/banner.png" alt="PoE Upgrade Checker: is it really an upgrade for your build? Path of Building decides." width="100%"></p>
 
 <p align="center">
   <a href="https://github.com/ets-public/poe2-upgrade-checker/releases/latest"><img alt="Download" src="https://img.shields.io/github/v/release/ets-public/poe2-upgrade-checker?label=download&color=8e1a1a&labelColor=0a0c10&style=for-the-badge"></a>
@@ -9,7 +9,7 @@
 
 <p align="center"><b><a href="https://poe2upgrade.com">poe2upgrade.com</a></b></p>
 
-**PoE2 Upgrade Checker** is a small overlay that sits in your system tray while you play Path of Exile 2. It answers two questions in game:
+**PoE Upgrade Checker** is a small overlay that sits in your system tray while you play Path of Exile 2, or Path of Exile 1 ([beta](#path-of-exile-1-beta)). It answers two questions in game:
 
 | | |
 |---|---|
@@ -20,13 +20,15 @@
 
 ## Download
 
-1. Get **`PoE2-Upgrade-Checker-Setup-x.y.z.exe`** from the [latest release](https://github.com/ets-public/poe2-upgrade-checker/releases/latest) and run it. It installs for your Windows user only, so no admin rights are needed, and **updates itself**.
+1. Get **`PoE-Upgrade-Checker-Setup-x.y.z.exe`** from the [latest release](https://github.com/ets-public/poe2-upgrade-checker/releases/latest) and run it. It installs for your Windows user only, so no admin rights are needed, and **updates itself**.
    - Prefer no install? Use the **Portable** .exe from the same page. It doesn't auto-update.
    - Windows may warn about an unrecognised app because the installer isn't code-signed. Click *More info → Run anyway*.
 2. In PoE2, go to **Options → Graphics** and set **Windowed Fullscreen**, so the overlay can draw over the game.
 3. Hover an item and press **F2**. The first-run guide walks you through adding your Path of Building build and your gear.
 
 **On Linux?** See [Linux (experimental)](#linux-experimental).
+
+**Had "PoE2 Upgrade Checker"?** It's the same app, renamed when it started supporting PoE1. It updates itself to the new name, and your characters, builds and settings stay as they are.
 
 ## Features
 
@@ -39,7 +41,11 @@
   - **Chaos Inoculation** is recognised, and chaos resistance is then ignored everywhere.
 - **Never breaks your build:** an item that costs a big part of your damage (**LOSES DAMAGE**), leaves you short of Spirit or can't be worn is flagged, however much else it adds. Each check can be switched off under *Priorities*.
 - **Character page:** your whole character from Path of Building: DPS or minion DPS, effective HP, energy shield, resistances against the cap, the biggest hit you can take, Spirit, attributes, skills with supports, keystones and ascendancy.
-- **Upgrade popup:** the verdict, the change in every stat, open prefixes and suffixes for crafting, and *What's it worth?*
+- **Upgrade popup:** the verdict, the change in every stat, open prefixes and suffixes for crafting, and *What's it worth?* (or **Choose stats…** to pick exactly which stats and minimums the price check matches). Links to the wiki and poedb.
+- **Where to spend:** every slot searched in your price range and checked with your build, ranked by how much better your build gets **per divine** ("Gloves: +14% for 3 div. Amulet: +6% for 20 div."). When resistances are short, it also looks for **two items that cap them together**. Without a Path of Building build (PoE2), it ranks by gear score instead.
+- **Map and waystone check:** F2 on a map or waystone. Path of Building works out what the player mods do to *your* character ("–12% max resistances: effective HP –14%"), monster mods are checked against your build (reflect against your damage types, no leech or no regeneration against what you rely on), and you can mark any mod dangerous, careful or fine.
+- **Prices for everything else:** F2 on currency, fragments, essences, runes, divination cards, gems (by level, quality and corruption), maps and uniques (by links) shows its poe.ninja price, the whole stack's, and the 7-day trend.
+- **Loot filter from your build** (My gear): highlights rares on the bases you wear and identified rares with two or more of the mods Path of Building values most for each slot. It's saved as a copy of your own filter with this section in front.
 - **Trade search:**
   - *Better for my build*, *same stats or better*, *craftable bases*, or a custom search built from any of the trade site's ~3,600 stats.
   - Price range in divines (or exalts, using poe.ninja's live rate), ignored and excluded stats, and saved searches with **new-listing alerts**.
@@ -76,7 +82,7 @@
   - It never reads game memory and never injects anything.
   - Its only input to the game is **one Ctrl+C per hotkey press**, the same as copying an item yourself.
 - **Where data goes:**
-  - It talks to the official trade site (pathofexile.com), poe.ninja and GitHub (for updates), nothing else. Path of Building runs locally on your PC.
+  - It talks to the official trade site (pathofexile.com), poe.ninja's prices (through a small cache on poe2upgrade.com, as poe.ninja asks desktop apps to do) and GitHub (for updates), nothing else. Path of Building runs locally on your PC.
   - Your gear and settings stay on your PC, in `%APPDATA%\poe2-upgrade-checker`.
 - **Signing in is optional** and only used for *Travel to hideout* and bigger searches. You sign in on pathofexile.com's own login page, and the app only keeps the resulting login cookie, on your PC.
 - **Not affiliated:** this is a fan-made tool, not affiliated with or endorsed by Grinding Gear Games.
@@ -92,6 +98,15 @@ The **setup guide** opens on first run. You can reopen it from **My gear → Set
 5. Set your **Priorities** on My gear (the defaults suit most builds) and, if you like, the damage vs survivability slider.
 
 **Characters:** the selector on My gear keeps separate gear, build and resistances for each character.
+
+## Path of Exile 1 (beta)
+
+The app works for **Path of Exile 1** too. It knows which game you're in on every F2 (from the game window), and each game has its own characters, league, prices and saved searches, so you can play both without changing anything.
+
+- **The first F2 in PoE1** makes a PoE1 character. Paste your **Path of Building Community** export (or pobb.in link) on *My gear*: PoE1 items are judged by Path of Building only (the gear score is for PoE2 builds).
+- **Verdicts, Find upgrades and What's it worth?** work as in PoE2, on the PoE1 trade site, with prices in chaos and divines (poe.ninja's PoE1 rates).
+- **Not judged yet:** cluster jewels and timeless jewels, flasks. *Craftable bases* is PoE2 only for now.
+- It's new: if something looks wrong, email support@poe2upgrade.com with the log (Tray → Open log).
 
 ## Character page
 
@@ -211,9 +226,9 @@ Questions, bugs or ideas: email **[support@poe2upgrade.com](mailto:support@poe2u
 
 For PoE2 running through **Steam with Proton** (or Lutris/Heroic) on desktop Linux: Ubuntu, Fedora, Arch, Bazzite and so on, on X11 or Wayland.
 
-1. Download **`PoE2-Upgrade-Checker.AppImage`** from the [latest release](https://github.com/ets-public/poe2-upgrade-checker/releases/latest) and put it where you want to keep it (e.g. `~/Applications`).
-2. Make it executable and run it: right-click → Properties → *Allow executing as program*, or `chmod +x PoE2-Upgrade-Checker.AppImage && ./PoE2-Upgrade-Checker.AppImage`. It **updates itself** like the Windows installer, in place: the file keeps its name, so shortcuts and *Start with your desktop* keep working.
-   - Had a version-named file from 0.4.1 or older (`PoE2-Upgrade-Checker-0.4.1.AppImage`)? Its next update renames it to `PoE2-Upgrade-Checker.AppImage` once: start it from the new name (that also fixes the autostart entry) and update any shortcut you made.
+1. Download **`PoE-Upgrade-Checker.AppImage`** from the [latest release](https://github.com/ets-public/poe2-upgrade-checker/releases/latest) and put it where you want to keep it (e.g. `~/Applications`).
+2. Make it executable and run it: right-click → Properties → *Allow executing as program*, or `chmod +x PoE-Upgrade-Checker.AppImage && ./PoE-Upgrade-Checker.AppImage`. It **updates itself** like the Windows installer, in place: the file keeps its name, so shortcuts and *Start with your desktop* keep working (a `PoE2-Upgrade-Checker.AppImage` from before the rename keeps that name too).
+   - Had a version-named file from 0.4.1 or older (`PoE2-Upgrade-Checker-0.4.1.AppImage`)? Its next update renames it to `PoE-Upgrade-Checker.AppImage` once: start it from the new name (that also fixes the autostart entry) and update any shortcut you made.
    - Some distros need FUSE for AppImages (e.g. `sudo apt install libfuse2` on Ubuntu 22.04+).
 3. In PoE2 use **Windowed Fullscreen**, hover an item and press **F2**.
 
@@ -248,10 +263,11 @@ How it works on Linux, and what to check if F2 doesn't:
   4. GitHub Actions builds the installer and the portable .exe on Windows, runs the tests and attaches both to the release with the notes.
   5. It waits for the build, then opens the release page. If the build failed, it opens the log instead.
   - Options: `release.bat -Version 0.5.0` (pick the number), `-Yes` (no questions), `-NoWait` (don't wait for the build).
+  - **A beta for testers:** `release-beta.bat` publishes a version like `0.5.0-beta.1` as a GitHub *pre-release*. Installed copies of the normal version never update to it; whoever installs it from the release page gets the next betas and then the finished version. The changelog's *Unreleased* section is its release notes and stays as it is, so the next `release.bat` (which offers `0.5.0`) still lists everything.
 
 ## Credits
 
-- Calculations: [Path of Building Community (PoE2)](https://github.com/PathOfBuildingCommunity/PathOfBuilding-PoE2) (MIT), bundled unmodified and run headless.
+- Calculations: [Path of Building Community (PoE2)](https://github.com/PathOfBuildingCommunity/PathOfBuilding-PoE2) and [Path of Building Community (PoE1)](https://github.com/PathOfBuildingCommunity/PathOfBuilding) (MIT), bundled unmodified and run headless.
 - Fonts: [Cinzel](https://github.com/NDISCOVER/Cinzel) and [Alegreya Sans](https://github.com/huertatipografica/Alegreya-Sans), both under the SIL Open Font License (bundled in `assets/fonts`).
 - Prices: [poe.ninja](https://poe.ninja). Trade data: the official [Path of Exile trade site](https://www.pathofexile.com/trade2).
 - Path of Exile is a trademark of Grinding Gear Games. This project isn't affiliated with or endorsed by them.
