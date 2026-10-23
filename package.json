@@ -1,12 +1,12 @@
 {
   "name": "poe2-upgrade-checker",
-  "version": "0.5.0-beta.1",
+  "version": "0.5.0-beta.2",
   "description": "Free Path of Exile overlay (PoE2, and PoE1 in beta): press F2 on an item to see if it's really an upgrade for your build, judged by Path of Building's own calculations. Finds better gear on the trade site within your budget.",
   "main": "src/main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/core.test.js test/trade.test.js test/rates.test.js test/listing.test.js test/pob.test.js test/pobverdict.test.js test/price.test.js test/games.test.js test/pobengine.test.js test/poe1-parser.test.js test/ninja.test.js",
+    "test": "node --test test/core.test.js test/trade.test.js test/rates.test.js test/listing.test.js test/pob.test.js test/pobverdict.test.js test/price.test.js test/games.test.js test/pobengine.test.js test/poe1-parser.test.js test/ninja.test.js test/workflow.test.js",
     "pob": "node tools/get-pob.js",
     "dist": "node tools/get-pob.js && npx electron-builder@25.1.8 --win nsis portable --publish never",
     "dist:linux": "node tools/get-pob.js && npx electron-builder@25.1.8 --linux AppImage --publish never"
@@ -16,7 +16,6 @@
   },
   "build": {
     "appId": "local.poe2.upgradechecker",
-    "generateUpdatesFilesForAllChannels": true,
     "productName": "PoE Upgrade Checker",
     "files": [
       "src/**",
