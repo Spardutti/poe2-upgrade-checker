@@ -9,7 +9,7 @@
 
 <p align="center"><b><a href="https://poe2upgrade.com">poe2upgrade.com</a></b></p>
 
-**PoE Upgrade Checker** is a small overlay that sits in your system tray while you play Path of Exile 2, or Path of Exile 1 ([beta](#path-of-exile-1-beta)). It answers two questions in game:
+**PoE Upgrade Checker** is a small overlay that sits in your system tray while you play Path of Exile 2, or Path of Exile 1 ([beta: download it here](https://poe2upgrade.com/download), more [below](#path-of-exile-1-beta)). It answers two questions in game:
 
 | | |
 |---|---|
@@ -102,11 +102,14 @@ The **setup guide** opens on first run. You can reopen it from **My gear → Set
 
 ## Path of Exile 1 (beta)
 
+PoE1 support is in the beta releases: [download the newest one](https://poe2upgrade.com/download).
+
 The app works for **Path of Exile 1** too. It knows which game you're in on every F2 (from the game window), and each game has its own characters, league, prices and saved searches, so you can play both without changing anything.
 
 - **The first F2 in PoE1** makes a PoE1 character. Paste your **Path of Building Community** export (or pobb.in link) on *My gear*: PoE1 items are judged by Path of Building only (the gear score is for PoE2 builds).
 - **Verdicts, Find upgrades and What's it worth?** work as in PoE2, on the PoE1 trade site, with prices in chaos and divines (poe.ninja's PoE1 rates).
-- **Not judged yet:** cluster jewels and timeless jewels, flasks. *Craftable bases* is PoE2 only for now.
+- **Links and flasks:** an item with fewer links than the gems you use in that slot is flagged, and flasks are tried in your flask slots.
+- **Not judged yet:** cluster jewels and timeless jewels. *Craftable bases* is PoE2 only for now.
 - It's new: if something looks wrong, email support@poe2upgrade.com with the log (Tray → Open log).
 
 ## Character page
