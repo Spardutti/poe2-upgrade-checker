@@ -45,6 +45,7 @@ function sorted(list) {
     site: () => 0,
   }[mode];
   let out = (list || []).map((x, i) => ({ ...x, _i: i }));
+  if ($('#noCorrupt').checked) out = out.filter((x) => !(x.item && x.item.corrupted));
   if ($('#onlyUp').checked) out = out.filter((x) => x.compare && (['upgrade', 'small', 'risky', 'new'].includes(x.compare.verdict)));
   return out.sort((a, b) => by(a, b) || a._i - b._i);
 }
@@ -70,7 +71,7 @@ function card(x) {
     <div class="l-top">
       <div>
         <div class="name ${esc(((it && it.rarity) || '').toLowerCase())}">${esc(it ? it.name : 'Unreadable listing')}</div>
-        <div class="dim">${esc(it && it.baseType !== it.name ? it.baseType : '')}${it && it.itemLevel ? ` · ilvl ${it.itemLevel}` : ''}</div>
+        <div class="dim">${esc(it && it.baseType !== it.name ? it.baseType : '')}${it && it.itemLevel ? ` · ilvl ${it.itemLevel}` : ''}${it && it.corrupted ? ' · <span class="corrupt-tag" title="Corrupted: it can\'t be changed with currency any more">Corrupted</span>' : ''}</div>
       </div>
       <div class="l-price">
         <div class="price">${esc(x.priceText)}</div>
@@ -85,7 +86,7 @@ function card(x) {
     ${c && c.pob && window.pobBlock ? window.pobBlock(c.pob) : c && window.characterBlock ? window.characterBlock(c.character, { risks: c.risks }) : ''}
     <details><summary>Item mods</summary>${mods}</details>
     <div class="actions">
-      ${x.instant && x.hideoutToken ? `<button class="primary gilded" data-hideout="${esc(x.id)}" title="${data.signedIn ? 'Asks the trade site to take you to the seller\'s hideout, straight from here' : 'Takes you to the seller\'s hideout from here – you sign in to pathofexile.com once the first time'}">Travel to hideout</button>` : ''}
+      ${x.instant ? `<button class="primary gilded" data-hideout="${esc(x.id)}" title="${data.signedIn ? 'Asks the trade site to take you to the seller\'s hideout, straight from here' : 'Takes you to the seller\'s hideout from here – you sign in to pathofexile.com once the first time'}">Travel to hideout</button>` : ''}
       ${x.whisper ? `<button class="primary gilded" data-whisper="${esc(x.id)}" title="Copies the seller's whisper – paste it in game chat with Enter, Ctrl+V">Copy whisper</button>` : ''}
       <button class="link" data-listing="${esc(x.id)}" title="Opens the trade site in your browser on just this seller's listing">on trade site ↗</button>
     </div>
@@ -120,7 +121,7 @@ function render() {
   const list = sorted(all);
   // a failed search or fetch must not leave the previous search's listings on screen
   $('#list').innerHTML = data.error ? `<div class="note">${esc(data.error)}</div>`
-    : list.map(card).join('') || `<div class="note">${!all.length && data.total ? 'The listings couldn\'t be loaded. Use Open on trade site to see them in your browser.' : !all.length ? 'Nothing listed.' : `None of the ${all.length} loaded listings is an upgrade. Untick <b>Upgrades only</b>${data.more ? ', or load more' : ''}.`}</div>`;
+    : list.map(card).join('') || `<div class="note">${!all.length && data.total ? 'The listings couldn\'t be loaded. Use Open on trade site to see them in your browser.' : !all.length ? 'Nothing listed.' : `None of the ${all.length} loaded listings ${$('#onlyUp').checked ? 'is an upgrade' : 'is left'}. Untick ${[$('#onlyUp').checked && '<b>Upgrades only</b>', $('#noCorrupt').checked && '<b>Hide corrupted</b>'].filter(Boolean).join(' or ')}${data.more ? ', or load more' : ''}.`}</div>`;
   $('#more').classList.toggle('hidden', !data.more || !!data.error);
   $('#site').disabled = !data.url;
   $('#save').classList.toggle('hidden', !!data.error);
@@ -167,6 +168,9 @@ window.api.onResults((d) => {
 });
 $('#sort').addEventListener('change', render);
 $('#onlyUp').addEventListener('change', render);
+// remembered in this window only (per computer): a convenience, not a setting
+try { $('#noCorrupt').checked = localStorage.getItem('noCorrupt') === '1'; } catch (_) { /* ignore */ }
+$('#noCorrupt').addEventListener('change', () => { try { localStorage.setItem('noCorrupt', $('#noCorrupt').checked ? '1' : '0'); } catch (_) { /* ignore */ } render(); });
 function modCount() { const v = $('#modCount').value; return v === 'all' ? 1e9 : Number(v) || 4; }
 try { const v = localStorage.getItem('modCount'); if (v && [...$('#modCount').options].some((o) => o.value === v)) $('#modCount').value = v; else $('#modCount').value = '4'; } catch (_) { $('#modCount').value = '4'; }
 $('#modCount').addEventListener('change', () => { try { localStorage.setItem('modCount', $('#modCount').value); } catch (_) {} render(); });

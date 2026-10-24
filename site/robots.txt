@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /ninja/
+
+Sitemap: https://poe2upgrade.com/sitemap.xml

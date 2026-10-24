@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-10-25
+- **Corrupted items:** trade results mark corrupted listings in red next to the item level, the results window has *Hide corrupted*, and Find upgrades has *Skip corrupted items*, which leaves them out of every upgrade search (Find upgrades, Where to spend, alerts). Price checks still match the item's own corruption.
+- **Damage per hit:** item comparisons show how your main skill's average hit changes ("Hit 310,969 → 305,687", your minions' for a minion build) next to the DPS and effective HP change, and the Character page shows it as *Damage per hit*. Dual-wield builds now get it (and crit and hit chance) too.
+- **Move the popup:** drag it by its name and it stays there for the next items (Settings → Popup → Position: *Where I dragged it*; pick another position to go back).
+- **PoE2 instilled amulets:** like PoE1 anoints, an amulet that doesn't have your instilled passive now says so ("Your amulet's instilled passive (Unbending) isn't on this one… Instilling it again costs Distilled Emotions"). Path of Building already counted the instill in the verdict.
+- **Travel to hideout on every instant buyout:** the button was only there when the listing came with a hideout token, which the trade site only gives a signed-in account, so it rarely showed. Now every instant-buyout listing in the results has it; the first time you sign in to pathofexile.com, and the app asks the trade site for that one listing's token when you click.
+- **Gem check:** F2 on a gem your build uses and Path of Building tries it at this gem's level and quality in your build: UPGRADE / NO CHANGE / WORSE with the DPS and effective HP change, for every skill group that uses it. A better gem than yours is a KEEP.
+- **Selling helper:** price cards and uniques suggest a listing price a little under poe.ninja (in divines when it's worth one or more; for the whole stack) and copy a `~price` note to paste into the item's note in a premium stash tab.
+- **Search history:** Find upgrades keeps your last 30 trade searches for each game: run one again with one click, or ☆ Save it to get alerts.
+- **Boss check (PoE1):** the Character page works out how many of each Path of Building boss preset hit (Shaper, Sirus, Exarch, Eater, Maven…, at Pinnacle and Uber) you can take. Your own Path of Building configuration is left as it was.
+- **Search strings:** the Character page builds a search to paste at vendors and in your stash (movement speed, resistances you're short of, life, + gem levels, three linked sockets in PoE1) and one for the map device that leaves out maps with the mods you marked dangerous, with a count against the game's 50-letter limit. The map card copies the map one too.
+- **Leveling mode:** Find upgrades → *Leveling: only items I can wear at level N* (or your Path of Building character's level) adds a level requirement to every upgrade search.
 - **PoE1 3.29:** the map check knows Thorns (rare monsters with Physical or Elemental Thorns, which replaced reflect) and checks them against your main skill. Socket colours aren't checked any more, since any gem now fits any socket.
 - **Path of Building's score is shown as points** ("+6.3 pts for your build") instead of a %: it was never a plain percentage (damage and effective HP changes, weighted, plus half a point per resistance point toward your cap), and the tooltip says so.
 - **Clearer for PoE1:** no gear-score wording or profiles in PoE1 (My gear, Build & stats, the first-run guide), PoE1 items without a Path of Building build say NOT JUDGED instead of "empty slot", and maps without a build say NOT CHECKED instead of "looks fine".

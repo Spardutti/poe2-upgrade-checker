@@ -70,13 +70,32 @@ module.exports = function (C) {
     return null;
   }
   // the popup for something that isn't gear: what it's worth on poe.ninja
+  // a gem: the same gem in your build, set to this gem's level and quality (Path of Building)
+  const isGem = (item) => /gems?$/i.test(String(item.itemClass || '').trim()) && !/uncut/i.test(`${item.name} ${item.baseType}`);
+  async function gemCheck(item) {
+    const ex = C.ninjaLib.extras(item) || {};
+    const res = await C.pobEngine().gemCheck({ name: item.name || item.baseType, level: ex.level || undefined, quality: ex.quality || 0 });
+    if (!res || !res.ok) throw new Error((res && res.error) || 'no answer');
+    const hits = (res.hits || []).filter((h) => h.after).map((h) => {
+      const j = C.pobVerdict.judge(res.before, h.after, C.pobWeights());
+      return { group: h.group || 'a skill group', level: h.level, quality: h.quality, newLevel: ex.level || h.level, newQuality: ex.quality || 0,
+        verdict: j ? j.verdict : 'same', score: j ? j.score : 0, dps: j && j.dps ? j.dps.pct : null, ehp: j && j.ehp ? j.ehp.pct : null };
+    });
+    return { hits };
+  }
   function showPriceCard(item) {
     const r = { ok: true, kind: 'price', item, pricePending: true, links: C.ninjaLib.infoLinks(item, C.tg()) };
+    if (isGem(item) && C.pobOn()) r.gemPending = true;
     C.showResult(r);
     const seq = C.popupSeq;
-    ninjaPrice(item).then((p) => { r.ninja = p; if (!p) r.priceNote = "poe.ninja doesn't list a price for this."; })
+    const resend = () => { if (seq === C.popupSeq && C.popup && !C.popup.isDestroyed()) C.popup.webContents.send('popup:result', C.serialise(r)); };
+    if (r.gemPending) {
+      gemCheck(item).then((g) => { r.gem = g; }).catch((err) => { r.gemError = err.message; C.log('gem check: ' + err.message); })
+        .then(() => { r.gemPending = false; resend(); });
+    }
+    ninjaPrice(item).then((p) => { r.ninja = p; r.sellNote = C.ninjaLib.sellNote(p); if (!p) r.priceNote = "poe.ninja doesn't list a price for this."; })
       .catch((err) => { r.priceNote = `Couldn't get the price from poe.ninja (${err.message}).`; C.log('poe.ninja: ' + err.message); })
-      .then(() => { r.pricePending = false; if (seq === C.popupSeq && C.popup && !C.popup.isDestroyed()) C.popup.webContents.send('popup:result', C.serialise(r)); });
+      .then(() => { r.pricePending = false; resend(); });
   }
   return { ninjaPrice, showPriceCard, ninjaGet };
 };

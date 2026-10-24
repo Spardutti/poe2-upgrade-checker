@@ -215,4 +215,20 @@ function infoLinks(item, game) {
 const INFO_HOSTS = /^https:\/\/(www\.poewiki\.net|www\.poe2wiki\.net|poedb\.tw|poe2db\.tw)\//;
 const isInfoPage = (url) => typeof url === 'string' && INFO_HOSTS.test(url);
 
-module.exports = { history, PROXY, EXCHANGE_TYPES, UNIQUE_TYPES, urls, allExchangeUrl, exchangeUrls, itemUrls, typesFor, extras, exchangeIndex, pickLine, priceOf, convert, infoLinks, isInfoPage };
+// a price note to list the item at (pasted by the player into the item's note in a premium stash tab):
+// a little under poe.ninja so it sells, in divines when it's worth one or more, else the game's base currency.
+// The note's price is for the whole stack.
+const FULL = { ex: 'exalted', chaos: 'chaos' };
+function sellNote(p, opts) {
+  if (!p) return null;
+  const cut = 1 - ((opts && opts.undercut) != null ? opts.undercut : 0.05);
+  const div = p.totalDiv != null ? p.totalDiv * cut : null;
+  const base = p.total != null ? p.total * cut : null;
+  let amt; let cur; let short;
+  if (div != null && div >= 1) { amt = div >= 10 ? Math.round(div) : Math.round(div * 2) / 2; cur = 'divine'; short = 'div'; }
+  else if (base != null && base >= 1) { amt = base >= 20 ? Math.round(base) : Math.max(1, Math.floor(base)); cur = FULL[p.unit] || p.unit; short = p.unit; }
+  else return null; // worth less than one base currency: vendor it
+  return { amount: amt, currency: cur, note: `~price ${amt} ${cur}`, text: `${amt} ${short}${p.stack > 1 ? ` for the stack of ${p.stack}` : ''}` };
+}
+
+module.exports = { sellNote, history, PROXY, EXCHANGE_TYPES, UNIQUE_TYPES, urls, allExchangeUrl, exchangeUrls, itemUrls, typesFor, extras, exchangeIndex, pickLine, priceOf, convert, infoLinks, isInfoPage };

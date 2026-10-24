@@ -147,7 +147,10 @@
       const bad = r.wasCapped && !r.capped; const good = !r.wasCapped && r.capped;
       return `<span class="cc ${bad || (!r.capped && r.to < r.from) ? 'neg warn' : good || r.to > r.from ? 'pos' : 'dim'}">${esc(r.el)} res ${Math.round(r.from)}% → <b>${Math.round(r.to)}%</b>${bad ? ' ⚠ off the cap' : good ? ' ✓ capped' : !r.capped ? ' (under cap)' : ''}</span>`;
     }).join('');
-    const parts = [dl('ES', p.es), dl('Life', p.life), dl('Spirit', p.spirit), dl('Mana', p.mana), res].filter(Boolean);
+    const hitLabel = p.dpsKey === 'MinionDPS' ? 'Minion hit' : 'Hit';
+    const hit = p.hit && !p.noDamage && Math.abs(p.hit.delta) / Math.max(1, p.hit.from) >= 0.005
+      ? `<span class="cc ${p.hit.delta > 0 ? 'pos' : 'neg'}" title="Average damage per hit of your main skill (Path of Building's Average Hit)">${hitLabel} ${n(p.hit.from)} → <b>${n(p.hit.to)}</b></span>` : '';
+    const parts = [hit, dl('ES', p.es), dl('Life', p.life), dl('Spirit', p.spirit), dl('Mana', p.mana), res].filter(Boolean);
     // resistance losses get their own banner, above everything else
     const lossBanner = opts.noBanner ? '' : window.resLossBanner(p.resLoss) + window.dmgLossBanner(p.dmgLoss);
     const capLine = p.resCapped && p.resCapped.length ? `<div class="res-cap">✓ Caps your ${esc(p.resCapped.join(' and ').toLowerCase())} resistance</div>` : '';
@@ -307,6 +310,17 @@
 
   // keep / sell / vendor, under the verdict
   const ADV = { keep: ['KEEP', 'up'], sell: ['SELL', 'sell'], vendor: ['VENDOR', 'same'], check: ['PRICE CHECK', 'risky'] };
+  // selling helper: a price a little under poe.ninja and a price note to paste into a premium stash tab
+  window.sellHtml = function (r) {
+    if (!r.sellNote) return '';
+    const a = window.keepSell && window.keepSell.advise(r);
+    if (a && (a.action === 'vendor' || a.action === 'keep')) return '';
+    return `<div class="sell-row"><span class="dim small">List it at</span> <b>${esc(r.sellNote.text)}</b> <button class="link" id="copySell" title="Copies &quot;${esc(r.sellNote.note)}&quot;: right-click the item in a premium stash tab and paste it into the note">Copy price note</button></div>`;
+  };
+  window.bindSell = function (el, r) {
+    const b = el.querySelector('#copySell');
+    if (b) b.addEventListener('click', () => { window.api.copyText(r.sellNote.note); b.textContent = 'Copied'; });
+  };
   window.adviceHtml = function (r) {
     const a = window.keepSell && window.keepSell.advise(r);
     if (!a) return '<div class="advice" id="advice"></div>';
@@ -328,13 +342,31 @@
           ${p.stack > 1 ? `<div>Stack: ${ninjaPrice(p, true)}</div>` : ''}
           ${window.sparkHtml(p, 200, 34) ? `<div class="spark-row">${window.sparkHtml(p, 200, 34)}<span class="dim small">last 7 days</span></div>` : ''}
           <div class="dim small">${trend(p)}${what ? ` · priced as ${esc(what)}` : ''}${p.few ? ' · few listed, so a rough guess' : ''} · poe.ninja${p.league ? `, ${esc(p.league)}` : ''}</div>` : ''}
+        ${window.gemHtml(r)}
         ${p ? window.adviceHtml(r) : ''}
+        ${window.sellHtml(r)}
         ${r.priceNote ? `<div class="note">${esc(r.priceNote)}</div>` : ''}
         ${r.links && r.links.length ? `<div class="actions">${linksHtml(r.links)}</div>` : ''}
       </div>`;
     bindLinks(el);
+    window.bindSell(el, r);
     const c = el.querySelector('#closeBtn');
     if (c) c.addEventListener('click', () => window.api.close());
+  };
+  // a gem: what the same gem in your build would do at this level and quality
+  const pct = (v) => (v == null || Math.abs(v) < 0.05 ? null : `${v > 0 ? '+' : ''}${v}%`);
+  const gemLq = (l, q) => `level ${l}${q ? ` / ${q}% quality` : ''}`;
+  window.gemHtml = function (r) {
+    if (r.gemPending) return '<div class="note"><span class="spinner"></span> Trying this gem in your build with Path of Building…</div>';
+    if (r.gemError) return `<div class="note">Couldn't try this gem in your build (${esc(r.gemError)}).</div>`;
+    if (!r.gem) return '';
+    if (!r.gem.hits.length) return '<div class="dim small gem-check">This gem isn\'t in your Path of Building build (or it\'s switched off there).</div>';
+    return `<div class="gem-check">${r.gem.hits.map((h) => {
+      const same = h.level === h.newLevel && h.quality === h.newQuality;
+      const ch = [pct(h.dps) && `DPS ${pct(h.dps)}`, pct(h.ehp) && `effective HP ${pct(h.ehp)}`].filter(Boolean).join(', ');
+      const [t, c] = same ? ['SAME AS YOURS', 'same'] : h.verdict === 'upgrade' || h.verdict === 'small' ? ['UPGRADE', 'up'] : h.verdict === 'same' ? ['NO CHANGE', 'same'] : ['WORSE', 'down'];
+      return `<div class="verdict ${c}"><span class="badge">${t}</span><span class="dim">in ${esc(h.group)}: yours is ${gemLq(h.level, h.quality)}${same ? '' : `, this one ${gemLq(h.newLevel, h.newQuality)}`}${ch && !same ? ` · ${esc(ch)}` : ''}</span></div>`;
+    }).join('')}</div>`;
   };
 
   // a map or waystone: each mod and what it means for your build; click a mod to mark it
@@ -360,10 +392,18 @@
             <span class="mi">${MAPICON[m.level] || '·'}</span><span class="mt">${esc(m.text)}${m.mark ? ' <small class="dim">(your mark)</small>' : ''}${m.note ? `<br><small class="${m.level === 'ok' ? 'dim' : ''}">${esc(m.note)}</small>` : ''}</span></div>`).join('') || '<div class="dim">No mods.</div>'}</div>
         ${r.ninja ? window.ninjaLine(r.ninja) : ''}
         <div class="dim small">${c.calculated ? `${c.calculated} mod${c.calculated === 1 ? '' : 's'} worked out by Path of Building; ` : ''}click a mod to mark it dangerous, careful or fine for all your ${r.game === 'poe1' ? 'maps' : 'waystones'}.</div>
+        <div class="sell-row"><button class="link" id="avoidBtn" title="Copies a search for the map device or stash that leaves out ${r.game === 'poe1' ? 'maps' : 'waystones'} with your dangerous mods">Copy a search that avoids dangerous mods</button><span class="dim small" id="avoidOut"></span></div>
         ${r.links && r.links.length ? `<div class="actions">${linksHtml(r.links)}</div>` : ''}
       </div>`;
     bindLinks(el);
     el.querySelectorAll('.map-mod').forEach((m) => m.addEventListener('click', () => window.api.mapMark(m.dataset.key, NEXT[m.dataset.mark || ''])));
+    const av = el.querySelector('#avoidBtn');
+    if (av) av.addEventListener('click', async () => {
+      const res = await window.api.mapAvoid(c.rows.filter((m) => m.level === 'danger').map((m) => m.key));
+      const out = el.querySelector('#avoidOut');
+      out.textContent = res.text ? `Copied ${res.text}${res.left.length ? ` (${res.left.length} more didn't fit in the game's 50 letters)` : ''}. Paste it in the search box and check it highlights what you expect.` : 'Mark a mod as dangerous first (click it).';
+      if (opts.onResize) opts.onResize();
+    });
     const x = el.querySelector('#closeBtn');
     if (x) x.addEventListener('click', () => window.api.close());
   };
@@ -447,6 +487,7 @@
         ${lossBanner}
         ${r.ninja ? window.ninjaLine(r.ninja) : ''}
         ${window.adviceHtml(r)}
+        ${window.sellHtml(r)}
         ${gearLine}
         ${craft}
         ${r.flaskNote ? `<div class="dim small">${esc(r.flaskNote)}</div>` : ''}${r.limitNote ? `<div class="dim small">${esc(r.limitNote)}</div>` : ''}
@@ -529,6 +570,7 @@
     window.__popupResize = opts.onResize || null;
     window.bindGearWhy(el);
     bindLinks(el);
+    window.bindSell(el, r);
     const mb = el.querySelector('#moreBtn');
     if (mb) mb.addEventListener('click', () => {
       const box = el.querySelector('#moreBox');

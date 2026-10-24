@@ -131,7 +131,7 @@ figcaption { font-size: 14px; color: var(--ash); padding: 8px 4px 2px; }
 
 /* fair play */
 .fair-box { padding: 32px 30px 26px; border-color: #3a3328; }
-.fair-box .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+.fair-box .cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 26px 40px; }
 .fair-box p { margin: 0; font-size: 16px; }
 
 /* last call */
@@ -149,3 +149,18 @@ footer p { margin: 4px 0; }
   .hero-shot { transform: none; }
   section { margin-bottom: 64px; }
 }
+
+/* FAQ */
+.faq-list { display: grid; gap: 14px; max-width: 860px; margin: 0 auto; }
+.faq details { padding: 16px 22px; }
+.faq summary { cursor: pointer; font: 600 18px var(--f-text); color: var(--bone); list-style: none; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "▸ "; color: var(--gold); }
+.faq details[open] summary::before { content: "▾ "; }
+.faq details p { margin: 10px 0 0; font-size: 16px; }
+#poe1 .show-text .btn { margin-top: 6px; }
+@media (max-width: 900px) { #poe1 figure { order: 2; } }
+.notfound { padding-top: 120px; }
+
+.gallery.pair { grid-template-columns: 1fr 1fr; align-items: start; }
+@media (max-width: 900px) { .gallery.pair { grid-template-columns: 1fr; } }

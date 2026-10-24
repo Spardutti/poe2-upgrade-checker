@@ -105,10 +105,33 @@ table{width:100%;border-collapse:collapse;margin-bottom:24px;font-variant-numeri
   return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' } });
 }
 
+// ---------- /download: the newest release, betas included ----------
+// GitHub's /releases/latest skips pre-releases, so the site and README link here instead. The answer
+// is cached for 10 minutes (GitHub allows 60 unauthenticated API calls an hour).
+const RELEASES = 'https://github.com/ets-public/poe2-upgrade-checker/releases';
+async function download(ctx) {
+  const key = new Request('https://poe2upgrade.com/download-cache');
+  const hit = await caches.default.match(key);
+  let url = hit ? await hit.text() : null;
+  if (!url) {
+    try {
+      const res = await fetch('https://api.github.com/repos/ets-public/poe2-upgrade-checker/releases?per_page=10', { headers: { 'User-Agent': UA, Accept: 'application/vnd.github+json' } });
+      const list = res.ok ? await res.json() : [];
+      const r = (Array.isArray(list) ? list : []).filter((x) => x && !x.draft && x.html_url)
+        .sort((a, b) => Date.parse(b.published_at || b.created_at || 0) - Date.parse(a.published_at || a.created_at || 0))[0];
+      if (r) { url = r.html_url; ctx.waitUntil(caches.default.put(key, new Response(url, { headers: { 'Cache-Control': 'public, max-age=600' } }))); }
+    } catch (_) { /* fall back to the list */ }
+  }
+  return Response.redirect(url || RELEASES, 302);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    // one address for the site: www.poe2upgrade.com goes to poe2upgrade.com
+    if (url.hostname === 'www.poe2upgrade.com') { url.hostname = 'poe2upgrade.com'; return Response.redirect(url.toString(), 301); }
     if (url.pathname === '/api/ping') return request.method === 'POST' ? ping(request, env).catch(() => json({ ok: false }, 500)) : json({ ok: false }, 405);
+    if (url.pathname === '/download' || url.pathname === '/download/') return download(ctx);
     if (url.pathname === '/api/stats') return stats(url, env).catch((e) => new Response('Error: ' + e.message, { status: 500 }));
     if (!url.pathname.startsWith('/ninja/')) return env.ASSETS.fetch(request);
     if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 });

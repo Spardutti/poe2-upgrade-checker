@@ -27,6 +27,8 @@
       const [st, d] = await Promise.all([window.api.getState(), window.api.pobSheet(!!refresh)]);
       const prof = (st.profiles || []).find((p) => p.active);
       $('#charTitle').textContent = prof ? prof.name : 'Character';
+      sheetAt = d.at || null;
+      if (bossLast && bossAt !== sheetAt) bossLast = null; // build or gear changed since: check again
       body.innerHTML = d.sheet ? sheetHtml(d, st) : noPobHtml(d, st);
       $('#charSub').textContent = d.sheet
         ? `Calculated by Path of Building with your build${d.sheet.overridden && d.sheet.overridden.length ? ` and the ${d.sheet.overridden.length} item${d.sheet.overridden.length === 1 ? '' : 's'} you copied in game` : ''}${d.at ? ` · ${new Date(d.at).toLocaleTimeString()}` : ''}.${d.error ? ` Couldn't recalculate just now: ${d.error}` : ''}`
@@ -34,6 +36,7 @@
       $('#charRefresh').classList.toggle('hidden', !d.on);
       // widths set here: the page's security policy doesn't allow inline styles
       body.querySelectorAll('[data-w]').forEach((e) => { e.style.width = `${Number(e.dataset.w) || 0}%`; });
+      renderStrings();
       body.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => document.querySelector(`.tabs button[data-tab="${b.dataset.goto}"]`).click()));
     } catch (err) {
       body.innerHTML = `<div class="card-p">Couldn't load your character: ${esc(err.message || err)}</div>`;
@@ -80,7 +83,7 @@
     const mres = m ? ['Fire', 'Cold', 'Lightning', 'Chaos'].map((el) => (isNum(m[`${el}Resist`]) ? `${n0(m[`${el}Resist`])}%` : '–')).join(' / ') : null;
     const minionCard = m ? card(m.name ? `Minions – ${m.name}` : 'Minions', table([
       row('DPS', big(m.CombinedDPS || m.TotalDPS)),
-      row('Average hit', big(m.AverageHit)),
+      row('Damage per hit', big(m.AverageHit), 'average'),
       isNum(m.Speed) && m.Speed > 0 ? row('Uses per second', n1(m.Speed), isNum(m.Cooldown) && m.Cooldown > 0 ? 'with the cooldown' : '') : '',
       isNum(m.CastRate) && m.CastRate > 0 && !(isNum(m.Speed) && Math.abs(m.CastRate - m.Speed) < 0.05) ? row('Cast rate', `${n1(m.CastRate)}/s`, 'without the cooldown') : '',
       isNum(m.Cooldown) && m.Cooldown > 0 ? row('Cooldown', `${n1(m.Cooldown)} s`) : '',
@@ -98,7 +101,7 @@
 
     const offence = playerDps > 0 || !minionMain ? card(minionMain ? 'Your own damage' : 'Offence', table([
       Number(p.FullDPS) > 0 ? row('Full DPS', big(p.FullDPS)) : '', row('Main skill DPS', big(p.CombinedDPS || p.TotalDPS)), isNum(p.TotalDotDPS) && p.TotalDotDPS > 0 ? row('Damage over time', big(p.TotalDotDPS)) : '',
-      row('Average hit', big(p.AverageHit)), isNum(p.Speed) && p.Speed > 0 ? row('Uses per second', n1(p.Speed)) : '',
+      row('Damage per hit', big(p.AverageHit), 'average'), isNum(p.Speed) && p.Speed > 0 ? row('Uses per second', n1(p.Speed)) : '',
       row('Critical hit chance', pct(p.CritChance)), row('Critical damage', isNum(p.CritMultiplier) ? `×${n1(p.CritMultiplier)}` : null),
       row('Hit chance', pct(p.HitChance)), row('Accuracy', n0(p.Accuracy)),
     ])) : '';
@@ -173,7 +176,59 @@
     // three groups of related cards, each stacked without gaps: what you deal, what you survive,
     // what you wear and how you're built
     const stack = (cls, title, parts) => { const inner = parts.filter(Boolean).join(''); return inner ? `<section class="char-stack ${cls}"><h4 class="char-group">${esc(title)}</h4>${inner}</section>` : ''; };
-    return `${hero}<div class="char-cols">${stack('s-off', 'Offence', [minionCard, offence, skills])}${stack('s-def', 'Defence', [defence, res, maxHit, resources])}${stack('s-build', 'Gear & build', [gear, misc || tree ? `<div class="char-sub">${misc}${tree}</div>` : ''])}</div>`;
+    return `${hero}<div class="char-cols">${stack('s-off', 'Offence', [minionCard, offence, skills])}${stack('s-def', 'Defence', [defence, res, maxHit, st.game === 'poe1' ? bossCard() : '', resources])}${stack('s-build', 'Gear & build', [gear, misc || tree ? `<div class="char-sub">${misc}${tree}</div>` : '', '<div class="card-p" id="strBox"></div>'])}</div>`;
+  }
+
+  // PoE1 boss check: Path of Building's boss skill presets, one at a time
+  let bossLast = null; let bossAt = null; let sheetAt = null;
+  function bossCard() {
+    return card('Boss hits', `<div class="help">How many of each big boss hit you can take, worked out by Path of Building with its boss presets (Pinnacle and Uber). Under 1 means it kills you from full.</div>
+      <div id="bossOut">${bossLast ? bossTable(bossLast) : ''}</div>
+      <div class="row"><button id="bossBtn">${bossLast ? 'Check again' : 'Check boss hits'}</button></div>`);
+  }
+  const hitsTxt = (h) => (!isNum(h) ? '–' : h < 1 ? '<b class="neg">one-shot</b>' : h < 2 ? '<span class="warn-t">1 hit</span>' : `${Math.floor(h)} hits`);
+  function bossTable(r) {
+    if (!r.ok) return `<div class="note">${esc(r.error)}</div>`;
+    const by = {};
+    for (const x of r.skills) (by[x.name] = by[x.name] || {})[x.tier] = x;
+    const names = Object.keys(by);
+    if (!names.length) return '<div class="dim">No boss presets in this Path of Building.</div>';
+    return `<table class="kv boss"><tr><th>Boss skill</th><th>Pinnacle</th><th>Uber</th></tr>${names.map((n) => `<tr><td>${esc(n)}</td><td>${hitsTxt(by[n].Pinnacle && by[n].Pinnacle.hits)}</td><td>${hitsTxt(by[n].Uber && by[n].Uber.hits)}</td></tr>`).join('')}</table>
+      <div class="dim small">Before dodge, block and evade luck. Some of these are meant to be dodged (Atziri's Flameblast, the Maven's memory game).</div>`;
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest && e.target.closest('#bossBtn');
+    if (!b) return;
+    b.disabled = true; b.textContent = 'Checking…';
+    bossAt = sheetAt;
+    bossLast = await window.api.bossCheck().catch((err) => ({ ok: false, error: err.message || String(err) }));
+    const out = $('#bossOut'); if (out) out.innerHTML = bossTable(bossLast);
+    b.disabled = false; b.textContent = 'Check again';
+  });
+
+  // search strings for the game's search box: vendors and stash (things you want), maps (mods you don't)
+  const strOpts = { move: true, life: false, gems: false, links: false, res: null };
+  async function renderStrings() {
+    const box = $('#strBox'); if (!box) return;
+    const g = await window.api.stringsGet();
+    if (strOpts.res === null) strOpts.res = g.resShort; // start with the resistances you're short of
+    const map = g.game === 'poe1' ? 'map' : 'waystone';
+    const cb = (k, label) => `<label class="small"><input type="checkbox" data-str="${k}" ${strOpts[k] ? 'checked' : ''}> ${label}</label>`;
+    const rcb = (el) => `<label class="small"><input type="checkbox" data-sres="${el}" ${strOpts.res.includes(el) ? 'checked' : ''}> ${el[0].toUpperCase() + el.slice(1)} res${g.resShort.includes(el) ? ' <small class="neg">short</small>' : ''}</label>`;
+    const v = await window.api.stringsVendor({ ...strOpts });
+    const line = (r, id) => (r.text ? `<div class="str-line"><code>${esc(r.text)}</code> <span class="dim small">${r.length}/${g.limit}</span> <button class="link" data-copy="${id}">Copy</button></div>${r.left.length ? `<div class="dim small">${r.left.length} more didn't fit: ${esc(r.left.join(', '))}</div>` : ''}` : '');
+    box.innerHTML = `<h3>Search strings</h3>
+      <div class="help">Paste into the search box in game (Ctrl+F at a vendor, in your stash or at the map device): matching items light up.</div>
+      <h4 class="small">Vendors &amp; stash: things worth a look</h4>
+      <div class="row wrap">${cb('move', 'Movement speed')}${['fire', 'cold', 'lightning'].map(rcb).join('')}${cb('life', 'Life')}${cb('gems', '+ gem levels')}${g.game === 'poe1' ? cb('links', '3 linked sockets') : ''}</div>
+      ${line(v, 'v') || '<div class="dim small">Tick something to look for.</div>'}
+      <h4 class="small">${map[0].toUpperCase() + map.slice(1)}s without your dangerous mods</h4>
+      ${line(g.mapAvoid, 'm') || `<div class="dim small">Check a ${map} (hover it, press your hotkey) and click its mods to mark the dangerous ones: they show up here.</div>`}
+      <div class="dim small">Each mod is cut to a short word, so check it lights up what you expect.</div>`;
+    const texts = { v: v.text, m: g.mapAvoid.text };
+    box.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', () => { window.api.copyText(texts[b.dataset.copy]); b.textContent = 'Copied'; }));
+    box.querySelectorAll('[data-str]').forEach((c) => c.addEventListener('change', () => { strOpts[c.dataset.str] = c.checked; renderStrings(); }));
+    box.querySelectorAll('[data-sres]').forEach((c) => c.addEventListener('change', () => { strOpts.res = strOpts.res.filter((x) => x !== c.dataset.sres).concat(c.checked ? [c.dataset.sres] : []); renderStrings(); }));
   }
 
   function noPobHtml(d, st) {
@@ -184,7 +239,7 @@
     const res = rs ? card('Resistances (from My gear)', resBars(['fire', 'cold', 'lightning', 'chaos'].filter((el) => rs[el] != null).map((el) => ({ el: el[0].toUpperCase() + el.slice(1), value: Math.min(rs[el], (rs.caps && rs.caps[el]) || rs.cap || 75), total: rs[el], over: rs[el] - ((rs.caps && rs.caps[el]) || rs.cap || 75), max: (rs.caps && rs.caps[el]) || rs.cap || 75 })), false)) : '';
     const gs = st.gearScores || {};
     const gear = card('Gear', table(SLOT_ORDER.map((slot) => { const it = (st.equipped || {})[slot]; const g = gs[slot]; return it ? row(slot, `${esc(it.name)}${g && g.score != null ? ` <span class="gs g-${esc(g.grade)}">${g.score} ${esc(g.grade)}</span>` : ''}`) : ''; })));
-    return `<div class="card-p"><h3>Your character sheet</h3><div class="help">${why}</div><div class="row"><button class="primary" data-goto="gear">Go to My gear</button></div></div><div class="grid g-cards">${res}${gear}</div>`;
+    return `<div class="card-p"><h3>Your character sheet</h3><div class="help">${why}</div><div class="row"><button class="primary" data-goto="gear">Go to My gear</button></div></div><div class="grid g-cards">${res}${gear}<div class="card-p" id="strBox"></div></div>`;
   }
 
   document.querySelector('.tabs button[data-tab="char"]').addEventListener('click', () => render(false));

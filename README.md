@@ -45,6 +45,12 @@
 - **Where to spend:** every slot searched in your price range and checked with your build, ranked by how much better your build gets **per divine** ("Gloves: +14% for 3 div. Amulet: +6% for 20 div."). When resistances are short, it also looks for **two items that cap them together**. Without a Path of Building build (PoE2), it ranks by gear score instead.
 - **Map and waystone check:** F2 on a map or waystone. Path of Building works out what the player mods do to *your* character ("–12% max resistances: effective HP –14%"), monster mods are checked against your build (reflect against your damage types, no leech or no regeneration against what you rely on), and you can mark any mod dangerous, careful or fine.
 - **Prices for everything else:** F2 on currency, fragments, essences, runes, divination cards, gems (by level, quality and corruption), maps and uniques (by links) shows its poe.ninja price, the whole stack's, and the 7-day trend.
+- **Gem check:** F2 on a skill or support gem: if your build uses that gem, Path of Building swaps in this one's level and quality and shows the DPS and effective HP change.
+- **Selling helper:** for anything poe.ninja prices, a suggested listing price a little under poe.ninja and *Copy price note* (`~price 4 divine`) to paste into the item's note in a premium stash tab.
+- **Boss check (PoE1):** on the Character page, how many of each big boss hit you can take (Path of Building's boss presets, Pinnacle and Uber), e.g. "Shaper Slam: one-shot".
+- **Search strings:** on the Character page, a search to paste at vendors and in your stash (movement speed, the resistances you're short of, life, + gem levels, three linked sockets in PoE1), and one for the map device that leaves out maps or waystones with the mods you marked dangerous. The map card can copy that one too.
+- **Leveling mode** (Find upgrades): only items you can wear at your level, in every upgrade search.
+- **Search history** (Find upgrades): your last 30 trade searches, to run again or save.
 - **Loot filter from your build** (My gear): highlights rares on the bases you wear and identified rares with two or more of the mods Path of Building values most for each slot. It's saved as a copy of your own filter with this section in front.
 - **Trade search:**
   - *Better for my build*, *same stats or better*, *craftable bases*, or a custom search built from any of the trade site's ~3,600 stats.
@@ -56,7 +62,7 @@
 - **Gear score fallback:** without a PoB build, a 0–100 gear score from build profiles (minion summoner, ES caster, life + res) and your own stat weights.
 - **Built for playing:**
   - Compact popup.
-  - Pin it to the cursor or a screen edge.
+  - Pin it to the cursor or a screen edge, or drag it anywhere and it stays there.
   - Text size and colour-blind options.
   - Starts with Windows.
 

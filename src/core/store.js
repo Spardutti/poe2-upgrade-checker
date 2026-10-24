@@ -30,7 +30,7 @@ const DEFAULT_WEIGHTS = {
 // each trade site's data). The active game's values live in settings as usual; the other game's
 // are kept in data.gameSettings and swapped in when you change game.
 // priorities too: chaos resistance matters in PoE1 by default, not in PoE2
-const GAME_KEYS = ['league', 'budget', 'divineRate', 'divineRateAt', 'divineRateLeague', 'currencyRates', 'autoRate', 'priorities', 'pobSearchSize', 'gearSearchSize', 'tradeSearchSize'];
+const GAME_KEYS = ['league', 'budget', 'leveling', 'noCorrupted', 'divineRate', 'divineRateAt', 'divineRateLeague', 'currencyRates', 'autoRate', 'priorities', 'pobSearchSize', 'gearSearchSize', 'tradeSearchSize'];
 const isObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
 
 class Store {

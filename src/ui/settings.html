@@ -145,6 +145,12 @@
           <span class="help" id="budgetHelp"></span>
           <span class="help" id="rateStatus"></span>
         </div>
+        <div class="fb-row fb-sub">
+          <label title="Leveling: every upgrade search (Find upgrades, Where to spend, alerts) only finds items you can wear at this level"><input type="checkbox" id="levelOn"> Leveling: only items I can wear at level</label>
+          <input type="number" id="levelCap" class="num" min="1" max="100" step="1" aria-label="Character level">
+          <button id="levelFromPob" class="link hidden" title="Use the level of your Path of Building character">use my character's level</button>
+          <label title="Every upgrade search (Find upgrades, Where to spend, alerts) leaves out corrupted items"><input type="checkbox" id="noCorrupted"> Skip corrupted items</label>
+        </div>
       </div>
 
       <div class="grid g-2">
@@ -207,6 +213,11 @@
             <span class="dim" id="alertStatus"></span>
           </div>
           <table class="list" id="savedList"></table>
+          </div>
+          <div class="card-p">
+            <h3>Recent searches <button class="link small" id="historyClear">Clear</button></h3>
+            <div class="help">Your last 30 trade searches. Run one again, or save it to get alerts.</div>
+            <table class="list" id="historyList"></table>
           </div>
         </div>
       </div>
@@ -295,7 +306,9 @@
           <option value="left">Left side of the screen</option>
           <option value="right">Right side of the screen</option>
           <option value="top">Top of the screen</option>
+          <option value="dragged">Where I dragged it</option>
         </select></label>
+        <span class="help">Drag the popup by its name to move it; it stays there.</span>
         <label>Size <select id="uiScale">
           <option value="0.9">Small</option><option value="1">Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option>
         </select></label>

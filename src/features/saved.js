@@ -145,5 +145,48 @@ module.exports = function (C) {
       .sort((a, b) => b.gain - a.gain);
   }
   ipcMain.handle('alerts:run', async () => { await runAlerts(true); return { lastRun: lastAlertRun }; });
-  return { savedList, runAlerts, keepNotification };
+
+  // ---------- search history: the last searches you ran, to run again or save ----------
+  const HISTORY_MAX = 30;
+  function historyList() { return C.store.data.searchHistory || (C.store.data.searchHistory = []); }
+  function record(r, ctx) {
+    if (!r || !r.ok || !ctx || !ctx.body || !ctx.searchKey) return;
+    const game = r.game || C.tg();
+    const list = historyList().filter((x) => !(x.searchKey === ctx.searchKey && x.game === game));
+    list.unshift({ id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), title: String(ctx.title || 'Search').replace(/^Custom search: /, ''),
+      mode: ctx.mode, league: r.league, game, body: ctx.body, searchKey: ctx.searchKey,
+      itemClass: ctx.item && ctx.item.itemClass, itemName: ctx.item && ctx.item.name, total: r.total, at: Date.now() });
+    // keep the newest HISTORY_MAX for each game
+    const seen = {};
+    C.store.data.searchHistory = list.filter((x) => (seen[x.game] = (seen[x.game] || 0) + 1) <= HISTORY_MAX);
+    C.store.save();
+    C.notifySettings('history:changed');
+  }
+  ipcMain.handle('history:list', () => JSON.parse(JSON.stringify(historyList().filter((x) => x.game === C.tg()).map(({ body, ...x }) => ({ ...x, saved: savedList().some((s) => s.searchKey === x.searchKey) })))));
+  ipcMain.handle('history:clear', () => { C.store.data.searchHistory = historyList().filter((x) => x.game !== C.tg()); C.store.save(); return true; });
+  ipcMain.handle('history:save', (_e, id) => {
+    const h = historyList().find((x) => x.id === id);
+    if (!h) return { ok: false };
+    if (savedList().find((x) => x.searchKey === h.searchKey)) return { ok: true, already: true };
+    savedList().unshift({ id: 's' + Date.now().toString(36), name: h.title, league: h.league, game: h.game, body: h.body, searchKey: h.searchKey,
+      mode: h.mode, itemClass: h.itemClass, itemName: h.itemName, lastTotal: h.total, lastRun: h.at, created: Date.now(), lastIds: [], alert: false });
+    C.store.save();
+    C.notifySettings('saved:changed');
+    return { ok: true };
+  });
+  ipcMain.handle('history:run', C.inGame(async (_e, id) => {
+    const h = historyList().find((x) => x.id === id);
+    if (!h) return { ok: false, error: 'That search is no longer in the history.' };
+    if (h.game !== C.tg()) return { ok: false, error: 'That search is for the other game.' };
+    await C.refreshDivineRate(false);
+    const body = JSON.parse(JSON.stringify(h.body));
+    const r = await C.runSearch(h.league, body, `history ${h.title}`, { game: h.game });
+    if (!r.ok) return r;
+    const prev = h.total;
+    const item = { itemClass: h.itemClass, name: h.itemName, slot: require('../core/slots').slotForClass(h.itemClass) };
+    await C.openIfAny(r, { item, mode: h.mode, title: h.title, body, searchKey: h.searchKey });
+    return { ok: true, total: r.total, prev, inApp: r.inApp };
+  }));
+
+  return { savedList, runAlerts, keepNotification, record };
 };

@@ -429,3 +429,21 @@ test('Mageblood Legacies are in statSources', () => {
   assert.equal(src.find((x) => x.key === '#% to Lightning Resistance').source, 'mod');
   assert.equal(src.find((x) => x.key === 'Has # Charm Slots').source, 'implicit');
 });
+
+test('leveling mode: a level cap goes into the search and the label', () => {
+  const body = { query: { filters: {} } };
+  T.applyBudget(body, { maxLevel: 34 });
+  assert.equal(body.query.filters.req_filters.filters.lvl.max, 34);
+  assert.equal(T.budgetLabel({ max: 20, currency: 'divine', divineRate: 150, maxLevel: 34 }), '≤ 20 div · lvl ≤ 34');
+  assert.equal(T.budgetLabel({ maxLevel: 34 }), 'lvl ≤ 34');
+});
+
+test('skip corrupted: adds corrupted=false, but never overrides a search that sets it', () => {
+  const body = { query: { filters: {} } };
+  T.applyBudget(body, { noCorrupted: true });
+  assert.equal(body.query.filters.misc_filters.filters.corrupted.option, 'false');
+  const price = { query: { filters: { misc_filters: { filters: { corrupted: { option: 'true' } } } } } };
+  T.applyBudget(price, { noCorrupted: true });
+  assert.equal(price.query.filters.misc_filters.filters.corrupted.option, 'true');
+  assert.equal(T.budgetLabel({ noCorrupted: true }), 'not corrupted');
+});

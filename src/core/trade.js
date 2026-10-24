@@ -579,14 +579,34 @@ function priceFilter(budget, game) {
 }
 
 function applyBudget(body, budget, game) {
+  if (!body || !body.query) return body;
+  // leveling mode: only items you can wear at your level (budget.maxLevel)
+  const lvl = budget && Number(budget.maxLevel);
+  if (lvl > 0) {
+    body.query.filters = body.query.filters || {};
+    const rf = body.query.filters.req_filters || { filters: {} };
+    rf.filters = { ...(rf.filters || {}), lvl: { ...((rf.filters || {}).lvl || {}), max: Math.round(lvl) } };
+    body.query.filters.req_filters = rf;
+  }
+  // skip corrupted items (unless the search itself asks about corruption, as a price check does)
+  if (budget && budget.noCorrupted) {
+    body.query.filters = body.query.filters || {};
+    const mf = body.query.filters.misc_filters || { filters: {} };
+    if (!((mf.filters || {}).corrupted)) { mf.filters = { ...(mf.filters || {}), corrupted: { option: 'false' } }; body.query.filters.misc_filters = mf; }
+  }
   const price = priceFilter(budget, game);
-  if (!price || !body || !body.query) return body;
+  if (!price) return body;
   body.query.filters = body.query.filters || {};
   body.query.filters.trade_filters = { filters: { price } };
   return body;
 }
 
 function budgetLabel(budget, game) {
+  const lvl = (budget && Number(budget.maxLevel) > 0 ? ` · lvl ≤ ${Math.round(budget.maxLevel)}` : '') + (budget && budget.noCorrupted ? ' · not corrupted' : '');
+  const r = priceLabel(budget, game);
+  return r ? r + lvl : lvl ? lvl.slice(3) : null;
+}
+function priceLabel(budget, game) {
   const price = priceFilter(budget, game);
   if (!price) return null;
   const name = { divine: 'div', exalted: 'ex', chaos: 'chaos' }[budget.currency] || 'div';

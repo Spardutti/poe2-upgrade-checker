@@ -132,7 +132,7 @@ local function pick(o)
   local m = o.Minion or {}
   local r = {
     FullDPS = num(o.FullDPS), CombinedDPS = num(o.CombinedDPS), TotalDPS = num(o.TotalDPS),
-    MinionDPS = num(m.CombinedDPS) or num(m.TotalDPS), MinionLife = num(m.Life), MinionES = num(m.EnergyShield),
+    MinionDPS = num(m.CombinedDPS) or num(m.TotalDPS), AverageHit = num(o.AverageHit) or num(o.MainHand and o.MainHand.AverageHit), MinionAverageHit = num(m.AverageHit) or num(m.MainHand and m.MainHand.AverageHit), MinionLife = num(m.Life), MinionES = num(m.EnergyShield),
     Life = num(o.Life), EnergyShield = num(o.EnergyShield), Mana = num(o.Mana), Ward = num(o.Ward),
     TotalEHP = num(o.TotalEHP), Armour = num(o.Armour), Evasion = num(o.Evasion),
     Spirit = num(o.Spirit), SpiritUnreserved = num(o.SpiritUnreserved), ManaUnreserved = num(o.ManaUnreserved),
@@ -323,6 +323,8 @@ local function grab(o, keys)
   if not o then return r end
   for _, k in ipairs(keys) do
     local v = o[k]
+    -- dual wielding: PoB keeps some per-hit numbers on the main hand only
+    if v == nil and o.MainHand and (k == "AverageHit" or k == "CritChance" or k == "CritMultiplier" or k == "HitChance" or k == "Accuracy") then v = o.MainHand[k] end
     if type(v) == "boolean" then r[k] = v else r[k] = num(v) end
   end
   return r
@@ -583,6 +585,81 @@ end
 -- PoE1 loot filter: the affix names ("Virile", "of the Rainbow") of the higher tiers of trade stats,
 -- for mods that can roll on an item with these tags (ring, amulet, belt, helmet, gloves...).
 --   req: { ids = { "explicit.stat_3299347043", ... }, tags = { "ring" }, tiers = 3 } -> { [id] = { {affix, level, type}, ... } }
+-- a skill or support gem you copied, at its level and quality, in place of the same gem in your build
+-- (every group that uses it): what it changes. { name, level, quality } -> { before, hits = { {group, level, quality, after} } }
+local function gemCheck(req)
+  local want = tostring(req.name or ""):lower()
+  if want == "" then return { ok = false, error = "no gem" } end
+  local calcFunc, base = build.calcsTab:GetMiscCalculator()
+  local hits = {}
+  for _, g in ipairs(build.skillsTab.socketGroupList or {}) do
+    if g.enabled ~= false then
+      for _, gem in ipairs(g.gemList or {}) do
+        local ge = gem.grantedEffect or (gem.gemData and gem.gemData.grantedEffect)
+        local nm = (gem.gemData and gem.gemData.name) or gem.nameSpec or (ge and ge.name)
+        if nm and tostring(nm):lower() == want and gem.enabled ~= false then
+          local oldL, oldQ = gem.level, gem.quality
+          if req.level then gem.level = req.level end
+          if req.quality then gem.quality = req.quality end
+          local ok, after = pcall(calcFunc, {})
+          gem.level, gem.quality = oldL, oldQ
+          hits[#hits + 1] = { group = g.displayLabel or g.label, level = oldL, quality = oldQ, after = ok and pick(after) or nil, error = (not ok) and tostring(after) or nil }
+        end
+      end
+    end
+  end
+  return { ok = true, before = pick(base), hits = hits }
+end
+
+-- PoE1 boss check: Path of Building's boss skill presets (Configuration → Boss Skill Preset) at the
+-- Pinnacle and Uber tiers, one at a time: how many of each hit you can take. Your own configuration is
+-- put back afterwards. { tiers = { "Pinnacle", "Uber" } } -> { before, skills = { {name, tier, hits, avgHits, damage} } }
+local function bossCheck(req)
+  local cfg = build.configTab
+  if not (data.bossSkills and data.bossSkillsList and cfg.varControls and cfg.varControls.presetBossSkills) then return { ok = false, error = "this Path of Building has no boss presets" } end
+  local set = cfg.configSets[cfg.activeConfigSetId]
+  local input, ph = set.input, set.placeholder
+  local savedIn, savedPh = copyTable(input), copyTable(ph)
+  local function restore()
+    wipeTable(input); for k, v in pairs(savedIn) do input[k] = v end
+    wipeTable(ph); for k, v in pairs(savedPh) do ph[k] = v end
+    local c = cfg.varControls
+    if c.enemyIsBoss then c.enemyIsBoss:SelByValue(input.enemyIsBoss or cfg:GetDefaultState("enemyIsBoss"), "val") end
+    if c.enemyDamageType then c.enemyDamageType:SelByValue(input.enemyDamageType or cfg:GetDefaultState("enemyDamageType"), "val"); c.enemyDamageType.enabled = true end
+    cfg:BuildModList()
+  end
+  -- your own enemy damage numbers would override the preset's
+  local clear = { "enemyDamageType", "enemySpeed", "enemyCritChance", "enemyPhysicalOverwhelm", "enemyLightningPen", "enemyColdPen", "enemyFirePen" }
+  for _, t in ipairs({ "Physical", "Lightning", "Cold", "Fire", "Chaos" }) do clear[#clear + 1] = "enemy" .. t .. "Damage" end
+  local skills = {}
+  local okAll, err = pcall(function()
+    for _, tier in ipairs(req.tiers or { "Pinnacle", "Uber" }) do
+      for _, entry in ipairs(data.bossSkillsList) do
+        local name = entry.val
+        if name and name ~= "None" and data.bossSkills[name] then
+          for _, k in ipairs(clear) do input[k] = nil end
+          input.enemyIsBoss = tier
+          cfg.varControls.enemyIsBoss:SelByValue(tier, "val")
+          input.presetBossSkills = name
+          cfg:BuildModList()
+          local calcFunc = build.calcsTab:GetMiscCalculator()
+          local ok, o = pcall(calcFunc, {}, false)
+          if ok and o then
+            local dmg = 0
+            for _, t in ipairs({ "Physical", "Lightning", "Cold", "Fire", "Chaos" }) do dmg = dmg + (num(ph["enemy" .. t .. "Damage"]) or 0) end
+            skills[#skills + 1] = { name = name, tier = tier, hits = num(o.NumberOfMitigatedDamagingHits), avgHits = num(o.TotalNumberOfHits), damage = dmg > 0 and dmg or nil, damageType = data.bossSkills[name].DamageType }
+          else
+            skills[#skills + 1] = { name = name, tier = tier, error = tostring(o) }
+          end
+        end
+      end
+    end
+  end)
+  restore()
+  if not okAll then return { ok = false, error = tostring(err) } end
+  return { ok = true, skills = skills }
+end
+
 local function affixNames(req)
   local want = {}
   for _, id in ipairs(req.ids or {}) do local h = tostring(id):match("stat_(%d+)$"); if h then want[tonumber(h)] = id end end
@@ -720,6 +797,10 @@ while true do
       return genQuery(req)
     elseif req.cmd == "summary" then
       return summary()
+    elseif req.cmd == "bosscheck" then
+      return bossCheck(req)
+    elseif req.cmd == "gemcheck" then
+      return gemCheck(req)
     elseif req.cmd == "affixes" then
       return affixNames(req)
     elseif req.cmd == "mapcheck" then

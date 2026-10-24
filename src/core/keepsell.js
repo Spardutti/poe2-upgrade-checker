@@ -41,6 +41,9 @@
     const rarity = String(it.rarity || '').toLowerCase();
     const unit = r.unit || 'ex';
     const rate = Number(r.ui && r.ui.divineRate) || 0;
+    if (r.kind === 'price' && r.gem && r.gem.hits.some((h) => (h.verdict === 'upgrade' || h.verdict === 'small') && !(h.level === h.newLevel && h.quality === h.newQuality))) {
+      return { action: 'keep', text: 'better than the one in your build' };
+    }
     if (r.kind === 'price') {
       // currency, cards, gems...: only worth a word when we know the price
       if (/currency|stackable/i.test(it.itemClass || '') || !r.ninja) return null;

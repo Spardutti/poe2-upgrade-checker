@@ -114,3 +114,11 @@ test('pob verdict: a main skill with no damage on both sides is flagged', () => 
   const j = V.judge({ TotalDPS: 0, TotalEHP: 1000 }, { TotalDPS: 0, TotalEHP: 1100 });
   assert.strictEqual(j.noDamage, true);
 });
+
+test('damage per hit: the main skill\'s average hit, or the minions\' for a minion build', () => {
+  const V = require('../src/core/pobverdict');
+  const a = V.judge({ CombinedDPS: 1000, AverageHit: 500, TotalEHP: 5000 }, { CombinedDPS: 1100, AverageHit: 560, TotalEHP: 5000 }, {});
+  assert.deepEqual([a.hit.from, a.hit.to], [500, 560]);
+  const m = V.judge({ MinionDPS: 1000, MinionAverageHit: 300, AverageHit: 5, TotalEHP: 5000 }, { MinionDPS: 1200, MinionAverageHit: 360, AverageHit: 5, TotalEHP: 5000 }, {});
+  assert.deepEqual([m.hit.from, m.hit.to], [300, 360]);
+});

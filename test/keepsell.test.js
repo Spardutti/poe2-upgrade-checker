@@ -36,3 +36,20 @@ test('keepsell: a stack is valued whole; unjudged PoE1 flasks get no advice', ()
   assert.strictEqual(K.advise(base({ verdict: 'new', item: { rarity: 'Magic', slot: 'Flask' } })), null);
   assert.strictEqual(K.advise(base({ verdict: 'upgrade', item: { rarity: 'Magic', slot: 'Flask' }, pob: {} })).action, 'keep');
 });
+
+test('a gem better than the one in your build is a keep', () => {
+  const ks = require('../src/core/keepsell.js');
+  const r = { ok: true, kind: 'price', item: { name: 'Perforate', itemClass: 'Skill Gems', rarity: 'Gem' }, ninja: { each: 1, unit: 'chaos' },
+    gem: { hits: [{ group: 'Perforate', level: 20, quality: 20, newLevel: 21, newQuality: 20, verdict: 'upgrade' }] } };
+  assert.equal(ks.advise(r).action, 'keep');
+  r.gem.hits[0].verdict = 'same';
+  assert.notEqual((ks.advise(r) || {}).action, 'keep');
+});
+
+test('sell note: a little under poe.ninja, divines when worth one', () => {
+  const n = require('../src/core/ninja.js');
+  assert.equal(n.sellNote({ total: 900, totalDiv: 4.3, unit: 'chaos', stack: 1 }).note, '~price 4 divine');
+  assert.equal(n.sellNote({ total: 150, totalDiv: 0.8, unit: 'chaos', stack: 1 }).note, '~price 143 chaos');
+  assert.equal(n.sellNote({ total: 12, totalDiv: 0.05, unit: 'ex', stack: 20 }).note, '~price 11 exalted');
+  assert.equal(n.sellNote({ total: 0.4, totalDiv: 0.001, unit: 'ex', stack: 1 }), null);
+});

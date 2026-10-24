@@ -33,6 +33,7 @@ async function load() {
   loadBudget();
   renderIgnore();
   renderSaved();
+  renderHistory();
   $('#buildSel').innerHTML = (state.builds || []).map((b) => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join('') + '<option value="off">None – score by my own stat weights</option>';
   $('#buildSel').value = state.settings.build || state.defaultBuild;
   // "By my weights" only makes sense when you score by stat weights (build turned off)
@@ -472,6 +473,11 @@ function loadBudget() {
   $('#autoRate').checked = auto;
   $('#divineRate').readOnly = auto;
   $('#divineRate').value = auto ? (state.settings.divineRate || '') : ((b && b.divineRate) || state.settings.divineRate || '');
+  const lv = state.settings.leveling || {};
+  $('#levelOn').checked = !!lv.on;
+  $('#noCorrupted').checked = state.settings.noCorrupted === true;
+  $('#levelCap').value = lv.level || state.charLevel || '';
+  $('#levelFromPob').classList.toggle('hidden', !state.charLevel || Number(lv.level) === state.charLevel);
   budgetHelp();
 }
 function ago(t) {
@@ -497,6 +503,18 @@ async function saveBudget() {
 ['#budgetMin', '#budgetMax', '#budgetCurrency', '#divineRate'].forEach((id) => $(id).addEventListener('change', saveBudget));
 $('#budgetMax').addEventListener('input', budgetHelp);
 $('#budgetMin').addEventListener('input', budgetHelp);
+// leveling mode: upgrade searches only find items you can wear at your level
+async function saveLeveling() {
+  const level = Math.max(1, Math.min(100, Math.round(Number($('#levelCap').value) || 0))) || null;
+  await window.api.setSetting('leveling', { on: $('#levelOn').checked && !!level, level });
+  state = await window.api.getState();
+  $('#levelFromPob').classList.toggle('hidden', !state.charLevel || level === state.charLevel);
+  budgetHelp();
+}
+$('#levelOn').addEventListener('change', () => { if ($('#levelOn').checked && !$('#levelCap').value && state.charLevel) $('#levelCap').value = state.charLevel; saveLeveling(); });
+$('#levelCap').addEventListener('change', saveLeveling);
+$('#noCorrupted').addEventListener('change', async () => { await window.api.setSetting('noCorrupted', $('#noCorrupted').checked); });
+$('#levelFromPob').addEventListener('click', () => { $('#levelCap').value = state.charLevel; saveLeveling(); });
 $('#budgetClear').addEventListener('click', () => { $('#budgetMax').value = ''; $('#budgetMin').value = ''; saveBudget(); });
 
 $('#autoRate').addEventListener('change', async () => {
@@ -632,7 +650,27 @@ async function renderSaved() {
   }));
   renderAlertStatus();
 }
-window.api.onSavedChanged(renderSaved);
+window.api.onSavedChanged(() => { renderSaved(); renderHistory(); });
+window.api.onHistoryChanged(renderHistory);
+const histMsgs = {}; // a search's last message, kept when the list is redrawn
+async function renderHistory() {
+  const list = await window.api.historyList();
+  $('#historyClear').classList.toggle('hidden', !list.length);
+  $('#historyList').innerHTML = list.length ? list.map((x) => `<tr>
+      <td><b>${esc(x.title)}</b><div class="dim">${esc(x.league || '')}${x.total != null ? ` · ${esc(x.total)} listed` : ''} · ${esc(ago(x.at))}</div><div class="note" data-histmsg="${esc(x.searchKey)}">${esc(histMsgs[x.searchKey] || '')}</div></td>
+      <td class="nowrap"><button class="primary gilded" data-hrun="${esc(x.id)}" data-hkey="${esc(x.searchKey)}">Run again</button> ${x.saved ? '<span class="dim small">saved</span>' : `<button data-hsave="${esc(x.id)}">☆ Save</button>`}</td></tr>`).join('')
+    : '<tr><td class="dim">Searches you run show up here.</td></tr>';
+  document.querySelectorAll('[data-hrun]').forEach((b) => b.addEventListener('click', async () => {
+    const key = b.dataset.hkey;
+    const say = (t) => { histMsgs[key] = t; const m = document.querySelector(`[data-histmsg="${key}"]`); if (m) m.textContent = t; };
+    say('Searching…'); b.disabled = true;
+    const r = await window.api.historyRun(b.dataset.hrun);
+    b.disabled = false;
+    say(!r.ok ? (r.error || 'Search failed.') : r.total === 0 ? 'Nothing listed right now.' : `${r.total} listed${r.prev != null && r.total != null ? ` (${r.total - r.prev >= 0 ? '+' : ''}${r.total - r.prev} since then)` : ''}.`);
+  }));
+  document.querySelectorAll('[data-hsave]').forEach((b) => b.addEventListener('click', async () => { await window.api.historySave(b.dataset.hsave); }));
+}
+$('#historyClear').addEventListener('click', async () => { await window.api.historyClear(); renderHistory(); });
 
 // ---------- suggested weights ----------
 $('#suggestBtn').addEventListener('click', async () => {
@@ -773,7 +811,7 @@ const WIZ = [
     title: 'Your hotkey',
     body: () => `<p>Your check-item hotkey is <b>${esc((state.hotkeyStatus && state.hotkeyStatus.accelerator) || state.settings.hotkey || 'F2')}</b>${state.hotkeyStatus && state.hotkeyStatus.ok ? ' and it\'s working.' : ' – <span class="note">it isn\'t working: another program may be using it. Pick another key in Settings after this guide.</span>'}</p>
       <p>Where should the popup appear?</p><div class="row"><select id="wizPos"><option value="cursor">Next to the mouse</option><option value="left">Left side of the screen</option><option value="right">Right side of the screen</option><option value="top">Top of the screen</option></select> <button id="wizTest">Show a test popup</button></div>
-      <p class="help">If it covers the game's item tooltip, pick a side of the screen.</p>`,
+      <p class="help">If it covers the game's item tooltip, pick a side of the screen, or drag the popup by its name: it stays where you put it.</p>`,
     after: () => { $('#wizPos').value = state.settings.popupPosition || 'cursor'; $('#wizPos').addEventListener('change', async () => { await window.api.setSetting('popupPosition', $('#wizPos').value); }); $('#wizTest').addEventListener('click', () => window.api.testPopup()); },
   },
   {

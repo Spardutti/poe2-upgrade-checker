@@ -261,7 +261,16 @@ function flaskNote(r, m) {
 // PoE1 checks Path of Building's quick calculation can't make: it keeps your gems linked whatever
 // the new item's sockets are, and judges a quiver as if any weapon could use it
 function gearBreaks(j, item, pobSlot) {
-  if (!item || tg() !== 'poe1') return;
+  if (!item) return;
+  // amulets: the anoint (PoE1) or instill (PoE2) is part of the item, so Path of Building counts yours as
+  // lost on one without it (and adds the new one's); say so, since it can be put on again
+  if (pobSlot === 'Amulet') {
+    const anoint = (it) => { const m = String((it && (it.raw || it.listingText)) || '').match(/^Allocates (.+?)(?: \(enchant\))?\s*$/m); return m ? m[1].trim() : null; };
+    const mine = anoint(store.equipped.Amulet); const theirs = anoint(item);
+    const p1 = tg() === 'poe1';
+    if (mine && mine !== theirs) j.breaks.push(`Your amulet's ${p1 ? 'anoint' : 'instilled passive'} (${mine}) isn't on this one${theirs ? ` (it has ${theirs})` : ''}: the verdict counts that. ${p1 ? 'Anointing it again costs oils' : 'Instilling it again costs Distilled Emotions'}`);
+  }
+  if (tg() !== 'poe1') return;
   const add = (msg, bad) => {
     j.breaks.push(msg);
     if (bad || !(j.score > 0)) { if (!['resloss', 'dmgloss'].includes(j.verdict)) j.verdict = 'downgrade'; } else if (['upgrade', 'small', 'same'].includes(j.verdict)) j.verdict = 'risky';
@@ -599,6 +608,20 @@ function createPopup() {
   popup.setAlwaysOnTop(true, 'screen-saver');
   popup.loadFile(path.join(__dirname, 'ui', 'popup.html'));
   popup.on('blur', () => { if (!popupHovered) scheduleHide(1500); });
+  // you dragged it (by its name): it stays there from now on (Settings → Popup → Position: where I dragged it)
+  let moveTimer = null;
+  popup.on('move', () => {
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => {
+      if (!popup || !popup.isVisible() || !placedAt) return;
+      const b = popup.getBounds();
+      if (Math.abs(b.x - placedAt.x) <= 2 && Math.abs(b.y - placedAt.y) <= 2) return; // our own placing
+      placedAt = { x: b.x, y: b.y };
+      store.setSetting('popupDragged', { x: b.x, y: b.y });
+      if (store.settings.popupPosition !== 'dragged') { store.setSetting('popupPosition', 'dragged'); notifySettings('settings:changed'); }
+      log(`popup dragged to ${b.x},${b.y}`);
+    }, 250);
+  });
   popup.on('closed', () => { popup = null; });
   popup.webContents.on('render-process-gone', () => { try { popup.destroy(); } catch (_) {} popup = null; });
 }
@@ -608,14 +631,19 @@ function popupWidth() { return Math.round(400 * uiScale()); }
 
 // Where the popup goes (Options → Popup position): next to the mouse, or
 // pinned to a side / the top of the screen so it never covers the game's tooltip.
+let placedAt = null; // where the app last put the popup: a different place means you dragged it
 function placePopupNearCursor(height) {
   const cursor = screen.getCursorScreenPoint();
   const area = screen.getDisplayNearestPoint(cursor).workArea;
   const w = popupWidth();
   const h = Math.max(120, Math.min((height || 300) * uiScale(), area.height - 20));
-  const pos = store.settings.popupPosition || 'cursor';
+  let pos = store.settings.popupPosition || 'cursor';
+  const dragged = store.settings.popupDragged;
+  if (pos === 'dragged' && !(dragged && Number.isFinite(dragged.x) && Number.isFinite(dragged.y))) pos = 'cursor';
   let x; let y;
-  if (pos === 'left') { x = area.x + 16; y = area.y + Math.round(area.height * 0.12); }
+  let area2 = area;
+  if (pos === 'dragged') { area2 = screen.getDisplayNearestPoint({ x: dragged.x, y: dragged.y }).workArea; x = dragged.x; y = dragged.y; }
+  else if (pos === 'left') { x = area.x + 16; y = area.y + Math.round(area.height * 0.12); }
   else if (pos === 'right') { x = area.x + area.width - w - 16; y = area.y + Math.round(area.height * 0.12); }
   else if (pos === 'top') { x = area.x + Math.round((area.width - w) / 2); y = area.y + 16; }
   else {
@@ -624,8 +652,9 @@ function placePopupNearCursor(height) {
     if (x + w > area.x + area.width) x = cursor.x - w - 24;
     y = cursor.y - Math.round(h / 3);
   }
-  x = Math.max(area.x + 4, Math.min(x, area.x + area.width - w - 4));
-  y = Math.max(area.y + 4, Math.min(y, area.y + area.height - h - 4));
+  x = Math.max(area2.x + 4, Math.min(x, area2.x + area2.width - w - 4));
+  y = Math.max(area2.y + 4, Math.min(y, area2.y + area2.height - h - 4));
+  placedAt = { x: Math.round(x), y: Math.round(y) };
   popup.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: Math.round(h) });
   try { popup.webContents.setZoomFactor(uiScale()); } catch (_) { /* ignore */ }
 }
@@ -675,6 +704,7 @@ function revealPopup(height) {
     const area = screen.getDisplayMatching(b).workArea;
     const h = Math.round(Math.min(Math.max(height * uiScale(), 120), area.height - 8));
     const y = Math.max(area.y + 4, Math.min(b.y, area.y + area.height - h - 4));
+    placedAt = { x: b.x, y };
     popup.setBounds({ ...b, y, height: h });
   }
   if (!popupHovered) scheduleHide((store.settings.autoHideSeconds || 12) * 1000);
@@ -705,7 +735,7 @@ function showResult(result) {
   // uniques: poe.ninja's price next to the verdict
   if (result && result.ok && result.kind !== 'price' && result.item && /unique/i.test(result.item.rarity || '')) {
     const item = popupItem;
-    ninjaPrice(result.item).then((p) => { if (p) result.ninja = p; })
+    ninjaPrice(result.item).then((p) => { if (p) { result.ninja = p; result.sellNote = ninjaLib.sellNote(p); } })
       .catch((err) => log('poe.ninja: ' + err.message))
       .then(() => { if (result.ninja && seq === popupSeq && popupItem === item && popup && !popup.isDestroyed() && popup.isVisible()) popup.webContents.send('popup:result', serialise(result)); });
   }
@@ -1256,6 +1286,35 @@ ipcMain.handle('pob:sheet', async (_e, refresh) => {
     return { ...out, error: err.message || String(err), sheet: last ? last.sheet : null, at: last ? last.at : null };
   }
 });
+// search strings to paste into the game's search box (stash, vendor, map device)
+const searchStr = require('./core/searchstr');
+function resShort() {
+  const rs = liveResists();
+  if (!rs) return [];
+  return ['fire', 'cold', 'lightning'].filter((el) => rs[el] != null && rs[el] < ((rs.caps && rs.caps[el]) || rs.cap || 75));
+}
+function avoidKeys(extra) {
+  const marks = ((store.settings.mapMarks || {})[tg()]) || {};
+  return [...(Array.isArray(extra) ? extra.filter((k) => typeof k === 'string').slice(0, 30) : []), ...Object.keys(marks).filter((k) => marks[k] === 'd')];
+}
+ipcMain.handle('strings:get', () => ({ game: tg(), resShort: resShort(), mapAvoid: searchStr.mapAvoid(avoidKeys()), limit: searchStr.LIMIT,
+  marked: avoidKeys().length }));
+ipcMain.handle('strings:vendor', (_e, opts) => searchStr.vendor({ ...(opts || {}), game: tg() }));
+ipcMain.handle('strings:mapAvoid', (_e, keys) => {
+  const r = searchStr.mapAvoid(avoidKeys(keys));
+  if (r.text) { try { clipboard.writeText(r.text); lastClip = r.text; } catch (_) { /* ignore */ } }
+  return r;
+});
+// PoE1: how many hits of each Path of Building boss preset your character takes (Pinnacle and Uber)
+ipcMain.handle('pob:bosscheck', async () => {
+  if (tg() !== 'poe1') return { ok: false, error: 'The boss check is for Path of Exile 1.' };
+  if (!pobOn()) return { ok: false, error: 'Add your Path of Building build on My gear first.' };
+  try {
+    await pobEngine().ensureLoaded();
+    const r = await pobEngine().bossCheck({});
+    return { ok: true, skills: (r.skills || []).filter((x) => x.damageType !== 'DamageOverTime') };
+  } catch (err) { log('boss check: ' + (err.message || err)); return { ok: false, error: err.message || String(err) }; }
+});
 ipcMain.handle('pob:status', async (_e, load) => {
   const eng = pobEngine();
   const out = { available: eng.available(), hasBuild: !!pobXml(), on: pobOn(), enabled: store.settings.usePob !== false };
@@ -1300,6 +1359,7 @@ ipcMain.handle('state:get', () => JSON.parse(JSON.stringify({
   mainSlots: MAIN_SLOTS,
   ignorePresets: Object.entries(ignoreLib.PRESETS).map(([id, p]) => ({ id, label: p.label })),
   budgetLabel: trade.budgetLabel(budgetNow(), tg()),
+  charLevel: pobOn() ? ((pobEngine().info() || {}).level || null) : null,
   weights: store.weights,
   equipped: store.equipped,
   seenStats: Object.keys(store.data.seenStats),
@@ -1701,6 +1761,7 @@ async function runSearch(league, body, label, o = {}) {
 async function deliver(r, ctx) {
   if (!r.url || (r.total != null && r.total <= 0)) return r;
   if (r.game && r.game !== store.activeGame()) return SWITCHED(); // finished after you changed game
+  try { savedFeature.record(r, ctx); } catch (err) { log('history: ' + err.message); }
   const inApp = r.searchId && r.ids && r.ids.length;
   if (inApp) {
     const shown = await showResults(r, ctx || {});
@@ -1832,7 +1893,7 @@ function resultsPayload() {
     shown: listings.length, more: resultsState.next < r.ids.length,
     divineRate: resultsState.divineRate, unit: G(r.game).baseShort, game: r.game || tg(), gameBeta: !!G(r.game).beta, gameShort: G(r.game).short,
     otherGame: r.game && r.game !== tg() ? `These are ${G(r.game).name} results, kept as they were. Press F2 in ${G(r.game).short} (or pick your ${G(r.game).short} character) to check them with that character again.` : null,
-    listings: listings.map((x) => ({ ...x, item: x.item ? { name: x.item.name, baseType: x.item.baseType, rarity: x.item.rarity, itemLevel: x.item.itemLevel, lines: x.item.lines, id: x.item.id } : null })),
+    listings: listings.map((x) => ({ ...x, item: x.item ? { name: x.item.name, baseType: x.item.baseType, rarity: x.item.rarity, itemLevel: x.item.itemLevel, corrupted: !!x.item.corrupted, lines: x.item.lines, id: x.item.id } : null })),
     saved: !!(store.data.savedSearches || []).find((x) => x.searchKey === ctx.searchKey),
     signedIn: !!resultsState.signedIn,
     resFirst: !!pobPriorities().resFirst,
@@ -1950,8 +2011,16 @@ const HOUR = 3600 * 1000;
 const rateFetches = {}; // one poe.ninja fetch in flight per game
 
 // Budget with the auto rate filled in (uses the last fetched rate).
+// leveling mode (Find upgrades): only items you can wear at your level, for every upgrade search
+function levelCap() {
+  const lv = store.settings.leveling;
+  return lv && lv.on && Number(lv.level) > 0 ? Math.min(100, Math.round(Number(lv.level))) : null;
+}
 function budgetNow(b) {
-  const budget = b === undefined ? store.settings.budget : b;
+  const base = b === undefined ? store.settings.budget : b;
+  const cap = levelCap();
+  const noC = store.settings.noCorrupted === true;
+  const budget = cap || noC ? { ...(base || {}), ...(cap ? { maxLevel: cap } : {}), ...(noC ? { noCorrupted: true } : {}) } : base;
   if (!budget) return budget;
   if (budget.currency === 'divine' && store.settings.autoRate !== false && store.settings.divineRate > 0) {
     return { ...budget, divineRate: store.settings.divineRate };
@@ -2343,9 +2412,17 @@ ipcMain.handle('trade:openListing', (_e, listingId) => {
 // Instant Buyout: ask the trade site to take you to the seller's hideout (needs sign-in).
 ipcMain.handle('trade:hideout', async (_e, listingId) => {
   const l = resultsState && resultsState.listings.find((x) => x.id === listingId);
-  if (!l || !l.hideoutToken) return { ok: false, error: 'This listing has no hideout token – use Buy on trade site.' };
+  if (!l || !l.instant) return { ok: false, error: 'This seller takes whispers, not instant buyouts: use Copy whisper.' };
   if (!(await signedIn())) return { ok: false, needSignIn: true, error: 'Sign in to pathofexile.com first – it only takes you to hideouts for a signed-in account.' };
   try {
+    // the trade site only hands out the hideout token to a signed-in account: listings fetched by the app
+    // don't have it, so fetch this one listing again through your signed-in trade page (as the site does)
+    if (!l.hideoutToken) {
+      const got = await fetchViaPage(resultsState.r.league, resultsState.r.searchId, [l.id], resultsState.r.game);
+      const tok = got && got[0] && got[0].listing && got[0].listing.hideout_token;
+      if (!tok) return { ok: false, error: 'The trade site didn\'t offer a hideout trip for this listing (it may be sold). Try "on trade site".' };
+      l.hideoutToken = tok;
+    }
     if (!tradeWin || tradeWin.isDestroyed()) tradeWin = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, partition: POE_PARTITION } });
     if (!tradeWin.webContents.getURL().startsWith(trade.BASE)) await tradeWin.loadURL(trade.pageUrl(resultsState.r.game, resultsState.r.league));
     const js = `fetch('/api/${G(resultsState.r.game).trade.api}/whisper', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body: ${JSON.stringify(JSON.stringify({ token: l.hideoutToken }))} }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => ({})) }))`;

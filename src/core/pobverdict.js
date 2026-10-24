@@ -115,6 +115,8 @@ function judge(before, after, opts = {}) {
     ehp: { from: n(before.TotalEHP), to: n(after.TotalEHP), pct: ehpPct == null ? null : Math.round(ehpPct * 10) / 10 },
     es: delta('EnergyShield'), life: delta('Life'), mana: delta('Mana'), spirit: delta('Spirit'), spiritFree: delta('SpiritUnreserved'),
     minionLife: delta('MinionLife'),
+    // the main skill's average damage per hit (yours, or your minions' when they do the damage)
+    hit: key === 'MinionDPS' ? delta('MinionAverageHit') : delta('AverageHit'),
     res,
   };
 }

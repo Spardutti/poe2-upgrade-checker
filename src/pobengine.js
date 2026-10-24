@@ -178,6 +178,18 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game =
     if (!r.ok) throw new Error(r.error || 'Path of Building could not compare the items.');
     return r.results;
   }
+  // a copied gem at its level and quality in place of the same gem in the build
+  async function gemCheck(req) {
+    const r = await request({ cmd: 'gemcheck', ...req }, 60000);
+    if (!r.ok) throw new Error(r.error || 'Path of Building could not check the gem.');
+    return r;
+  }
+  // PoE1: how many hits of each Path of Building boss preset you can take (Pinnacle and Uber)
+  async function bossCheck(req) {
+    const r = await request({ cmd: 'bosscheck', ...(req || {}) }, 120000);
+    if (!r.ok) throw new Error(r.error || 'Path of Building could not run the boss check.');
+    return r;
+  }
   // PoE1 affix names of the top tiers of trade stats: { ids, tags, tiers } -> { [id]: [{ affix, level, type }] }
   async function affixes(req) {
     const r = await request({ cmd: 'affixes', ...req }, 60000);
@@ -201,7 +213,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game =
   }
 
   return {
-    available, start, stop, resetFailure, loadBuild, setBuild, evalItems, evalPairs, mapCheck, affixes, makeQuery,
+    available, start, stop, resetFailure, loadBuild, setBuild, evalItems, evalPairs, mapCheck, affixes, gemCheck, bossCheck, makeQuery,
     kill, sheet: async () => { if (!buildXml) return null; const r = await request({ cmd: "sheet" }, 60000); if (!r.ok) throw new Error(r.error || "Path of Building could not read the character."); return r; },
     ensureLoaded: async () => {
       if (!buildXml) return null;

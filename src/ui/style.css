@@ -467,3 +467,15 @@ button.primary.gilded:hover:not(:disabled) { color: #fff; background: linear-gra
 /* words that differ between the games (settings window) */
 body:not(.game-poe1) .p1 { display: none; }
 body.game-poe1 .p2 { display: none; }
+.warn-t { color: var(--warn); }
+table.kv.boss th { text-align: left; font-weight: 600; color: var(--ash); padding: 2px 6px 2px 0; }
+.sell-row { margin: 4px 0; font-size: 12px; display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.gem-check { margin: 4px 0; }
+.gem-check .verdict { margin: 2px 0; }
+.str-line { margin: 4px 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.str-line code { user-select: all; background: color-mix(in srgb, var(--ash) 12%, transparent); padding: 1px 5px; border-radius: 3px; word-break: break-all; }
+.row.wrap { flex-wrap: wrap; gap: 4px 12px; }
+.corrupt-tag { color: var(--down); font-weight: 600; }
+/* drag the popup by its name and subtitle */
+body.popup .card > .name, body.popup .card > .meta { -webkit-app-region: drag; cursor: move; }
+body.popup .card > .meta .beta-tag, body.popup .card button { -webkit-app-region: no-drag; }
