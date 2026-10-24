@@ -1,7 +1,7 @@
 <p align="center"><img src="docs/banner.png" alt="PoE Upgrade Checker: is it really an upgrade for your build? Path of Building decides." width="100%"></p>
 
 <p align="center">
-  <a href="https://github.com/ets-public/poe2-upgrade-checker/releases/latest"><img alt="Download" src="https://img.shields.io/github/v/release/ets-public/poe2-upgrade-checker?label=download&color=8e1a1a&labelColor=0a0c10&style=for-the-badge"></a>
+  <a href="https://poe2upgrade.com/download"><img alt="Download" src="https://img.shields.io/github/v/release/ets-public/poe2-upgrade-checker?include_prereleases&label=download&color=8e1a1a&labelColor=0a0c10&style=for-the-badge"></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%2F%2011-2c3038?labelColor=0a0c10&style=for-the-badge">
   <img alt="Linux" src="https://img.shields.io/badge/Linux-experimental-2c3038?labelColor=0a0c10&style=for-the-badge">
   <img alt="Free" src="https://img.shields.io/badge/price-free-7a6545?labelColor=0a0c10&style=for-the-badge">
@@ -20,7 +20,7 @@
 
 ## Download
 
-1. Get **`PoE-Upgrade-Checker-Setup-x.y.z.exe`** from the [latest release](https://github.com/ets-public/poe2-upgrade-checker/releases/latest) and run it. It installs for your Windows user only, so no admin rights are needed, and **updates itself**.
+1. Get **`PoE-Upgrade-Checker-Setup-x.y.z.exe`** from the [newest release](https://poe2upgrade.com/download) (the current beta, with PoE1 support) and run it. It installs for your Windows user only, so no admin rights are needed, and **updates itself**.
    - Prefer no install? Use the **Portable** .exe from the same page. It doesn't auto-update.
    - Windows may warn about an unrecognised app because the installer isn't code-signed. Click *More info → Run anyway*.
 2. In PoE2, go to **Options → Graphics** and set **Windowed Fullscreen**, so the overlay can draw over the game.
@@ -227,7 +227,7 @@ Questions, bugs or ideas: email **[support@poe2upgrade.com](mailto:support@poe2u
 
 For PoE2 running through **Steam with Proton** (or Lutris/Heroic) on desktop Linux: Ubuntu, Fedora, Arch, Bazzite and so on, on X11 or Wayland.
 
-1. Download **`PoE-Upgrade-Checker.AppImage`** from the [latest release](https://github.com/ets-public/poe2-upgrade-checker/releases/latest) and put it where you want to keep it (e.g. `~/Applications`).
+1. Download **`PoE-Upgrade-Checker.AppImage`** from the [newest release](https://poe2upgrade.com/download) (the current beta, with PoE1 support) and put it where you want to keep it (e.g. `~/Applications`).
 2. Make it executable and run it: right-click → Properties → *Allow executing as program*, or `chmod +x PoE-Upgrade-Checker.AppImage && ./PoE-Upgrade-Checker.AppImage`. It **updates itself** like the Windows installer, in place: the file keeps its name, so shortcuts and *Start with your desktop* keep working (a `PoE2-Upgrade-Checker.AppImage` from before the rename keeps that name too).
    - Had a version-named file from 0.4.1 or older (`PoE2-Upgrade-Checker-0.4.1.AppImage`)? Its next update renames it to `PoE-Upgrade-Checker.AppImage` once: start it from the new name (that also fixes the autostart entry) and update any shortcut you made.
    - Some distros need FUSE for AppImages (e.g. `sudo apt install libfuse2` on Ubuntu 22.04+).
