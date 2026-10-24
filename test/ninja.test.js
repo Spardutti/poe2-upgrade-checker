@@ -119,3 +119,28 @@ test('map check: 3.29 Thorns instead of reflect', () => {
   assert.strictEqual(M.ruleFor('Rare Monsters have Elemental Thorns', phys).level, 'ok');
   assert.strictEqual(M.ruleFor('Rare Monsters have Physical Thorns', { minion: true, damage: { Physical: 1 } }).level, 'ok');
 });
+
+test('map check: a 7-mod map keeps its mods with no number', () => {
+  const M = require('../src/core/mapcheck');
+  const mods = ['Players have -11% to all maximum Resistances', 'Monsters deal 97% extra Physical Damage as Fire',
+    'Monsters gain a Frenzy Charge on Hit', 'Monsters gain 45% of Maximum Life as Extra Maximum Energy Shield',
+    'Monsters gain 34% of their Physical Damage as Extra Chaos Damage', 'Monsters Inflict Withered for 2 seconds on Hit',
+    'Players cannot Regenerate Life, Mana or Energy Shield'];
+  const it = parseItem(['Item Class: Maps', 'Rarity: Rare', 'Pandemonium Frontier', 'Map (Tier 12)', '--------', 'Map Tier: 12', '--------', 'Item Level: 80', '--------', ...mods, '--------', 'Corrupted'].join('\n'));
+  assert.deepStrictEqual(M.modsOf(it), mods);
+  assert.strictEqual(M.check(it, { regen: 500, life: 3000 }, {}).verdict, 'warn');
+});
+
+test('map check: a unique map keeps its mods with no number', () => {
+  const M = require('../src/core/mapcheck');
+  const mods = ['Players cannot Regenerate Life, Mana or Energy Shield', 'Monsters deal 50% extra Physical Damage as Fire'];
+  const it = parseItem(['Item Class: Maps', 'Rarity: Unique', 'Altered Distant Memory', 'Map (Tier 16)', '--------', 'Map Tier: 16', '--------', 'Item Level: 83', '--------', ...mods].join('\n'));
+  assert.deepStrictEqual(M.modsOf(it), mods);
+});
+
+test('map check: other items still drop no-number text from a block over 6 lines', () => {
+  const lines = ['+80 to maximum Life', '+20% to Fire Resistance', '+20% to Cold Resistance', '+20% to Lightning Resistance',
+    '+10 to Strength', '+10 to Dexterity', 'Forged in the fires of Kitava'];
+  const it = parseItem(['Item Class: Body Armours', 'Rarity: Rare', 'A', 'Plate Vest', '--------', 'Armour: 100', '--------', 'Item Level: 80', '--------', ...lines].join('\n'));
+  assert.deepStrictEqual(it.lines.map((l) => l.text).filter((t) => lines.includes(t)), lines.slice(0, 6));
+});

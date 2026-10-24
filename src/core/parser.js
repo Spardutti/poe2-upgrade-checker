@@ -372,7 +372,7 @@ function parseItem(raw) {
       if (!stat) {
         // flavour text / keyword mods with no numbers - keep a flag stat for keyword mods
         if (/^Veiled (Prefix|Suffix)$/.test(modText)) item.veiled = true;
-        if (block.length <= 6 && item.rarity !== 'Unique') {
+        if (/^(maps|waystones)$/i.test(item.itemClass || '') || (block.length <= 6 && item.rarity !== 'Unique')) {
           // help text, the weapon-type line and "Fractured Item" are shown as info, not as mods
           const info = HELP_LINE.test(modText) || WEAPON_TYPE_LINE.test(modText) || /^Fractured Item$/i.test(modText);
           item.lines.push({ text: line, key: null, value: null, tag: info ? 'info' : tag });
