@@ -274,38 +274,11 @@ function gearBreaks(j, item, pobSlot) {
       add(`${what}: your ${g.label || 'gems'} in this slot use${g.gems === 1 ? 's' : ''} ${g.gems} linked gems${item.corrupted || links === 0 ? '' : ' (link it first)'}`, !!item.corrupted || links === 0);
     }
   }
-  // socket colours: the linked group your gems go in needs their colours (white sockets take any)
-  if (g && g.colours && item.sockets && /^(Weapon [12]|Helmet|Body Armour|Gloves|Boots)$/.test(pobSlot)) {
-    const miss = socketColoursMissing(item.sockets, g.colours);
-    if (miss) {
-      if (item.corrupted) add(`Wrong socket colours for your ${g.label || 'gems'} (needs ${miss}), and it's corrupted so they can't be changed`, true);
-      else j.breaks.push(`Needs recolouring for your ${g.label || 'gems'}: ${miss} (Chromatic Orbs or the crafting bench)`);
-    }
-  }
   const wep = store.equipped.Weapon;
   if (/^Quivers?$/i.test(item.itemClass || '') && wep && !/^Bows?$/i.test(wep.itemClass || '')) add('Quivers only work with a bow, and your weapon isn\'t one', true);
 }
 // PoE1 flasks and tinctures: Path of Building tries them in each of your five flask slots
 const isFlaskClass = (item) => !!item && /flask|tincture/i.test(item.itemClass || '');
-// "R-R-G-B B" and { R: 2, G: 1, B: 1, W: 0 } -> what the best linked group lacks ("1 more blue"), or null
-function socketColoursMissing(sockets, need) {
-  const groups = String(sockets || '').trim().split(/\s+/).filter(Boolean).map((grp) => grp.split('-'));
-  const total = Object.values(need).reduce((a, b) => a + (Number(b) || 0), 0);
-  let best = null;
-  for (const grp of groups) {
-    if (grp.length < total) continue;
-    const have = { R: 0, G: 0, B: 0, W: 0 };
-    for (const c of grp) if (have[c] != null) have[c]++;
-    const short = {}; let deficit = 0;
-    for (const c of ['R', 'G', 'B']) { const d = Math.max(0, (need[c] || 0) - have[c]); if (d) { short[c] = d; deficit += d; } }
-    if (deficit <= have.W) return null; // white sockets fill the gap
-    const left = deficit - have.W;
-    if (!best || left < best.left) best = { left, short };
-  }
-  if (!best) return null; // not enough links: said elsewhere
-  const word = { R: 'red', G: 'green', B: 'blue' };
-  return Object.entries(best.short).map(([c, d]) => `${d} more ${word[c]}`).join(', ');
-}
 // cluster and timeless jewels change the passive tree itself, which the quick calculation doesn't redo
 const isClusterJewel = (item) => !!item && (!!item.cluster || / Cluster Jewel$/i.test(item.baseType || ''));
 const isTimelessJewel = (item) => !!item && (/^Timeless Jewel$/i.test(item.baseType || '') || /^Timeless Jewel$/i.test(item.name || ''));

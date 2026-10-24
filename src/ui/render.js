@@ -179,7 +179,7 @@
       <ul>
         <li><b>pts</b> is Path of Building's score: the % change to your damage and effective HP (weighted as set on Build &amp; stats), plus half a point per resistance point toward your cap.</li>
         <li><span class="vchip up">UPGRADE</span> clearly better · <span class="vchip up">SMALL UPGRADE</span> a little better · <span class="vchip same">SIDEGRADE</span> about the same · <span class="vchip down">DOWNGRADE</span> worse ·
-          <span class="vchip risky">UPGRADE, BUT…</span> better, but it costs reservation, links, socket colours or a resistance below the cap ·
+          <span class="vchip risky">UPGRADE, BUT…</span> better, but it costs reservation, links or a resistance below the cap ·
           <span class="vchip down">LOSES RESISTANCE</span> a resistance drops off the cap · <span class="vchip down">LOSES DAMAGE</span> your damage drops. Both go to the bottom of the results.</li>
         <li>Rings are compared with your weakest ring, jewels in each of your sockets, flasks in your flask slots. Cluster and timeless jewels aren't judged yet.</li>
         ${opts.pobOn ? '' : '<li><b>No build loaded:</b> paste your Path of Building Community export on My gear, or items get no verdict.</li>'}

@@ -68,6 +68,20 @@ function ruleFor(text, b) {
     if (s == null) return { level: 'warn', text: 'reflects physical damage: check your main skill' };
     return s > 0.1 ? { level: 'danger', text: `your main skill is ${Math.round(s * 100)}% physical damage: it comes back at you` } : { level: 'ok', text: 'your main skill deals almost no physical damage' };
   }
+  // 3.29: reflect became Thorns on rare monsters, a flat hit back (800 physical / 1500 elemental in
+  // red maps) when you hit them with that damage, reduced by your armour, block and resistances
+  if (/Physical Thorns/i.test(t)) {
+    if (b.minion) return { level: 'ok', text: "your minions' hits don't trigger it on you" };
+    const s = share(['Physical']);
+    if (s == null) return { level: 'warn', text: 'rare monsters hit back when hit by physical damage: check your main skill' };
+    return s > 0.1 ? { level: 'warn', text: `your main skill is ${Math.round(s * 100)}% physical: rare monsters hit back (up to 800 physical in red maps, reduced by your armour and block)` } : { level: 'ok', text: 'your main skill deals almost no physical damage' };
+  }
+  if (/Elemental Thorns/i.test(t)) {
+    if (b.minion) return { level: 'ok', text: "your minions' hits don't trigger it on you" };
+    const s = share(['Fire', 'Cold', 'Lightning']);
+    if (s == null) return { level: 'warn', text: 'rare monsters hit back when hit by elemental damage: check your main skill' };
+    return s > 0.1 ? { level: 'warn', text: `your main skill is ${Math.round(s * 100)}% elemental: rare monsters hit back (up to 1500 elemental in red maps, reduced by your resistances)` } : { level: 'ok', text: 'your main skill deals almost no elemental damage' };
+  }
   if (/cannot Regenerate/i.test(t)) {
     const r = Number(b.regen) || 0; const life = Number(b.life) || 0;
     return r > 0 && life > 0 && r / life > 0.02 ? { level: 'warn', text: `you regenerate ${Math.round(r)} life a second, which stops here` } : { level: 'ok', text: "you don't rely on regeneration" };

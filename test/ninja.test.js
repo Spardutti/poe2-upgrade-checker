@@ -111,3 +111,11 @@ test('ninja: the 7-day price history from the sparkline', () => {
   assert.deepStrictEqual(N.history({ data: [] }), []);
   assert.deepStrictEqual(N.history(null), []);
 });
+
+test('map check: 3.29 Thorns instead of reflect', () => {
+  const M = require('../src/core/mapcheck');
+  const phys = { damage: { Physical: 900, Fire: 10 } };
+  assert.strictEqual(M.ruleFor('Rare Monsters have Physical Thorns', phys).level, 'warn');
+  assert.strictEqual(M.ruleFor('Rare Monsters have Elemental Thorns', phys).level, 'ok');
+  assert.strictEqual(M.ruleFor('Rare Monsters have Physical Thorns', { minion: true, damage: { Physical: 1 } }).level, 'ok');
+});

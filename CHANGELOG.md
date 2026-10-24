@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **PoE1 3.29:** the map check knows Thorns (rare monsters with Physical or Elemental Thorns, which replaced reflect) and checks them against your main skill. Socket colours aren't checked any more, since any gem now fits any socket.
 - **Path of Building's score is shown as points** ("+6.3 pts for your build") instead of a %: it was never a plain percentage (damage and effective HP changes, weighted, plus half a point per resistance point toward your cap), and the tooltip says so.
 - **Clearer for PoE1:** no gear-score wording or profiles in PoE1 (My gear, Build & stats, the first-run guide), PoE1 items without a Path of Building build say NOT JUDGED instead of "empty slot", and maps without a build say NOT CHECKED instead of "looks fine".
 - **When poe.ninja can't be reached** the price card says so, instead of "no price".
@@ -9,7 +10,7 @@
 - **Build-value alerts:** on *Where to spend*, *Alert me…* on any slot: "tell me when a new Gloves listing is +10% for my build under 2 div". New listings are checked with your build and only the ones that clear it are notified.
 - **Price history:** the price card draws poe.ninja's last 7 days, and uniques get a small line next to their price.
 - **Faster prices and Where to spend:** every poe.ninja list for a game comes in one request (gathered by poe2upgrade.com's cache); Where to spend shows each slot as soon as it's searched and keeps its answer for 30 minutes; listing fetches slow down by themselves near the trade site's limit; Path of Building starts in the background when the app opens, so the first check is quicker.
-- **PoE1: flasks and tinctures are judged** by Path of Building in your flask slots (compared with the same flask, else the same kind), and a life or mana flask that recovers clearly more (or less) than yours says so in its verdict. Items whose socket colours don't suit your gems say so (corrupted ones count as a downgrade), a third ring slot (The Unseen Hand) is tried when your build has one, and Limited-to jewels you already have are only compared with themselves.
+- **PoE1: flasks and tinctures are judged** by Path of Building in your flask slots (compared with the same flask, else the same kind), and a life or mana flask that recovers clearly more (or less) than yours says so in its verdict. A third ring slot (The Unseen Hand) is tried when your build has one, and Limited-to jewels you already have are only compared with themselves.
 - **First-run guide asks your game and league** (Standard included).
 - **Get beta versions** (Settings → Updates): try new features early.
 - **Anonymous usage statistics:** a random install number, the app version, Windows or Linux and which game you used that day, sent to poe2upgrade.com a few times a day, so we know how many people use the app. No account, items or builds; no IP addresses kept. Off with Settings → *Send anonymous usage statistics*.
