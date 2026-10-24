@@ -153,8 +153,9 @@ function gearScore(item, opts) {
   const wasted = [];
   const used = new Set();
   const usedQ = new Map();
+  const resLeft = need && { ...need };
   const penalties = [];
-  for (const x of statSources(item)) {
+  for (const x of statSources(item).sort((a, b) => (a.source === 'socket') - (b.source === 'socket'))) {
     if (!Number.isFinite(x.value) || x.value === 0) continue;
     if (ignore(x.key)) continue;
     if (x.value < 0) {
@@ -183,10 +184,11 @@ function gearScore(item, opts) {
     const imp = impOf(e);
     const cap = pick(e.cap, slot) || 1;
     let value = x.value;
-    if (e.res && need && need[e.res] != null && value > need[e.res]) {
+    if (e.res && resLeft && resLeft[e.res] != null && value > resLeft[e.res]) {
       resNotes.push(need[e.res] > 0 ? `${e.res} res: you only need ${Math.round(need[e.res])} more to cap – the rest doesn't count.` : `${e.res} res: you're already capped – it doesn't count.`);
-      value = need[e.res];
+      value = resLeft[e.res];
     }
+    if (e.res && resLeft && resLeft[e.res] != null) resLeft[e.res] -= value;
     // one stat of the profile can't score more than one top roll, even from several mods
     // (implicit + explicit life, or "+# to all Attributes" counting as Str, Dex and Int)
     const sofar = usedQ.get(e) || 0;
@@ -209,7 +211,7 @@ function gearScore(item, opts) {
     .slice(0, 3)
     .filter((e) => impOf(e) >= 5)
     .map((e) => e.label);
-  return { score, grade: grade(score), slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions, penalties, wasted, missing, ideal: Math.round(ideal * 10) / 10, resNote: resNotes.join(' ') || null };
+  return { score, grade: grade(score), slot, build: opts.build || DEFAULT_BUILD, buildName: build.name, contributions, penalties, wasted, missing, ideal: Math.round(ideal * 10) / 10, resNote: [...new Set(resNotes)].join(' ') || null };
 }
 
 // Is this stat something the build wants on this slot? (used to colour the

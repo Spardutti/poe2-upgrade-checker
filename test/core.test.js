@@ -369,3 +369,37 @@ test('gear score: a downside on a wanted stat costs points', () => {
   assert.ok(neg.penalties[0].points < 0);
   assert.ok(gearScore(mk('-500% to Chaos Resistance'), {}).score >= 0);
 });
+
+test('gear score: the resistance you still need caps the total, not each line', () => {
+  const { gearScore } = require('../src/core/gearscore');
+  const mk = (mods) => parseItem(['Item Class: Rings', 'Rarity: Rare', 'A', 'Ruby Ring', '--------', 'Item Level: 80', '--------', ...mods].join('\n'));
+  const resNeed = { Fire: 20, Cold: 50, Lightning: 50, Chaos: 30 };
+  const split = gearScore(mk(['+25% to Fire Resistance (implicit)', '--------', '+30% to Fire Resistance']), { resNeed });
+  const one = gearScore(mk(['+55% to Fire Resistance']), { resNeed });
+  assert.equal(one.score, 8);
+  assert.equal(one.resNote, "Fire res: you only need 20 more to cap – the rest doesn't count.");
+  assert.equal(split.score, one.score);
+  assert.equal(split.resNote, one.resNote);
+});
+
+test('gear score: a resistance rune does not lower the score when a mod already fills the need', () => {
+  const { gearScore } = require('../src/core/gearscore');
+  const mk = (rune) => parseItem(['Item Class: Helmets', 'Rarity: Rare', 'A', 'Iron Cap', '--------', 'Armour: 100', '--------', ...rune, '+30% to Fire Resistance'].join('\n'));
+  const resNeed = { Fire: 20, Cold: 50, Lightning: 50, Chaos: 30 };
+  const plain = gearScore(mk([]), { resNeed });
+  const runed = gearScore(mk(['+12% to Fire Resistance (rune)']), { resNeed });
+  assert.equal(plain.score, 8);
+  assert.equal(runed.score, plain.score);
+});
+
+test('gear score: resistance at or below what you still need counts in full, with no note', () => {
+  const { gearScore } = require('../src/core/gearscore');
+  const mk = (fire) => parseItem(['Item Class: Rings', 'Rarity: Rare', 'A', 'Ruby Ring', '--------', 'Item Level: 80', '--------', fire].join('\n'));
+  const resNeed = { Fire: 20, Cold: 50, Lightning: 50, Chaos: 30 };
+  const below = gearScore(mk('+10% to Fire Resistance'), { resNeed });
+  const exact = gearScore(mk('+20% to Fire Resistance'), { resNeed });
+  assert.equal(below.score, 4);
+  assert.equal(below.resNote, null);
+  assert.equal(exact.score, 8);
+  assert.equal(exact.resNote, null);
+});
