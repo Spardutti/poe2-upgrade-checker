@@ -334,9 +334,9 @@
     const p = r.ninja;
     const what = [p && p.gemLevel ? `level ${p.gemLevel}${p.gemQuality ? `, ${p.gemQuality}% quality` : ''}` : '', p && p.links ? `${p.links}-link` : '', p && p.mapTier ? `tier ${p.mapTier}` : '', p && p.variant && !p.gemLevel ? p.variant : ''].filter(Boolean).join(' · ');
     el.innerHTML = `<div class="card price-card">
-        ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
         <div class="name ${esc((it.rarity || '').toLowerCase())}">${esc(it.name || '')}</div>
         <div class="meta">${esc(it.itemClass || '')}${p && p.stack > 1 ? ` · stack of ${nf(p.stack)}` : ''}${r.gameBeta ? ` <span class="beta-tag">${esc(r.gameShort || 'PoE1')} BETA</span>` : ''}</div>
+        ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
         ${r.pricePending ? '<div class="note"><span class="spinner"></span> Getting the price from poe.ninja…</div>' : ''}
         ${p ? `<div class="price-big">${ninjaPrice(p)} <span class="dim">each</span></div>
           ${p.stack > 1 ? `<div>Stack: ${ninjaPrice(p, true)}</div>` : ''}
@@ -381,9 +381,9 @@
     const [vt, vc] = r.noBuild && c.verdict === 'ok' && !(c.rows || []).some((m) => m.mark) ? ['NOT CHECKED', 'same'] : MAPV[c.verdict] || MAPV.ok;
     const tier = (it.lines || []).map((l) => l.text || '').find((t) => /^(Map|Waystone) Tier:/i.test(t));
     el.innerHTML = `<div class="card map-card">
-        ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
         <div class="name ${esc((it.rarity || '').toLowerCase())}">${esc(it.name || '')}</div>
         <div class="meta">${esc(it.baseType && it.baseType !== it.name ? it.baseType + ' · ' : '')}${esc(tier || it.itemClass || '')}${r.gameBeta ? ` <span class="beta-tag">${esc(r.gameShort || 'PoE1')} BETA</span>` : ''}</div>
+        ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
         <div class="verdict ${vc}"><span class="badge">${vt}</span>${c.all ? `<span class="dim">for your build: ${esc(c.all.text)}</span>` : ''}</div>
         ${r.pending ? '<div class="note"><span class="spinner"></span> Checking the mods with Path of Building…</div>' : ''}
         ${r.noBuild ? '<div class="dim small">Load your Path of Building build on My gear and each mod is worked out for your character.</div>' : ''}
@@ -474,9 +474,9 @@
     const lossBanner = window.resLossBanner(lossRows) + window.dmgLossBanner(dmgLoss);
     el.innerHTML = `
       <div class="card ${lossRows.length || dmgLoss ? 'res-loss' : ''}">
-        ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
         <div class="name ${esc(rarity)}">${esc(it.name || '')}</div>
         <div class="meta">${it.baseType && it.baseType !== it.name ? `${esc(it.baseType)} · ` : ''}${esc(it.itemClass || '')}${it.itemLevel ? ` · ilvl ${it.itemLevel}` : ''}${r.gameBeta ? ` <span class="beta-tag" title="Path of Exile 1 support is new: if a verdict looks wrong, send the log (Tray → Open log) to support@poe2upgrade.com">${esc(r.gameShort || 'PoE1')} BETA</span>` : ''}</div>
+        ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
         ${unique && !r.pob ? `<div class="verdict same"><span class="badge">UNIQUE</span>${r.replacing.length && !r.isEquipped ? `<span class="dim">vs ${esc(r.replacing.join(' + '))}</span>` : ''}</div>
           <div class="dim">${r.pobPending ? 'Checking with Path of Building…' : r.game === 'poe1' ? 'Load your Path of Building Community build on My gear to see what it does for your build – or check its price.' : "Uniques have fixed mods, so there's no gear score – check its price, or compare the changes below."}</div>`
           : `<div class="verdict ${v.cls}">

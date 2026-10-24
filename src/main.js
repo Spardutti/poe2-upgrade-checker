@@ -661,7 +661,12 @@ function placePopupNearCursor(height) {
 
 function scheduleHide(ms) {
   clearTimeout(hideTimer);
-  hideTimer = setTimeout(hidePopup, ms);
+  // the name line is a drag area, and Windows reports the mouse there as outside the page
+  hideTimer = setTimeout(() => {
+    const c = screen.getCursorScreenPoint(); const b = popup ? popup.getBounds() : null;
+    if (b && popup.isVisible() && c.x >= b.x && c.x < b.x + b.width && c.y >= b.y && c.y < b.y + b.height) return scheduleHide(1000);
+    hidePopup();
+  }, ms);
 }
 
 function hidePopup() {
