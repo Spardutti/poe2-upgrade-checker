@@ -72,7 +72,7 @@
       if (res.mode === 'gear') t += res.level === 1 ? ' No clear upgrade listed; these are a little better than yours.' : res.level > 1 ? ` Nothing beats yours yet; these come close (${res.levelLabel}).` : ` Clearly better for your build than yours${res.score != null ? ` (gear score ${res.score})` : ''} – best for your build first.`;
       if (res.fallback) t += ' The direct search failed, so a pre-filled link was used – see the log.';
     }
-    if (res.skipped && res.skipped.length) t += ` Left out rune bonuses: ${res.skipped.length}.`;
+    if (res.skipped && res.skipped.length) t += ` ${res.skipped.length} rune bonus${res.skipped.length === 1 ? '' : 'es'} left out (you can socket your own).`;
     if (res.ignored && res.ignored.length) t += ` Ignored: ${res.ignored.length} stat${res.ignored.length === 1 ? '' : 's'}.`;
     if (res.excluded) t += ' Listings with your excluded stats are hidden.';
     if (res.unmatched && res.unmatched.length) t += ` Not searchable: ${res.unmatched.join(', ')}.`;
@@ -92,7 +92,7 @@
     const n = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10);
     const sg = (v) => `${v > 0 ? '+' : '−'}${n(Math.abs(v))}`;
     const items = [];
-    if (ch.overall && ch.overall.delta) items.push({ cls: ch.overall.delta > 0 ? 'pos' : 'neg', html: `Overall gear score ${ch.overall.from} → <b>${ch.overall.to}</b>` });
+    if (ch.overall && ch.overall.delta) items.push({ cls: ch.overall.delta > 0 ? 'pos' : 'neg', html: `Average gear score of all you wear ${ch.overall.from} → <b>${ch.overall.to}</b>` });
     for (const r of ch.res || []) {
       if (r.from == null) { items.push({ cls: r.delta > 0 ? 'pos' : 'neg', html: `${esc(r.label)} ${sg(r.delta)}%` }); continue; }
       const capped = (v) => (v >= r.cap ? `${r.cap}%${v > r.cap ? ` (+${n(v - r.cap)} over)` : ''}` : `${n(v)}%`);
@@ -172,6 +172,19 @@
   // the popup's "why?" and on the Build & stats page.
   window.gearExplainHtml = function (opts) {
     opts = opts || {};
+    // PoE1 has no gear score: Path of Building's verdict is all there is
+    if (opts.game === 'poe1') {
+      return `<div class="gs-explain">
+      <p><b>Path of Exile 1 items are judged by Path of Building</b> with your build: your passive tree, skill gems and Configuration.</p>
+      <ul>
+        <li><b>pts</b> is Path of Building's score: the % change to your damage and effective HP (weighted as set on Build &amp; stats), plus half a point per resistance point toward your cap.</li>
+        <li><span class="vchip up">UPGRADE</span> clearly better · <span class="vchip up">SMALL UPGRADE</span> a little better · <span class="vchip same">SIDEGRADE</span> about the same · <span class="vchip down">DOWNGRADE</span> worse ·
+          <span class="vchip risky">UPGRADE, BUT…</span> better, but it costs reservation, links, socket colours or a resistance below the cap ·
+          <span class="vchip down">LOSES RESISTANCE</span> a resistance drops off the cap · <span class="vchip down">LOSES DAMAGE</span> your damage drops. Both go to the bottom of the results.</li>
+        <li>Rings are compared with your weakest ring, jewels in each of your sockets, flasks in your flask slots. Cluster and timeless jewels aren't judged yet.</li>
+        ${opts.pobOn ? '' : '<li><b>No build loaded:</b> paste your Path of Building Community export on My gear, or items get no verdict.</li>'}
+      </ul></div>`;
+    }
     return `<div class="gs-explain">
       ${opts.pobOn ? '<p class="note">Your Path of Building build is loaded, so <b>verdicts come from Path of Building</b> (the change to your damage, effective HP and resistances). The gear score below is a rough guide shown alongside, and is used for anything PoB can\'t check (e.g. jewels).</p>' : ''}
       <p><b>Gear score (0–100)</b> is how good an item is <i>for your build, in that slot</i>. 100 is about the best that slot can roll for you: your build's most important stats there, at top rolls.</p>
@@ -238,15 +251,18 @@
   };
 
   // the number in carved type, the words after it in plain text ("+26.8%" + "for your build")
+  const POB_TIP = "Path of Building's score for this item: the % change to your damage and effective HP (weighted as set on Build &amp; stats), plus half a point per resistance point toward your cap";
+  window.POB_SCORE_TIP = POB_TIP;
   function scoreHtml(label) {
     if (!label) return '';
     const m = String(label).match(/^([+\-−]?[\d.,]+%?)\s*(.*)$/);
-    return m ? `<span class="score">${esc(m[1])}${m[2] ? ` <small>${esc(m[2])}</small>` : ''}</span>` : `<span class="score">${esc(label)}</span>`;
+    const tip = / pts /.test(label) ? ` title="${POB_TIP}"` : '';
+    return m ? `<span class="score"${tip}>${esc(m[1])}${m[2] ? ` <small>${esc(m[2])}</small>` : ''}</span>` : `<span class="score"${tip}>${esc(label)}</span>`;
   }
 
   function pointsLabel(r) {
     // a loss verdict with a positive score would read like an upgrade: the banner says what it costs
-    if (r.scoreMode === 'pob') return r.delta == null || ((r.verdict === 'dmgloss' || r.verdict === 'resloss') && r.delta > 0) ? '' : `${r.delta > 0 ? '+' : ''}${r.delta}% for your build`;
+    if (r.scoreMode === 'pob') return r.delta == null || ((r.verdict === 'dmgloss' || r.verdict === 'resloss') && r.delta > 0) ? '' : `${r.delta > 0 ? '+' : ''}${r.delta} pts for your build`;
     if (r.scoreMode === 'gear') {
       if (r.delta == null) return '';
       return `${r.delta > 0 ? '+' : ''}${r.delta} gear score`;
@@ -262,20 +278,41 @@
     if (!p) return '';
     const v = total ? p.total : p.each; const d = total ? p.totalDiv : p.eachDiv;
     if (d != null && d >= 1) return `≈ <b>${nf(d)} div</b>${v != null ? ` <span class="dim">(${nf(v)} ${esc(p.unit)})</span>` : ''}`;
-    return v != null ? `≈ <b>${nf(v)} ${esc(p.unit)}</b>${d != null ? ` <span class="dim">(${nf(d)} div)</span>` : ''}` : '';
+    return v != null ? `≈ <b>${nf(v)} ${esc(p.unit)}</b>${d != null && d >= 0.01 ? ` <span class="dim">(${nf(d)} div)</span>` : ''}` : '';
   }
   function trend(p) {
     if (!p || p.change == null) return '';
     const c = p.change; const cls = c > 2 ? 'pos' : c < -2 ? 'neg' : 'unweighted';
     return `<span class="chg ${cls}" title="Change over the last 7 days on poe.ninja">7 days ${c > 0 ? '+' : ''}${nf(c)}%</span>`;
   }
+  // the last 7 days on poe.ninja as a small line (relative prices, 1 = today)
+  window.sparkHtml = function (p, w, h) {
+    const hst = p && Array.isArray(p.history) ? p.history : [];
+    const pts = hst.map((v, i) => [i, v]).filter(([, v]) => v != null && Number.isFinite(v));
+    if (pts.length < 2) return '';
+    w = w || 120; h = h || 28;
+    const lo = Math.min(...pts.map(([, v]) => v)); const hi = Math.max(...pts.map(([, v]) => v));
+    const span = hi - lo || 1; const n = Math.max(hst.length - 1, 1);
+    const xy = pts.map(([i, v]) => `${Math.round((i / n) * (w - 4) + 2)},${Math.round(h - 3 - ((v - lo) / span) * (h - 6))}`).join(' ');
+    const up = pts[pts.length - 1][1] >= pts[0][1];
+    const unit = (v) => (p.each != null ? `${nf(p.each * v)} ${p.unit}` : `${nf(v * 100)}%`);
+    return `<svg class="spark ${up ? 'spark-up' : 'spark-down'}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Price over the last 7 days, from ${esc(unit(pts[0][1]))} to ${esc(unit(1))}"><title>Last 7 days on poe.ninja: ${esc(unit(lo))} to ${esc(unit(hi))}</title><polyline points="${xy}" fill="none" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+  };
   window.ninjaLine = function (p) {
     if (!p) return '';
-    return `<div class="ninja"><span class="pob-tag" title="poe.ninja, ${esc(p.league || '')}">NINJA</span> ${ninjaPrice(p)} ${trend(p)}${p.few ? ' <span class="dim" title="Few listed: the price is a rough guess">few listed</span>' : ''}</div>`;
+    return `<div class="ninja"><span class="pob-tag" title="poe.ninja, ${esc(p.league || '')}">NINJA</span> ${ninjaPrice(p)} ${trend(p)}${window.sparkHtml(p, 56, 14)}${p.few ? ' <span class="dim" title="Few listed: the price is a rough guess">few listed</span>' : ''}</div>`;
   };
   const linksHtml = (links) => (links || []).map((l) => `<button class="link info-link" data-url="${esc(l.url)}">${esc(l.label)}</button>`).join('');
   const bindLinks = (el) => el.querySelectorAll('.info-link').forEach((b) => b.addEventListener('click', () => window.api.openUrl(b.dataset.url)));
 
+  // keep / sell / vendor, under the verdict
+  const ADV = { keep: ['KEEP', 'up'], sell: ['SELL', 'sell'], vendor: ['VENDOR', 'same'], check: ['PRICE CHECK', 'risky'] };
+  window.adviceHtml = function (r) {
+    const a = window.keepSell && window.keepSell.advise(r);
+    if (!a) return '<div class="advice" id="advice"></div>';
+    const [t, c] = ADV[a.action];
+    return `<div class="advice" id="advice"><span class="adv adv-${c}">${t}</span>${a.text ? ` <span class="dim">${esc(a.text)}</span>` : ''}</div>`;
+  };
   // something that isn't gear (currency, a gem, a map, a divination card...): what it's worth
   window.renderPriceCard = function (el, r, opts) {
     opts = opts || {};
@@ -289,7 +326,9 @@
         ${r.pricePending ? '<div class="note"><span class="spinner"></span> Getting the price from poe.ninja…</div>' : ''}
         ${p ? `<div class="price-big">${ninjaPrice(p)} <span class="dim">each</span></div>
           ${p.stack > 1 ? `<div>Stack: ${ninjaPrice(p, true)}</div>` : ''}
+          ${window.sparkHtml(p, 200, 34) ? `<div class="spark-row">${window.sparkHtml(p, 200, 34)}<span class="dim small">last 7 days</span></div>` : ''}
           <div class="dim small">${trend(p)}${what ? ` · priced as ${esc(what)}` : ''}${p.few ? ' · few listed, so a rough guess' : ''} · poe.ninja${p.league ? `, ${esc(p.league)}` : ''}</div>` : ''}
+        ${p ? window.adviceHtml(r) : ''}
         ${r.priceNote ? `<div class="note">${esc(r.priceNote)}</div>` : ''}
         ${r.links && r.links.length ? `<div class="actions">${linksHtml(r.links)}</div>` : ''}
       </div>`;
@@ -306,7 +345,8 @@
     opts = opts || {};
     const it = r.item || {};
     const c = r.check || { rows: [] };
-    const [vt, vc] = MAPV[c.verdict] || MAPV.ok;
+    // without a build only your own marks can say anything: no "looks fine" for mods nobody checked
+    const [vt, vc] = r.noBuild && c.verdict === 'ok' && !(c.rows || []).some((m) => m.mark) ? ['NOT CHECKED', 'same'] : MAPV[c.verdict] || MAPV.ok;
     const tier = (it.lines || []).map((l) => l.text || '').find((t) => /^(Map|Waystone) Tier:/i.test(t));
     el.innerHTML = `<div class="card map-card">
         ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
@@ -319,7 +359,7 @@
         <div class="map-mods">${c.rows.map((m) => `<div class="map-mod lv-${esc(m.level)}" data-key="${esc(m.key)}" data-mark="${esc(m.mark || '')}" title="Click to mark this mod: dangerous → careful → fine → no mark">
             <span class="mi">${MAPICON[m.level] || '·'}</span><span class="mt">${esc(m.text)}${m.mark ? ' <small class="dim">(your mark)</small>' : ''}${m.note ? `<br><small class="${m.level === 'ok' ? 'dim' : ''}">${esc(m.note)}</small>` : ''}</span></div>`).join('') || '<div class="dim">No mods.</div>'}</div>
         ${r.ninja ? window.ninjaLine(r.ninja) : ''}
-        <div class="dim small">${c.calculated ? `${c.calculated} mod${c.calculated === 1 ? '' : 's'} worked out by Path of Building; ` : ''}click a mod to mark it dangerous, careful or fine for this game.</div>
+        <div class="dim small">${c.calculated ? `${c.calculated} mod${c.calculated === 1 ? '' : 's'} worked out by Path of Building; ` : ''}click a mod to mark it dangerous, careful or fine for all your ${r.game === 'poe1' ? 'maps' : 'waystones'}.</div>
         ${r.links && r.links.length ? `<div class="actions">${linksHtml(r.links)}</div>` : ''}
       </div>`;
     bindLinks(el);
@@ -345,7 +385,7 @@
     }
     const it = r.item;
     const unique = /unique/i.test(it.rarity || '');
-    const v = VERDICT[r.verdict] || VERDICT.same;
+    const v = r.verdict === 'unjudged' && r.pobPending ? { text: 'CHECKING…', cls: 'same' } : VERDICT[r.verdict] || VERDICT.same;
     const rarity = (it.rarity || '').toLowerCase();
     const full = opts.expanded || ui.detail === 'full';
     const gearMode = r.scoreMode === 'gear' || r.scoreMode === 'pob';
@@ -376,17 +416,18 @@
       : g.unique ? '' : `<div class="gear">${gearChip}<span>gear score${yours != null ? ` · yours ${yours}` : ''}</span> <button class="link gear-why" data-why="p">why?</button></div>
         <div class="gear-detail hidden" data-whybox="p">${window.gearCompareHtml(g, r.isEquipped ? null : r.gearEquipped)}</div>`;
 
-    const emptySlot = !r.replacing.length && !r.isEquipped;
+    const emptySlot = !r.replacing.length && !r.isEquipped && it.slot !== 'Flask';
     const craft = it.affixes && it.affixes.known && !unique ? `<div class="craft">${it.affixes.openPrefix || it.affixes.openSuffix
       ? `Open: <b>${it.affixes.openPrefix}</b> prefix${it.affixes.openPrefix === 1 ? '' : 'es'}, <b>${it.affixes.openSuffix}</b> suffix${it.affixes.openSuffix === 1 ? '' : 'es'} – craftable`
       : 'All 6 affixes taken'}</div>` : '';
 
+    const flask = it.slot === 'Flask'; // PoE1 flasks: no slot of their own in the app
     const primary = unique
       ? `<button class="find" id="priceFind">What's it worth?</button><button id="likeFind" title="This unique on the trade site, cheapest first">Find cheaper copies</button>`
-      : `${r.replacing.length ? `<button class="find" id="quickFind" title="Listings that score higher for your build than your equipped ${esc(r.targetSlot)}">Find upgrades${esc(budget)}</button>`
+      : `${r.replacing.length && !flask ? `<button class="find" id="quickFind" title="Listings that score higher for your build than your equipped ${esc(r.targetSlot)}">Find upgrades${esc(budget)}</button>`
         : `<button class="find" id="likeFind" title="Listings with this item's stats">Find items like this${esc(budget)}</button>`}
          <button id="priceFind" title="What similar items sell for">What's it worth?</button>
-         <button class="link" id="pricePick" title="Choose which stats the price check matches, and their minimums">Choose stats…</button>`;
+         <button class="link" id="pricePick" title="Choose which stats the price check matches, and their minimums">Price by chosen stats…</button>`;
 
     const lossRows = r.isEquipped ? [] : r.pob ? (r.pob.resLoss || []) : ((r.character && r.character.res) || []).filter((x) => x.from != null && x.delta < 0 && x.under && (x.el !== 'chaos' || !x.wasUnder));
     const dmgLoss = !r.isEquipped && r.pob ? r.pob.dmgLoss : null;
@@ -397,16 +438,18 @@
         <div class="name ${esc(rarity)}">${esc(it.name || '')}</div>
         <div class="meta">${it.baseType && it.baseType !== it.name ? `${esc(it.baseType)} · ` : ''}${esc(it.itemClass || '')}${it.itemLevel ? ` · ilvl ${it.itemLevel}` : ''}${r.gameBeta ? ` <span class="beta-tag" title="Path of Exile 1 support is new: if a verdict looks wrong, send the log (Tray → Open log) to support@poe2upgrade.com">${esc(r.gameShort || 'PoE1')} BETA</span>` : ''}</div>
         ${unique && !r.pob ? `<div class="verdict same"><span class="badge">UNIQUE</span>${r.replacing.length && !r.isEquipped ? `<span class="dim">vs ${esc(r.replacing.join(' + '))}</span>` : ''}</div>
-          <div class="dim">${r.pobPending ? 'Checking with Path of Building…' : "Uniques have fixed mods, so there's no gear score – check its price, or compare the changes below."}</div>`
+          <div class="dim">${r.pobPending ? 'Checking with Path of Building…' : r.game === 'poe1' ? 'Load your Path of Building Community build on My gear to see what it does for your build – or check its price.' : "Uniques have fixed mods, so there's no gear score – check its price, or compare the changes below."}</div>`
           : `<div class="verdict ${v.cls}">
           <span class="badge">${v.text}</span>
           ${r.isEquipped || emptySlot ? '' : scoreHtml(pointsLabel(r))}
-          ${r.isEquipped ? '' : r.replacing.length ? `<span class="dim">vs ${esc(r.replacing.join(' + '))}</span>` : `<span class="dim">${esc(r.targetSlot)} slot is empty</span>`}
+          ${r.isEquipped ? '' : r.replacing.length ? `<span class="dim">vs ${esc(r.replacing.join(' + '))}</span>` : r.verdict === 'unjudged' ? '' : it.slot === 'Flask' ? (r.pobPending ? '<span class="dim">trying it in your flask slots</span>' : '') : `<span class="dim">${esc(r.targetSlot)} slot is empty</span>`}
         </div>`}
         ${lossBanner}
         ${r.ninja ? window.ninjaLine(r.ninja) : ''}
+        ${window.adviceHtml(r)}
         ${gearLine}
         ${craft}
+        ${r.flaskNote ? `<div class="dim small">${esc(r.flaskNote)}</div>` : ''}${r.limitNote ? `<div class="dim small">${esc(r.limitNote)}</div>` : ''}
         ${r.isEquipped ? `<div class="note">This is your equipped ${esc(r.targetSlot)}.</div>` : ''}
         ${top && !r.isEquipped ? `<div class="chgs">${top}</div>` : ''}
         ${r.unjudged && !r.pobNudge && !r.pob ? `<div class="note">${esc(r.unjudged)}</div>` : ''}
@@ -414,18 +457,19 @@
     ? '<div class="note">PoE1 items are judged by Path of Building: paste your <b>Path of Building Community</b> export on <b>My gear</b> (this character is your PoE1 one).</div>'
     : '<div class="dim small">For exact verdicts, paste your Path of Building export on <b>My gear</b>.</div>') : ''}
         ${r.isEquipped ? '' : r.pob || r.pobPending || r.pobError ? window.pobBlock(r.pob, { pending: r.pobPending, error: r.pobError, compact: !full, noBanner: true }) : window.characterBlock(r.character, { compact: !full, risks: r.risks, noBanner: true })}
-        ${r.notes.filter((n) => !/^Nothing saved/.test(n) || !emptySlot).filter((n) => full || /unidentified|two-handed|Two-handed/i.test(n)).map((n) => `<div class="note">${esc(n)}</div>`).join('')}
+        ${r.notes.filter((n) => !/^Nothing saved/.test(n) || (!emptySlot && it.slot !== 'Flask')).filter((n) => full || /unidentified|two-handed|Two-handed/i.test(n)).map((n) => `<div class="note">${esc(n)}</div>`).join('')}
         ${emptySlot ? `<div class="actions">${equipButtons(r)}</div>` : ''}
         <div class="actions main-actions">${primary}</div>
+        ${r.league ? `<div class="dim small league-line">League: <b>${esc(r.league)}</b> · <button class="link" id="leagueChange" title="Searches and prices use this league (each game has its own)">change</button></div>` : ''}
         <div class="price-pick hidden" id="pricePickBox"></div>
         <div class="note" id="findMsg"></div>
         <button class="link more" id="moreBtn">${full ? 'Less ▴' : 'More ▾'}</button>
         <div class="more-box ${full ? '' : 'hidden'}" id="moreBox">
           ${r.ignoring && r.ignoring.length ? `<div class="dim">Ignoring: ${esc(r.ignoring.join(', '))} <button class="link" id="ignoreChange">change</button></div>` : ''}
-          ${!full ? r.notes.filter((n) => !/unidentified|two-handed/i.test(n)).map((n) => `<div class="note">${esc(n)}</div>`).join('') : ''}
+          ${!full ? r.notes.filter((n) => !/unidentified|two-handed/i.test(n) && !(it.slot === 'Flask' && /^Nothing saved/.test(n))).map((n) => `<div class="note">${esc(n)}</div>`).join('') : ''}
           ${r.isEquipped ? '' : rows ? `<table class="rows"><thead><tr><th>Change</th>${gearMode ? '' : '<th>Weight</th><th>Score</th>'}<th></th></tr></thead><tbody>${rows}</tbody></table>`
             : '<div class="note">No stat differences.</div>'}
-          ${r.isEquipped || emptySlot ? '' : `<div class="actions">${equipButtons(r)}</div>`}
+          ${r.isEquipped || emptySlot || it.slot === 'Flask' ? '' : `<div class="actions">${equipButtons(r)}</div>`}
           <div class="actions">
             ${r.replacing.length && !r.isEquipped && !unique ? '<button class="link" id="likeFind2" title="Listings with the stats of the item you just copied">Items like this one</button>' : ''}
             ${r.replacing.length && !unique ? '<button class="link" id="sameFind" title="Listings with every stat of your equipped item at your value or higher">Same stats or better</button>' : ''}
@@ -455,7 +499,12 @@
     run(el.querySelector('#likeFind'), () => window.api.quickFind(ref, 'similar'), 'Searching the trade site…');
     run(el.querySelector('#likeFind2'), () => window.api.quickFind(ref, 'similar'), 'Searching the trade site…');
     run(el.querySelector('#craftFind'), () => window.api.quickFind(ref, 'craft'), 'Looking for craftable bases…');
-    run(el.querySelector('#priceFind'), () => window.api.priceCheck(ref), 'Checking prices…');
+    // a price check also answers keep / sell / vendor
+    const withWorth = (p) => p.then((res) => {
+      if (res && res.ok && res.summary && res.summary.typicalEx != null) { r.worthEx = res.summary.typicalEx; const a = el.querySelector('#advice'); if (a) a.outerHTML = window.adviceHtml(r); }
+      return res;
+    });
+    run(el.querySelector('#priceFind'), () => withWorth(window.api.priceCheck(ref)), 'Checking prices…');
     // "Choose stats…": tick the stats the price check should match, with their minimums
     const pp = el.querySelector('#pricePick');
     if (pp) pp.addEventListener('click', async () => {
@@ -474,7 +523,7 @@
         const picks = rows.map((x, i) => ({ x, on: box.querySelector(`input[type=checkbox][data-i="${i}"]`).checked, min: box.querySelector(`.pp-min[data-i="${i}"]`).value }))
           .filter((p) => p.on).map((p) => ({ key: p.x.key, min: p.min === '' ? null : Number(p.min), source: p.x.source }));
         if (!picks.length) return Promise.resolve({ ok: false, error: 'Tick at least one stat.' });
-        return window.api.priceCheck(ref, picks);
+        return withWorth(window.api.priceCheck(ref, picks));
       }, 'Checking prices…');
     });
     window.__popupResize = opts.onResize || null;
@@ -490,6 +539,8 @@
     });
     const cf = el.querySelector('#customFind');
     if (cf) cf.addEventListener('click', () => window.api.findUpgrade(ref));
+    const lc = el.querySelector('#leagueChange');
+    if (lc) lc.addEventListener('click', () => window.api.openSettingsTab && window.api.openSettingsTab('league'));
     const ic = el.querySelector('#ignoreChange');
     if (ic) ic.addEventListener('click', () => window.api.openSettingsTab && window.api.openSettingsTab('search'));
     el.querySelectorAll('button.ignore').forEach((b) => b.addEventListener('click', async () => {

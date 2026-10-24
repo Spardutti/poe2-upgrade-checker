@@ -268,9 +268,18 @@ local function slotGems()
     local second = set and set.useSecondWeaponSet
     if g.slot and g.enabled ~= false and not g.source and (not tostring(g.slot):match("^Weapon") or swap == (second and true or false)) then
       local n = 0
-      for _, gem in ipairs(g.gemList or {}) do if gem.enabled ~= false and (gem.gemData or gem.grantedEffect) then n = n + 1 end end
+      local col = { R = 0, G = 0, B = 0, W = 0 }
+      local names = { "R", "G", "B" }
+      for _, gem in ipairs(g.gemList or {}) do
+        local ge = gem.grantedEffect or (gem.gemData and gem.gemData.grantedEffect)
+        if gem.enabled ~= false and (gem.gemData or gem.grantedEffect) then
+          n = n + 1
+          local c = ge and ge.color and names[ge.color] or "W"
+          col[c] = col[c] + 1
+        end
+      end
       local slot = tostring(g.slot):gsub(" Swap$", "")
-      if n > 0 and (not r[slot] or n > r[slot].gems) then r[slot] = { gems = n, label = g.displayLabel or g.label } end
+      if n > 0 and (not r[slot] or n > r[slot].gems) then r[slot] = { gems = n, label = g.displayLabel or g.label, colours = col } end
     end
   end
   return r
@@ -408,6 +417,34 @@ local function evalItems(items)
         end
         if #multi == 0 then return { ok = false, error = "You have no allocated jewel socket this jewel fits" } end
         return { ok = true, slot = slot, before = pick(base), multi = multi }
+      end
+      if slot == "Flask" and GAME == "poe1" then
+        -- a flask or tincture: tried in each of your five flask slots. PoB only counts a flask whose
+        -- slot is switched on ("active"), so each slot is switched on for the check, before and after
+        -- alike, then put back as it was.
+        local multi = {}
+        local nf = function(it_) local d = it_ and it_.flaskData; if not d then return nil end
+          return { life = num(d.lifeTotal), mana = num(d.manaTotal), duration = num(d.duration), charges = num(d.chargesMax), used = num(d.chargesUsed), effect = num(d.effectInc) } end
+        for n = 1, 5 do
+          local s = build.itemsTab.slots["Flask " .. n]
+          if s and build.itemsTab:IsItemValidForSlot(item, s.slotName) then
+            local cur = s.selItemId and build.itemsTab.items[s.selItemId]
+            local was = s.active
+            s.active = true
+            local okb, b = pcall(calcFunc, {})
+            local oka, a = pcall(calcFunc, { repSlotName = s.slotName, repItem = item })
+            s.active = was
+            if okb and oka then
+              multi[#multi + 1] = { slot = s.slotName, label = s.slotName, replacing = cur and (cur.title or cur.name) or nil,
+                replacingBase = cur and cur.baseName or nil, replacingType = cur and cur.base and cur.base.type or nil,
+                replacingSub = cur and cur.base and cur.base.subType or nil, active = was and true or false,
+                before = pick(b), after = pick(a), replacingFlask = nf(cur) }
+            end
+          end
+        end
+        if #multi == 0 then return { ok = false, error = "Path of Building has no flask slot this fits" } end
+        return { ok = true, slot = slot, before = pick(base), multi = multi, flask = nf(item),
+          base = item.baseName, type = item.base and item.base.type, sub = item.base and item.base.subType }
       end
       local pslot = pobSlot(slot)
       -- PoB empties the offhand itself for most two-handers, but not crossbows or quarterstaves

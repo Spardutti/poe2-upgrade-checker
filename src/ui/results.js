@@ -6,6 +6,7 @@ const fmt = (n, d = 1) => { const r = Math.round(n * 10 ** d) / 10 ** d; return 
 let data = null;
 
 function label(key, diff) {
+  key = String(key).replace(/^\[(Base|Weapon)\]\s*/, '').replace(/\s*\(Local\)\s*$/i, ''); // internal tags, not game text
   let first = true;
   const t = key.includes('#') ? key.replace(/#/g, () => { if (first) { first = false; return fmt(diff); } return '…'; }) : `${fmt(diff)} ${key}`;
   return t.replace(/^\+\+/, '+').replace(/^\+-/, '-');
@@ -63,7 +64,7 @@ function card(x) {
     return `<span class="chg ${cls}">${esc(label(r.key, r.diff))}</span>`;
   }).join('') : '';
   const loss = c && (c.verdict === 'dmgloss' || c.verdict === 'resloss');
-  const value = x.valuePerDiv != null && Math.abs(x.valuePerDiv) >= 0.05 && c && c.delta > 0 && !loss ? `<span class="value" title="${c && c.scoreMode === 'pob' ? '% better for your build' : gearMode ? 'Gear score points gained' : 'Upgrade score'} per divine spent">${fmt(x.valuePerDiv, 1)} / div</span>` : '';
+  const value = x.valuePerDiv != null && Math.abs(x.valuePerDiv) >= 0.05 && c && c.delta > 0 && !loss ? `<span class="value" title="${c && c.scoreMode === 'pob' ? 'Path of Building points for your build' : gearMode ? 'Gear score points gained' : 'Upgrade score'} per divine spent">${fmt(x.valuePerDiv, 1)} / div</span>` : '';
   const rr = c ? c.resRank || 0 : 0;
   return `<article class="listing ${rr < 0 ? 'res-loss' : rr === 2 ? 'res-cap-item' : ''}">
     <div class="l-top">
@@ -77,7 +78,7 @@ function card(x) {
         <div class="dim">${x.instant ? 'Instant buyout' : `${x.online ? '<span class="dot on"></span>online' : '<span class="dot"></span>offline'} · ${esc(x.seller)}`}</div>
       </div>
     </div>
-    ${c ? `<div class="verdict ${vc}"><span class="badge">${vt}</span><span class="score">${c.verdict === 'new' || c.delta == null || (loss && c.delta > 0) ? '' : c.scoreMode === 'pob' ? `${esc(fmt(c.delta, 1))}% <small>for your build</small>` : gearMode ? `${esc(fmt(c.delta, 0))} <small>gear score</small>` : esc(fmt(c.delta))}${!gearMode && c.pct != null && c.verdict !== 'equipped' ? ` <small>(${esc(fmt(c.pct))}%)</small>` : ''}</span>${value}<span class="dim">vs ${esc((c.replacing || []).join(' + ') || c.targetSlot)}</span></div>` : ''}
+    ${c ? `<div class="verdict ${vc}"><span class="badge">${vt}</span><span class="score">${c.verdict === 'new' || c.delta == null || (loss && c.delta > 0) ? '' : c.scoreMode === 'pob' ? `<span title="${window.POB_SCORE_TIP || ''}">${esc(fmt(c.delta, 1))} pts <small>for your build</small></span>` : gearMode ? `${esc(fmt(c.delta, 0))} <small>gear score</small>` : esc(fmt(c.delta))}${!gearMode && c.pct != null && c.verdict !== 'equipped' ? ` <small>(${esc(fmt(c.pct))}%)</small>` : ''}</span>${value}<span class="dim">vs ${esc((c.replacing || []).join(' + ') || c.targetSlot)}</span></div>` : ''}
     ${x.gear && x.gear.score != null && !(c && c.pob) ? `<div class="gear"><span class="gs g-${esc(x.gear.grade)}" title="Gear score: how good it is for your build in this slot, 0–100">${x.gear.score} ${esc(x.gear.grade)}</span> <span>Gear score${x.gearEquipped != null ? ` · yours ${x.gearEquipped} <b class="${x.gear.score > x.gearEquipped ? 'pos' : x.gear.score < x.gearEquipped ? 'neg' : ''}">(${x.gear.score - x.gearEquipped > 0 ? '+' : ''}${x.gear.score - x.gearEquipped})</b>` : ''}</span>${x.gear.missing && x.gear.missing.length ? ` <span class="dim">missing ${esc(x.gear.missing.join(', '))}</span>` : ''} <button class="link gear-why" data-why="${esc(x.id)}">why?</button></div>
       <div class="gear-detail hidden" data-whybox="${esc(x.id)}">${window.gearCompareHtml ? window.gearCompareHtml(x.gear, x.gearEquippedDetail) : ''}</div>` : ''}
     ${rows ? `<div class="chgs">${rows}${changed.length > n ? `<span class="dim">+${changed.length - n} more</span>` : ''}</div>` : ''}
@@ -96,7 +97,7 @@ function render() {
   $('#title').textContent = data.title || 'Trade results';
   const bt = document.getElementById('betaTag');
   if (bt) bt.classList.toggle('hidden', !data.gameBeta);
-  $('#gsHelpBtn').textContent = data.pobOn ? 'How are items judged?' : "What's the gear score?";
+  $('#gsHelpBtn').textContent = data.pobOn || data.game === 'poe1' ? 'How are items judged?' : "What's the gear score?";
   $('#hideHint').textContent = `Esc hides${data.resultsHotkey ? ` · ${data.resultsHotkey} reopens` : ''}`;
   const ups = (data.listings || []).filter((x) => x.compare && ['upgrade', 'small', 'risky', 'new'].includes(x.compare.verdict)).length;
   const losing = (data.listings || []).filter((x) => x.compare && x.compare.verdict === 'resloss').length;
@@ -119,7 +120,7 @@ function render() {
   const list = sorted(all);
   // a failed search or fetch must not leave the previous search's listings on screen
   $('#list').innerHTML = data.error ? `<div class="note">${esc(data.error)}</div>`
-    : list.map(card).join('') || `<div class="note">${!all.length && data.total ? 'The listings couldn\'t be loaded. Use Open on trade site to see them in your browser.' : !all.length ? 'Nothing listed.' : 'No listings match these filters.'}</div>`;
+    : list.map(card).join('') || `<div class="note">${!all.length && data.total ? 'The listings couldn\'t be loaded. Use Open on trade site to see them in your browser.' : !all.length ? 'Nothing listed.' : `None of the ${all.length} loaded listings is an upgrade. Untick <b>Upgrades only</b>${data.more ? ', or load more' : ''}.`}</div>`;
   $('#more').classList.toggle('hidden', !data.more || !!data.error);
   $('#site').disabled = !data.url;
   $('#save').classList.toggle('hidden', !!data.error);
@@ -140,7 +141,7 @@ function render() {
       b.textContent = 'Sign in to pathofexile.com…';
       const s = await window.api.signIn();
       if (s && s.signedIn) { data.signedIn = true; b.textContent = 'Asking the trade site…'; r = await window.api.hideout(b.dataset.hideout); }
-      else r = { ok: false, error: 'Not signed in – use Open this item on trade site instead.' };
+      else r = { ok: false, error: 'Not signed in – click "on trade site" to buy it from your browser.' };
     }
     b.disabled = false;
     const old = b.parentNode.querySelector('.note'); if (old) old.remove();
@@ -190,7 +191,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.api
 // "What's the gear score?" panel
 window.showGearHelp = () => {
   const p = $('#gsHelp');
-  p.innerHTML = window.gearExplainHtml({ where: 'Build & stats page of the main window', pobOn: data && data.pobOn });
+  p.innerHTML = window.gearExplainHtml({ where: 'Build & stats page of the main window', pobOn: data && data.pobOn, game: data && data.game });
   p.classList.remove('hidden');
   p.scrollIntoView({ block: 'nearest' });
 };

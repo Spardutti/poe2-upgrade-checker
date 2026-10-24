@@ -26,7 +26,7 @@
     <div class="res-loss-banner hidden" id="loadError" role="alert"></div>
     <section class="tab active" id="tab-gear">
       <header class="page-head">
-        <div><h2>My gear</h2><div class="sub">What you're wearing, scored for your build (<button class="link gs-help">what's the gear score?</button>). Click a slot's <b>Find upgrades</b> to search for something better.</div></div>
+        <div><h2>My gear</h2><div class="sub"><span class="p2">What you're wearing, scored for your build (<button class="link gs-help">what's the gear score?</button>).</span><span class="p1">What you're wearing. Items are judged by Path of Building with your build (<button class="link gs-help">how?</button>).</span> Click a slot's <b>Find upgrades</b> to search for something better.</div></div>
         <div class="page-actions">
           <button id="profileNew" title="A separate set of gear, build, weights and ignored stats">+ New character</button>
           <button id="profileRename">Rename</button>
@@ -45,7 +45,7 @@
         <div class="col side-col">
           <div class="card-p">
             <h3>Your build in Path of Building</h3>
-          <div class="help">Paste your Path of Building export code (Import/Export Build → Generate: <b>Path of Building 2</b> for PoE2, <b>Path of Building Community</b> for PoE1) or a <b>pobb.in</b> link. The app then judges every item with <b>Path of Building's own calculations</b>: what it does to your minion DPS, effective HP, resistances and Spirit. Make sure PoB's gear, tree, skills and Configuration match how you really play. Items you copy in game (F2) replace PoB's, so it always uses what you're wearing.</div>
+          <div class="help">Paste your Path of Building export code (Import/Export Build → Generate: <b>Path of Building 2</b> for PoE2, <b>Path of Building Community</b> for PoE1) or a <b>pobb.in</b> link. The app then judges every item with <b>Path of Building's own calculations</b>: what it does to your damage (or your minions'), effective HP, resistances and <span class="p2">Spirit</span><span class="p1">mana and life reservation</span>. Make sure PoB's gear, tree, skills and Configuration match how you really play. Items you copy in game (F2) replace PoB's, so it always uses what you're wearing.</div>
           <div class="row">
             <input id="pobInput" class="grow" placeholder="https://pobb.in/abc123  or  eNrtXd…">
             <button id="pobImport" class="primary">Import</button>
@@ -153,7 +153,7 @@
             <div id="findItem" class="finditem"></div>
             <div class="row"><span id="findNotice" class="note"></span></div>
             <div class="actions find-actions">
-              <button id="findGear" class="primary" title="Listings that score higher for your build (gear score), even with a different mix of stats. If nothing beats yours, it shows the ones that come close.">Better for my build</button>
+              <button id="findGear" class="primary" title="Listings that score higher for your build (gear score), even with a different mix of stats. If nothing beats yours, it shows the ones that come close.">Find upgrades</button>
               <button id="findSimilar" title="Listings with this item's stats at its values or higher. If nothing is listed it loosens step by step (90%, 80%, 65%) and tells you. Rune bonuses are left out – you can socket your own.">Same stats or better</button>
               <button id="findQuick" title="Anything that scores higher with your stat weights, even with different stats">By my weights</button>
               <button id="findCraft" title="Bases with this slot's key stats and an open affix you can craft">Craftable bases</button>
@@ -215,10 +215,10 @@
 
     <section class="tab" id="tab-build">
       <header class="page-head">
-        <div><h2>Build &amp; stats</h2><div class="sub">Which stats matter to your character, for the gear score.<span class="gs-fallback-note hidden"> With your Path of Building build loaded, verdicts and <b>Better for my build</b> come from Path of Building instead – the gear score is a rough guide and the fallback.</span></div></div>
+        <div><h2>Build &amp; stats</h2><div class="sub"><span class="p1">In Path of Exile 1, items are judged by Path of Building with your build. Stat weights below are only for <b>By my weights</b> searches.</span><span class="p2">Which stats matter to your character, for the gear score.</span><span class="gs-fallback-note p2 hidden"> With your Path of Building build loaded, verdicts and <b>Find upgrades</b> come from Path of Building instead – the gear score is a rough guide and the fallback.</span></div></div>
       </header>
       <div class="grid g-2">
-        <div class="col"><div class="card-p">
+        <div class="col p2"><div class="card-p">
           <h3>Your build</h3>
           <div class="row"><label>Build <select id="buildSel"></select></label></div>
           <div class="help" id="buildHelp"></div>
@@ -228,12 +228,12 @@
           <div class="row"><button id="buildTweaksReset">Reset to the build's defaults</button><span class="note" id="buildMsg"></span></div>
         </div></div>
         <div class="col side-col"><div class="card-p" id="gsExplainCard">
-          <h3>How the gear score works</h3>
+          <h3><span class="p2">How the gear score works</span><span class="p1">How items are judged</span></h3>
           <div id="gsExplain"></div>
         </div><div class="card-p" id="weightsCard">
           <h3>Stat weights</h3>
           <div class="help">
-            Only used for <b>By my weights</b> searches, and for the verdict when the build is turned off.
+            Only used for <b>By my weights</b> searches<span class="p2">, and for the verdict when the build is turned off</span>.
             A weight says how many points one unit of a stat is worth: Life 1 and Fire Res 1.5 means +10% fire res = +15 life.
           </div>
           <div class="toolbar">
@@ -322,7 +322,13 @@
         <h3>Updates</h3>
       <div class="help">The installed app checks GitHub for a new version when it starts and every few hours, downloads it quietly, and installs it the next time you quit or restart.</div>
       <div class="row"><label><input type="checkbox" id="autoUpdate"> Download updates automatically</label></div>
+      <div class="row"><label><input type="checkbox" id="betaUpdates"> Get beta versions</label> <span class="dim small" id="betaNote">New features a little earlier, for testing. They can have bugs: send the log (Tray → Open log) to support@poe2upgrade.com if something breaks.</span></div>
       <div class="row"><button id="updCheck">Check for updates</button><button class="primary hidden" id="updAction"></button><span class="dim" id="updStatus"></span></div>
+      </div>
+      <div class="card-p">
+        <h3>Usage statistics</h3>
+      <div class="help">So we know how many people use the app and in which game, it sends poe2upgrade.com one small anonymous message when it starts and every few hours: a random install number (made on this PC), the app version, Windows or Linux, beta or not, and which of the two games you used that day. Nothing else: no account, character, items, builds or searches, and the site doesn't keep IP addresses.</div>
+      <div class="row"><label><input type="checkbox" id="usageStats"> Send anonymous usage statistics</label></div>
       </div>
       <div class="card-p">
         <h3>Troubleshooting</h3>
@@ -370,6 +376,7 @@
       <div id="pickerList" class="picker-list"></div>
     </div>
   </div>
+  <script src="../core/keepsell.js"></script>
   <script src="render.js"></script>
   <script src="settings.js"></script>
   <script src="character.js"></script>

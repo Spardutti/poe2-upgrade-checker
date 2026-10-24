@@ -84,7 +84,7 @@ function changeIfEquipped(equipped, item, slots, opts = {}) {
     if (r.from == null || r.delta >= 0) continue;
     if (r.under && !r.wasUnder) warnings.push(`${r.label} drops below the cap (${r.to}% of ${r.cap}%)`);
     else if (r.under) warnings.push(`${r.label} goes further under the cap (${r.from}% → ${r.to}%)`);
-    else if (r.thin && r.from >= r.safe) warnings.push(`${r.label} would be only ${r.to - r.cap}% over the cap (${r.delta}%) – ${src} numbers can include charms and buffs that aren't always on, so check your character sheet first`);
+    else if (r.thin && r.from >= r.safe) warnings.push(`${r.label} would be only ${r.to - r.cap}% over the cap (${r.delta}%) – ${src} numbers can include flasks, charms and buffs that aren't always on, so check your character sheet first`);
   }
   return { lines, res, overall, warnings, slots };
 }

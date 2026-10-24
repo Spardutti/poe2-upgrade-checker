@@ -82,7 +82,8 @@
   - It never reads game memory and never injects anything.
   - Its only input to the game is **one Ctrl+C per hotkey press**, the same as copying an item yourself.
 - **Where data goes:**
-  - It talks to the official trade site (pathofexile.com), poe.ninja's prices (through a small cache on poe2upgrade.com, as poe.ninja asks desktop apps to do) and GitHub (for updates), nothing else. Path of Building runs locally on your PC.
+  - It talks to the official trade site (pathofexile.com), poe.ninja's prices (through a small cache on poe2upgrade.com, as poe.ninja asks desktop apps to do), GitHub (for updates) and the anonymous usage count below. Path of Building runs locally on your PC.
+  - **Anonymous usage statistics:** so we know how many people use the app and in which game, it sends poe2upgrade.com a small message when it starts and every few hours: a random install number made on your PC, the app version, Windows or Linux, beta or not, and which of the two games you used that day. Nothing else (no account, character, items, builds or searches), and the site doesn't keep IP addresses. Turn it off with **Settings → Send anonymous usage statistics** (or in the first-run guide); then nothing is sent.
   - Your gear and settings stay on your PC, in `%APPDATA%\poe2-upgrade-checker`.
 - **Signing in is optional** and only used for *Travel to hideout* and bigger searches. You sign in on pathofexile.com's own login page, and the app only keeps the resulting login cookie, on your PC.
 - **Not affiliated:** this is a fan-made tool, not affiliated with or endorsed by Grinding Gear Games.

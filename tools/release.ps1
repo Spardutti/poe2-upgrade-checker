@@ -141,6 +141,18 @@ if ($lastTag -and $hasHead) {
   }
 }
 
+# ---------- a newer Path of Building? ----------
+# The app ships pinned Path of Building versions (tools\get-pob.js). A new league usually brings a
+# new one: releasing without it means verdicts on the old passive tree and items.
+$eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+$pobOut = @(& node tools/check-pob.js 2>&1 | ForEach-Object { "$_" }); $pobCode = $LASTEXITCODE
+$ErrorActionPreference = $eap
+foreach ($l in $pobOut) { if ($l -match '^ *(NEWER|Update)') { Say $l 'Yellow' } else { Say $l } }
+if ($pobCode -eq 2 -and -not $Yes) {
+  $go = Read-Host 'A newer Path of Building is out. Release with the old one anyway? (y/N)'
+  if ($go -notmatch '^(y|yes)$') { exit 0 }
+}
+
 # ---------- 2. version ----------
 $pkgText = Read-Text 'package.json'
 if ($pkgText -notmatch '"version"\s*:\s*"([^"]+)"') { Fail "Couldn't find the version in package.json." }

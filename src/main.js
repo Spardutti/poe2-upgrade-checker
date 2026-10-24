@@ -173,6 +173,9 @@ async function pobJudge(list) {
     if (!text) return;
     // jewels: PoB tries it in every jewel socket you've allocated on the tree
     if (x.item.slot === 'Jewel' || /^Jewel \d$/.test(x.slot || '')) { req.push({ slot: 'Jewel', text }); idx.push([i, 'Jewel']); return; }
+    if (x.item.slot === 'Flask') { req.push({ slot: 'Flask', text }); idx.push([i, 'Flask']); return; }
+    // PoE1: a third ring slot (The Unseen Hand) when your build has a ring there
+    if (tg() === 'poe1' && x.item.slot === 'Ring' && (((pobEngine().info() || {}).gear) || {})['Ring 3']) { req.push({ slot: 'Ring 3', text }); idx.push([i, 'Ring 3']); }
     const group = x.item.slot && SLOT_GROUPS[x.item.slot];
     const slots = group && group.every((g) => pobVerdict.SLOT_TO_POB[g]) ? group : [x.slot || x.item.slot];
     for (const sl of slots) { const ps = pobVerdict.SLOT_TO_POB[sl]; if (ps) { req.push({ slot: ps, text }); idx.push([i, sl]); } }
@@ -183,6 +186,26 @@ async function pobJudge(list) {
     const res = await pobEngine().evalItems(req);
     res.forEach((r, k) => {
       if (!r || !r.ok) { if (r && r.error && !errs[idx[k][0]]) errs[idx[k][0]] = String(r.error); return; }
+      if (r.multi && idx[k][1] === 'Flask') {
+        for (const m of flaskSlots(r)) {
+          const j = pobVerdict.judge(m.before || r.before, m.after, pobWeights());
+          if (!j) continue;
+          j.slot = 'Flask'; j.socket = { kind: 'flask', slot: m.slot, label: m.label, replacing: m.replacing || null, active: m.active };
+          const note = flaskNote(r, m);
+          if (note) j.flaskNote = note;
+          // a life / mana flask in place of the same kind: its recovery isn't in Path of Building's
+          // damage and effective HP, so clearly more (or less) recovery decides when PoB sees no change
+          const rec = flaskRecovery(r, m);
+          if (rec && ['same', 'small'].includes(j.verdict)) {
+            if (rec.ratio >= 1.15) { j.byRecovery = true; j.verdict = rec.ratio >= 1.4 ? 'upgrade' : 'small'; j.flaskNote = `Judged on recovery (Path of Building's damage and effective HP don't count it): ${Math.round((rec.ratio - 1) * 100)}% more ${rec.what} than yours. ${j.flaskNote || ''}`.trim(); }
+            else if (rec.ratio <= 0.87) { j.byRecovery = true; j.verdict = 'downgrade'; j.flaskNote = `Judged on recovery (Path of Building's damage and effective HP don't count it): ${Math.round((1 - rec.ratio) * 100)}% less ${rec.what} than yours. ${j.flaskNote || ''}`.trim(); }
+          }
+          if (!m.active && m.replacing) j.breaks.push(`Your ${m.label} is switched off in your Path of Building build, so it was switched on for this check`);
+          per[idx[k][0]].push(j);
+        }
+        if (!per[idx[k][0]].length) errs[idx[k][0]] = errs[idx[k][0]] || 'Path of Building has no flask slot this fits.';
+        return;
+      }
       if (r.multi) {
         // a jewel that's already in one of your sockets is only compared with itself there
         const nm = list[idx[k][0]].item && list[idx[k][0]].item.name;
@@ -190,10 +213,12 @@ async function pobJudge(list) {
         // PoE1: taking out a cluster jewel would remove its passives, which PoB's quick calculation
         // keeps: a result in a cluster jewel's socket would overstate, so those sockets aren't tried
         const usable = own.length ? own : r.multi.filter((m) => !m.replacingCluster);
+        // "Limited to: 1" (Watcher's Eye...): PoB ignores a second copy, so one you have is only swapped for itself
+        const lim = list[idx[k][0]].item && list[idx[k][0]].item.limitedTo;
         if (!usable.length) { errs[idx[k][0]] = errs[idx[k][0]] || 'Your only jewel sockets this fits hold cluster jewels, which the app can\'t judge a swap for yet.'; return; }
         for (const m of usable) {
           const j = pobVerdict.judge(r.before, m.after, pobWeights());
-          if (j) { j.slot = idx[k][1]; j.socket = { slot: m.slot, label: m.label, replacing: m.replacing || null }; per[idx[k][0]].push(j); }
+          if (j) { j.slot = idx[k][1]; j.socket = { slot: m.slot, label: m.label, replacing: m.replacing || null }; if (lim && own.length) j.limitNote = `Limited to ${lim}: compared in place of the one in your tree`; per[idx[k][0]].push(j); }
         }
         return;
       }
@@ -204,6 +229,34 @@ async function pobJudge(list) {
   const out = per.map((arr) => pobVerdict.best(arr));
   out.errors = errs; // why PoB couldn't judge an item, when it said
   return out;
+}
+// which flask slots a flask is compared in: the one with the same flask (base) first, else the
+// same kind (life with life, mana with mana), else your utility flasks / tinctures and empty slots
+function flaskSlots(r) {
+  const m = r.multi || [];
+  const same = m.filter((x) => x.replacingBase && x.replacingBase === r.base);
+  if (same.length) return same;
+  const life = (x) => /^(Life|Mana|Hybrid)$/.test(x || '');
+  if (life(r.sub)) { const k = m.filter((x) => x.replacingSub === r.sub); if (k.length) return k; }
+  const other = m.filter((x) => !x.replacing || (!life(x.replacingSub) && (x.replacingType === r.type || !r.type)));
+  return other.length ? other : m;
+}
+// how a life / mana flask's recovery compares with the one it replaces (same kind only)
+function flaskRecovery(r, m) {
+  const a = r.flask; const b = m.replacingFlask;
+  if (!a || !b || !m.replacing || m.replacingSub !== r.sub) return null;
+  for (const [k, what] of [['life', 'life'], ['mana', 'mana']]) if (a[k] > 0 && b[k] > 0) return { ratio: a[k] / b[k], what };
+  return null;
+}
+// life / mana flasks: their recovery isn't in the damage / effective HP numbers, so it's said
+function flaskNote(r, m) {
+  const a = r.flask; const b = m.replacingFlask;
+  if (!a) return null;
+  const n = (v) => Math.round(v).toLocaleString('en');
+  const part = (k, word) => (a[k] > 0 ? `${n(a[k])} ${word}${b && b[k] > 0 ? ` (yours: ${n(b[k])})` : ''}` : null);
+  const rec = [part('life', 'life'), part('mana', 'mana')].filter(Boolean);
+  if (!rec.length) return null;
+  return `Recovers ${rec.join(' and ')}${a.duration ? ` over ${a.duration}s` : ''}`;
 }
 // PoE1 checks Path of Building's quick calculation can't make: it keeps your gems linked whatever
 // the new item's sockets are, and judges a quiver as if any weapon could use it
@@ -221,8 +274,37 @@ function gearBreaks(j, item, pobSlot) {
       add(`${what}: your ${g.label || 'gems'} in this slot use${g.gems === 1 ? 's' : ''} ${g.gems} linked gems${item.corrupted || links === 0 ? '' : ' (link it first)'}`, !!item.corrupted || links === 0);
     }
   }
+  // socket colours: the linked group your gems go in needs their colours (white sockets take any)
+  if (g && g.colours && item.sockets && /^(Weapon [12]|Helmet|Body Armour|Gloves|Boots)$/.test(pobSlot)) {
+    const miss = socketColoursMissing(item.sockets, g.colours);
+    if (miss) {
+      if (item.corrupted) add(`Wrong socket colours for your ${g.label || 'gems'} (needs ${miss}), and it's corrupted so they can't be changed`, true);
+      else j.breaks.push(`Needs recolouring for your ${g.label || 'gems'}: ${miss} (Chromatic Orbs or the crafting bench)`);
+    }
+  }
   const wep = store.equipped.Weapon;
   if (/^Quivers?$/i.test(item.itemClass || '') && wep && !/^Bows?$/i.test(wep.itemClass || '')) add('Quivers only work with a bow, and your weapon isn\'t one', true);
+}
+// PoE1 flasks and tinctures: Path of Building tries them in each of your five flask slots
+const isFlaskClass = (item) => !!item && /flask|tincture/i.test(item.itemClass || '');
+// "R-R-G-B B" and { R: 2, G: 1, B: 1, W: 0 } -> what the best linked group lacks ("1 more blue"), or null
+function socketColoursMissing(sockets, need) {
+  const groups = String(sockets || '').trim().split(/\s+/).filter(Boolean).map((grp) => grp.split('-'));
+  const total = Object.values(need).reduce((a, b) => a + (Number(b) || 0), 0);
+  let best = null;
+  for (const grp of groups) {
+    if (grp.length < total) continue;
+    const have = { R: 0, G: 0, B: 0, W: 0 };
+    for (const c of grp) if (have[c] != null) have[c]++;
+    const short = {}; let deficit = 0;
+    for (const c of ['R', 'G', 'B']) { const d = Math.max(0, (need[c] || 0) - have[c]); if (d) { short[c] = d; deficit += d; } }
+    if (deficit <= have.W) return null; // white sockets fill the gap
+    const left = deficit - have.W;
+    if (!best || left < best.left) best = { left, short };
+  }
+  if (!best) return null; // not enough links: said elsewhere
+  const word = { R: 'red', G: 'green', B: 'blue' };
+  return Object.entries(best.short).map(([c, d]) => `${d} more ${word[c]}`).join(', ');
 }
 // cluster and timeless jewels change the passive tree itself, which the quick calculation doesn't redo
 const isClusterJewel = (item) => !!item && (!!item.cluster || / Cluster Jewel$/i.test(item.baseType || ''));
@@ -232,7 +314,7 @@ function poe1Unjudged(item, slot) {
   if (!item) return null;
   if (isClusterJewel(item)) return "Cluster jewels aren't judged yet: they add passives, which the app's Path of Building check doesn't redo.";
   if (isTimelessJewel(item)) return "Timeless jewels aren't judged yet: their passive changes need data that doesn't come with the app.";
-  if (/flask|tincture/i.test(item.itemClass || '') || item.flask) return "Flasks and tinctures aren't judged yet.";
+
   if (!pobCanJudge(item, slot)) return null;
   if (!pobOn()) return pobEngine().available() ? 'Not judged: PoE1 items are judged by Path of Building only. Paste your Path of Building Community build on My gear.' : "Not judged: Path of Building for PoE1 isn't installed with this copy of the app.";
   return null;
@@ -241,6 +323,7 @@ function poe1Unjudged(item, slot) {
 function pobCanJudge(item, slot) {
   if (!item) return false;
   if (tg() === 'poe1' && (isClusterJewel(item) || isTimelessJewel(item))) return false;
+  if (item.slot === 'Flask') return tg() === 'poe1';
   if (item.slot === 'Jewel' || /^Jewel \d$/.test(slot || '')) return true;
   const group = item.slot && SLOT_GROUPS[item.slot];
   return !!(pobVerdict.SLOT_TO_POB[slot] || (group && group.every((g) => pobVerdict.SLOT_TO_POB[g])) || pobVerdict.SLOT_TO_POB[item.slot]);
@@ -387,10 +470,13 @@ function applyPob(r, j) {
   r.pob = j;
   r.verdict = j.verdict;
   r.scoreMode = 'pob';
-  r.delta = j.score;
+  r.delta = j.byRecovery ? null : j.score; // a flask judged by its recovery: no "0% for your build"
   r.pct = null;
-  if (j.socket) r.replacing = [j.socket.replacing ? `${j.socket.replacing} (${j.socket.label})` : `an empty jewel socket (${j.socket.label})`];
+  if (j.socket) { r.replacing = [j.socket.replacing ? `${j.socket.replacing} (${j.socket.label})` : `an empty ${j.socket.kind === 'flask' ? 'flask slot' : 'jewel socket'} (${j.socket.label})`]; if (j.socket.kind === 'flask') r.targetSlot = j.socket.label; }
+  else if (j.slot === 'Ring 3') { const g3 = (((pobEngine().info() || {}).gear) || {})['Ring 3']; r.targetSlot = 'Ring 3'; r.replacing = [g3 ? `${g3} (Ring 3)` : 'Ring 3']; }
   else if (j.slot && j.slot !== r.targetSlot && store.equipped[j.slot]) { r.targetSlot = j.slot; r.replacing = [store.equipped[j.slot].name]; }
+  if (j.flaskNote) r.flaskNote = j.flaskNote;
+  if (j.limitNote) r.limitNote = j.limitNote;
   r.risks = j.breaks.length ? j.breaks : null;
   r.resRank = j.resRank;
   return r;
@@ -482,6 +568,10 @@ function evaluate(item) {
       for (const w of ch.warnings || []) risks.push(w);
       const lv = (ch.lines || []).find((l) => l.label === 'Minion skill levels');
       if (lv && lv.delta < 0) risks.push(`${lv.delta} minion skill level${lv.delta === -1 ? '' : 's'}`);
+      // your resistance totals aren't known: a big drop can't be checked against the cap, so it's said
+      for (const x of ch.res || []) {
+        if (x.from == null && x.delta <= -10 && (x.el !== 'chaos' || pobPriorities().chaos)) risks.push(`${x.label || x.el} ${x.delta}%: type your resistances on My gear (or add your Path of Building build) to see if this takes you under the cap`);
+      }
     }
     if (risks.length) {
       r.risks = risks;
@@ -497,7 +587,11 @@ function evaluate(item) {
   r.rows = r.rows.map((row) => ({ ...row, useful: gearOn ? gearLib.usefulness(item.slot, row.key, go) : (row.weight || 0) }))
     .sort((a, b) => Math.abs(b.diff * b.useful) - Math.abs(a.diff * a.useful) || Math.abs(b.diff) - Math.abs(a.diff));
   // PoE1: no gear score, so without Path of Building there's no honest verdict to give
-  if (tg() === 'poe1' && !r.isEquipped && r.verdict !== 'new') {
+  // PoE1 flasks have no slot of their own in the app: Path of Building's flask slots decide, so
+  // until it answers (or without a build) there's no verdict, never "empty slot"
+  if (item.slot === 'Flask') { r.verdict = 'unjudged'; r.delta = null; r.pct = null; r.unjudged = poe1Unjudged(item, r.targetSlot) || null; }
+  // (an "empty" slot in PoE1 usually just means nothing was saved there, so it's no verdict either)
+  else if (tg() === 'poe1' && !r.isEquipped) {
     const why = poe1Unjudged(item, r.targetSlot);
     if (why) { r.verdict = 'unjudged'; r.unjudged = why; r.delta = null; r.pct = null; }
   }
@@ -647,11 +741,18 @@ function showResult(result) {
   showFallback = setTimeout(() => { if (pendingShow) revealPopup(null); }, 400);
 }
 
+// the league searches and prices are for, as far as the app knows without waiting: the one you
+// picked for this game, else the one the trade site lists first (shown in the popup, so a Standard
+// player sees at once that it's set)
+function shownLeague() {
+  try { const d = tradeDataBy[tg()]; return d ? pickLeague(d) : (store.settings.league || null); } catch (_) { return store.settings.league || null; }
+}
 function serialise(result) {
   return JSON.parse(JSON.stringify({
     ...result, links: (result && result.links) || (result && result.item ? ninjaLib.infoLinks(result.item, tg()) : []), pobNudge: !!(result && result.ok && !result.pob && !result.pobPending && !result.pobError && pobEngine().available() && !pobXml()), slots: SLOTS, slotGroups: SLOT_GROUPS, budgetLabel: trade.budgetLabel(budgetNow(), tg()),
     ui: { detail: store.settings.popupDetail || 'compact', colorblind: !!store.settings.colorblind, divineRate: store.settings.divineRate || null },
-    game: tg(), unit: G().baseShort, gameBeta: !!G().beta, gameShort: G().short,
+    worthEx: result && result.item && result.item.id && lastWorth.has(result.item.id) ? lastWorth.get(result.item.id) : null,
+    game: tg(), league: shownLeague(), unit: G().baseShort, gameBeta: !!G().beta, gameShort: G().short,
   }));
 }
 
@@ -689,6 +790,11 @@ function followGame(text, sent) {
   const game = gamesLib.detectGame({ sent, text, last: store.activeGame() });
   if (!game) return null;
   if (game !== store.data.lastGame) { store.data.lastGame = game; store.save(); log(`playing ${gamesLib.gameOf(game).short}`); }
+  useGame(game);
+  return game;
+}
+// make `game` the one you're on: its character, or (first time) your untouched one or a new one
+function useGame(game) {
   if (gamesLib.gameOf(game).supported && game !== store.activeGame()) {
     const id = store.profileForGame(game);
     const cur = store.data.activeProfile;
@@ -710,8 +816,14 @@ function followGame(text, sent) {
     popupItem = null; // the item on show is the other game's: don't re-judge it with this one
     gameChanged();
   }
-  return game;
 }
+// the first-run guide: you pick the game (later, copying an item from the other game switches by itself)
+ipcMain.handle('game:choose', (_e, game) => {
+  if (!['poe1', 'poe2'].includes(game)) return { ok: false };
+  store.data.lastGame = game; store.save();
+  useGame(game);
+  return { ok: true, game: store.activeGame() };
+});
 
 // Everything that has to follow when the game you're on changes (a copy from the other game,
 // picking or importing a character of the other game): one place, so nothing is left behind.
@@ -747,6 +859,9 @@ function handleItemText(text, source, sent) {
     showResult({ ok: false, reason: `That's a ${gamesLib.gameOf(game).name} item. Support for ${gamesLib.gameOf(game).short} is being built: for now the app only judges Path of Exile 2 items. Your PoE2 characters and gear are kept separate.` });
     return true;
   }
+  usage.used(game || store.activeGame());
+  // PoE1 flasks and tinctures are judged by Path of Building in your flask slots
+  if ((game || store.activeGame()) === 'poe1' && isFlaskClass(item)) item.slot = 'Flask';
   // Tag the clipboard so copying the same item again still counts as a change.
   // (Just a trailing line break; pasting into the trade site / PoB is unaffected.)
   try { const tagged = text.endsWith(TAG) ? text : text + TAG; clipboard.writeText(tagged); lastClip = tagged; } catch (_) { lastClip = text; }
@@ -971,7 +1086,9 @@ ipcMain.handle('setting:set', (_e, key, value) => {
   if (key === 'startWithWindows') applyLoginItem();
   if (key === 'build' || key === 'colorblind' || key === 'popupDetail' || key === 'buildTweaks' || key === 'pobDamageWeight') { if (key === 'pobDamageWeight') pobQueries.clear(); refreshAll(); }
   if (key === 'resultsHotkey') registerResultsHotkey();
-  if (key === 'autoUpdate' && autoUpdater) autoUpdater.autoDownload = value !== false;
+  if (key === 'autoUpdate' && updates.updater()) updates.updater().autoDownload = value !== false;
+  if (key === 'betaUpdates') updates.setBetas();
+  if ((key === 'wizardDone' || key === 'usageStats') && value) setTimeout(() => usage.send(), 5000);
   if (key === 'uiScale') { [settingsWin, resultsWin].forEach((w) => { try { if (w && !w.isDestroyed()) w.webContents.setZoomFactor(uiScale()); } catch (_) { /* ignore */ } }); }
   buildTrayMenu();
   return true;
@@ -1331,143 +1448,87 @@ ipcMain.on('open:url', (_e, url) => {
 
 // ---------- poe.ninja prices (currency, gems, maps, divination cards, uniques...) ----------
 const ninjaLib = require('./core/ninja');
-const ninjaCache = new Map(); // url key -> { at, data } (or a promise while it loads)
-const NINJA_TTL = 20 * 60000;
-// one poe.ninja answer, through the app's proxy first; cached for 20 minutes
-async function ninjaGet(urls) {
-  const key = urls[urls.length - 1];
-  const hit = ninjaCache.get(key);
-  if (hit && hit.p) return hit.p;
-  if (hit && Date.now() - hit.at < NINJA_TTL) return hit.data;
-  const p = (async () => {
-    let lastErr = null;
-    for (const u of urls) {
-      try { const d = await getJson(u); ninjaCache.set(key, { at: Date.now(), data: d }); return d; } catch (err) { lastErr = err; }
-    }
-    ninjaCache.delete(key);
-    if (hit && hit.data) return hit.data; // keep using the older answer
-    throw lastErr || new Error('poe.ninja unreachable');
-  })();
-  ninjaCache.set(key, { p, data: hit && hit.data });
-  return p;
-}
-// which exchange lists to look in first, by item class (then all the others)
-const NINJA_FIRST = {
-  poe2: [[/essence/i, 'Essences'], [/rune|talisman/i, 'Runes'], [/soul core/i, 'SoulCores'], [/omen/i, 'Ritual'], [/idol/i, 'Idols'], [/uncut|gem/i, 'UncutGems'], [/splinter|fragment|key|tablet/i, 'Fragments']],
-  poe1: [[/divination/i, 'DivinationCard'], [/essence/i, 'Essence'], [/fossil/i, 'Fossil'], [/resonator/i, 'Resonator'], [/oil/i, 'Oil'], [/scarab/i, 'Scarab'], [/omen/i, 'Omen'], [/tattoo/i, 'Tattoo'], [/fragment|splinter|key|emblem/i, 'Fragment']],
+// ---------- feature modules (src/features) ----------
+// They reach the app's state and helpers through C; getters, so they always see the current value.
+const C = {
+  get G() { return G; },
+  get HOUR() { return HOUR; },
+  get ICON() { return ICON; },
+  get SWITCHED() { return SWITCHED; },
+  get applyLinuxAutostart() { return applyLinuxAutostart; },
+  get budgetNow() { return budgetNow; },
+  get buildTrayMenu() { return buildTrayMenu; },
+  get fetchListings() { return fetchListings; },
+  get gearLib() { return gearLib; },
+  get gearOf() { return gearOf; },
+  get gearOpts() { return gearOpts; },
+  get gearScoreOn() { return gearScoreOn; },
+  get getJson() { return getJson; },
+  get ignoreRules() { return ignoreRules; },
+  get inGame() { return inGame; },
+  get gameCtx() { return gameCtx; },
+  get shownLeague() { return shownLeague; },
+  get keepNotification() { return keepNotification; },
+  get listingLib() { return listingLib; },
+  get loadTradeData() { return loadTradeData; },
+  get log() { return log; },
+  get UA() { return UA; },
+  get ninjaLeague() { return ninjaLeague; },
+  get ninjaLib() { return ninjaLib; },
+  get ninjaPrice() { return ninjaPrice; },
+  get notifySettings() { return notifySettings; },
+  get openIfAny() { return openIfAny; },
+  get pickLeague() { return pickLeague; },
+  get pobCI() { return pobCI; },
+  get pobEngine() { return pobEngine; },
+  get pobListings() { return pobListings; },
+  get pobOn() { return pobOn; },
+  get pobPriorities() { return pobPriorities; },
+  get pobQueryFor() { return pobQueryFor; },
+  get pobSearch() { return pobSearch; },
+  get pobVerdict() { return pobVerdict; },
+  get pobWeights() { return pobWeights; },
+  get popup() { return popup; },
+  get popupSeq() { return popupSeq; },
+  get refreshDivineRate() { return refreshDivineRate; },
+  get rememberListing() { return rememberListing; },
+  get resNeedFor() { return resNeedFor; },
+  get resolveItem() { return resolveItem; },
+  get resolveSlotOf() { return resolveSlotOf; },
+  get resultsState() { return resultsState; },
+  get runSearch() { return runSearch; },
+  get sameGame() { return sameGame; },
+  get scoreListing() { return scoreListing; },
+  get searchKey() { return searchKey; },
+  get searchLog() { return searchLog; },
+  get searchWait() { return searchWait; },
+  get serialise() { return serialise; },
+  get settingsWin() { return settingsWin; },
+  get showResult() { return showResult; },
+  get showResults() { return showResults; },
+  get signedIn() { return signedIn; },
+  get store() { return store; },
+  get savedList() { return savedList; },
+  get tg() { return tg; },
+  get trade() { return trade; },
 };
-async function ninjaPrice(item) {
-  const game = tg();
-  const want = ninjaLib.typesFor(item, game);
-  if (!want.exchange && !want.items.length) return null;
-  const league = await ninjaLeague();
-  const found = { items: [], exchange: [] };
-  for (const t of want.items) {
-    try { found.items.push(await ninjaGet(ninjaLib.itemUrls(league, t, game))); } catch (err) { log(`poe.ninja ${t}: ${err.message}`); }
-  }
-  let r = ninjaLib.priceOf(item, found, game);
-  if (r || !want.exchange) return r && { ...r, league };
-  const cls = `${item.itemClass || ''} ${item.name || ''} ${item.baseType || ''}`;
-  const first = (NINJA_FIRST[G(game).id] || []).filter(([re]) => re.test(cls)).map(([, t]) => t);
-  const order = [...new Set([...first, ...ninjaLib.EXCHANGE_TYPES[G(game).id]])];
-  for (const t of order) {
-    try { found.exchange = [await ninjaGet(ninjaLib.exchangeUrls(league, t, game))]; } catch (err) { log(`poe.ninja ${t}: ${err.message}`); continue; }
-    r = ninjaLib.priceOf(item, found, game);
-    if (r) return { ...r, league };
-  }
-  return null;
-}
-// ---------- loot filter from your build ----------
-const filterLib = require('./core/lootfilter');
-function filterFolder() {
-  const docs = app.getPath('documents');
-  const dir = path.join(docs, 'My Games', tg() === 'poe1' ? 'Path of Exile' : 'Path of Exile 2');
-  return fs.existsSync(dir) ? dir : docs;
-}
-ipcMain.handle('filter:make', inGame(async () => {
-  if (!pobOn()) return { ok: false, error: 'Load your Path of Building build first: the filter is made from what your build needs.' };
-  const game = tg();
-  const eng = pobEngine();
-  await eng.ensureLoaded();
-  const plan = [];
-  for (const slot of ['Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring 1', 'Ring 2', 'Belt', 'Weapon', 'Offhand']) {
-    const it = store.equipped[slot];
-    const p = { slot: slot.replace(/ \d$/, ''), cls: it && it.itemClass, bases: it && !/unique/i.test(it.rarity || '') && it.baseType ? [it.baseType] : [], affixes: [] };
-    const tags = filterLib.tagsFor(slot, it);
-    if (tags && it && !(slot === 'Ring 2' && plan.some((x) => x.slot === 'Ring' && x.affixes.length))) {
-      try {
-        const qy = await pobQueryFor(slot, it);
-        const ids = (qy.modWeights || []).filter((m) => /^explicit\./.test(m.id) && m.weight > 0).slice(0, 8).map((m) => m.id);
-        const names = ids.length ? await eng.affixes({ ids, tags, tiers: 3 }) : {};
-        p.affixes = ids.flatMap((id) => (names[id] || []).filter((m, i) => i === 0 || m.level >= 20).map((m) => m.affix));
-      } catch (err) { log(`filter: ${slot}: ${err.message}`); }
-    }
-    if (!sameGame()) return SWITCHED();
-    plan.push(p);
-  }
-  const prof = store.listProfiles().find((x) => x.active);
-  const section = filterLib.build(plan, { game, name: prof && prof.name });
-  if (!section.blocks) return { ok: false, error: 'Nothing to put in a filter yet: save your gear on My gear first.' };
-  const { dialog } = require('electron');
-  const pick = await dialog.showOpenDialog(settingsWin && !settingsWin.isDestroyed() ? settingsWin : undefined, {
-    title: 'Pick the loot filter you use now (Cancel: save this section on its own)', defaultPath: filterFolder(), properties: ['openFile'], filters: [{ name: 'Loot filters', extensions: ['filter'] }],
-  });
-  let existing = ''; let base = `${G(game).short} upgrades`; let dir = filterFolder();
-  if (!pick.canceled && pick.filePaths && pick.filePaths[0]) {
-    try { existing = fs.readFileSync(pick.filePaths[0], 'utf8'); } catch (err) { return { ok: false, error: `Couldn't read that filter: ${err.message}` }; }
-    base = path.basename(pick.filePaths[0], '.filter').replace(/ \+ upgrades$/i, '') + ' + upgrades'; dir = path.dirname(pick.filePaths[0]);
-  }
-  const save = await dialog.showSaveDialog(settingsWin && !settingsWin.isDestroyed() ? settingsWin : undefined, {
-    title: 'Save the loot filter', defaultPath: path.join(dir, base + '.filter'), filters: [{ name: 'Loot filters', extensions: ['filter'] }],
-  });
-  if (save.canceled || !save.filePath) return { ok: false, error: 'Not saved.' };
-  if (pick.filePaths && save.filePath === pick.filePaths[0]) return { ok: false, error: 'Save it under a new name: your own filter stays as it is.' };
-  try { fs.writeFileSync(save.filePath, existing ? filterLib.merge(section, existing) : section.text); } catch (err) { return { ok: false, error: `Couldn't save it: ${err.message}` }; }
-  log(`filter: saved ${save.filePath} (${section.blocks} blocks)`);
-  return { ok: true, file: save.filePath, message: `Saved "${path.basename(save.filePath)}" with ${section.modBlocks ? `${section.modBlocks} slot${section.modBlocks === 1 ? '' : 's'} of mod highlights and ` : ''}${section.bases} base${section.bases === 1 ? '' : 's'}. In the game: Options → Game → Item Filter, pick it, then reload.` };
-}));
-
-// ---------- map / waystone check ----------
+const prices = require('./features/prices')(C);
+const mapFeature = require('./features/mapcheck')(C);
+require('./features/lootfilter')(C);
+require('./features/spend')(C);
 const mapLib = require('./core/mapcheck');
-const mapMarks = () => ((store.settings.mapMarks || {})[tg()]) || {};
-let mapShown = null; // { r, pob } of the map on show, so a mark re-renders it
-function showMapCard(item) {
-  const r = { ok: true, kind: 'map', item, links: ninjaLib.infoLinks(item, tg()), check: mapLib.check(item, null, mapMarks()), pending: pobOn(), noBuild: !pobOn() };
-  mapShown = { r, pob: null };
-  showResult(r);
-  const seq = popupSeq;
-  const send = () => { if (seq === popupSeq && popup && !popup.isDestroyed()) popup.webContents.send('popup:result', serialise(r)); };
-  if (pobOn()) {
-    pobEngine().mapCheck(mapLib.modsOf(item)).then((res) => { mapShown.pob = res; r.check = mapLib.check(item, res, mapMarks()); })
-      .catch((err) => { r.pobError = err.message; log('map check: ' + err.message); })
-      .then(() => { r.pending = false; send(); });
-  }
-  ninjaPrice(item).then((p) => { if (p) { r.ninja = p; send(); } }).catch(() => {});
-}
-ipcMain.handle('map:mark', (_e, key, mark) => {
-  if (typeof key !== 'string' || key.length > 300) return null;
-  const all = { ...(store.settings.mapMarks || {}) };
-  const mine = { ...(all[tg()] || {}) };
-  if (mark) mine[key] = String(mark).slice(0, 1); else delete mine[key];
-  all[tg()] = mine;
-  store.setSetting('mapMarks', all);
-  if (mapShown) {
-    mapShown.r.check = mapLib.check(mapShown.r.item, mapShown.pob, mine);
-    if (popup && !popup.isDestroyed()) popup.webContents.send('popup:result', serialise(mapShown.r));
-  }
-  return mine;
-});
+function ninjaPrice(item) { return prices.ninjaPrice(item); }
+function showPriceCard(item) { return prices.showPriceCard(item); }
+function showMapCard(item) { return mapFeature.showMapCard(item); }
+const updates = require('./features/updates')(C);
+const usage = require('./features/stats')(C);
+const savedFeature = require('./features/saved')(C);
+function savedList() { return savedFeature.savedList(); }
+function runAlerts(force) { return savedFeature.runAlerts(force); }
+function keepNotification(n) { return savedFeature.keepNotification(n); }
 
-// the popup for something that isn't gear: what it's worth on poe.ninja
-function showPriceCard(item) {
-  const r = { ok: true, kind: 'price', item, pricePending: true, links: ninjaLib.infoLinks(item, tg()) };
-  showResult(r);
-  const seq = popupSeq;
-  ninjaPrice(item).then((p) => { r.ninja = p; if (!p) r.priceNote = "poe.ninja doesn't list a price for this."; })
-    .catch((err) => { r.priceNote = `Couldn't get the price from poe.ninja (${err.message}).`; log('poe.ninja: ' + err.message); })
-    .then(() => { r.pricePending = false; if (seq === popupSeq && popup && !popup.isDestroyed()) popup.webContents.send('popup:result', serialise(r)); });
-}
-
+// ---------- loot filter from your build ----------
+// ---------- map / waystone check ----------
 ipcMain.handle('trade:search', inGame(async (_e, req) => {
   const item = resolveItem(req.target || req.slot);
   if (!item) return { ok: false, error: 'No item for that slot.' };
@@ -1682,10 +1743,19 @@ function searchKey(body) {
 
 // ---------- listings (in-app results) ----------
 
+// listing fetches are paced too: a short gap between them, longer when the trade site says we're
+// close to its limit, and when it says "too many requests" we wait as long as it asks (and don't
+// try again through the page, which would only be another request)
+let fetchNextAt = 0;
 async function fetchViaApp(league, searchId, ids, game) {
   const url = trade.fetchUrl(ids, searchId, game);
   const res = await net.fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
-  if (res.status === 429) throw new Error('The trade site says too many requests – wait a moment.');
+  const ra = Number(res.headers && res.headers.get && res.headers.get('retry-after'));
+  if (res.status === 429) {
+    fetchNextAt = Date.now() + (ra > 0 ? ra * 1000 : 10000);
+    const e = new Error(`The trade site says too many requests – wait ${Math.ceil((fetchNextAt - Date.now()) / 1000)} seconds.`); e.rateLimited = true; throw e;
+  }
+  try { fetchNextAt = Date.now() + (res.headers && nearRateLimit(res.headers) ? 2500 : 350); } catch (_) { fetchNextAt = Date.now() + 350; }
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !Array.isArray(json.result)) throw new Error((json.error && json.error.message) || `HTTP ${res.status}`);
   return json.result;
@@ -1709,8 +1779,10 @@ async function fetchListings(league, searchId, ids, game = tg()) {
   for (let i = 0; i < ids.length; i += 10) {
     const chunk = ids.slice(i, i + 10);
     let got = null; let lastErr = null;
+    const wait = fetchNextAt - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 60000)));
     for (const fn of [fetchViaApp, fetchViaPage]) {
-      try { got = await fn(league, searchId, chunk, game); break; } catch (err) { lastErr = err; log(`fetch via ${fn.name} failed: ${err.message || err}`); }
+      try { got = await fn(league, searchId, chunk, game); break; } catch (err) { lastErr = err; log(`fetch via ${fn.name} failed: ${err.message || err}`); if (err.rateLimited) break; }
     }
     if (!got) throw lastErr || new Error('fetch failed');
     if (!loggedSample && got[0]) { loggedSample = true; log('fetch sample: ' + JSON.stringify(got[0]).slice(0, 1500)); }
@@ -1746,6 +1818,7 @@ function createResultsWindow() {
 
 function scoreListing(s) {
   if (!s.item) return { ...s, compare: null };
+  if (tg() === 'poe1' && isFlaskClass(s.item)) s.item.slot = 'Flask';
   const r = evaluate(s.item);
   const c = r && r.ok ? {
     verdict: r.verdict, delta: r.delta, pct: r.pct, targetSlot: r.targetSlot, replacing: r.replacing, scoreMode: r.scoreMode,
@@ -1914,8 +1987,9 @@ function budgetNow(b) {
 }
 
 async function ninjaLeague() {
-  if (store.settings.league) return store.settings.league;
+  // the league searches use (a chosen league that has ended, or another game's, isn't used)
   try { const d = await loadTradeData(false); return pickLeague(d); } catch (_) { /* fall through */ }
+  if (store.settings.league) return store.settings.league;
   try {
     const l = await getJson(`https://poe.ninja/${G().ninja}/api/economy/leagues`);
     const first = Array.isArray(l) ? l[0] : (l && (l.economyLeagues || l.leagues || [])[0]);
@@ -2068,7 +2142,7 @@ ipcMain.handle('trade:quick', inGame(async (_e, target, mode, extra) => {
   if (mode === 'weights') {
     const q = trade.buildUpgradeQuery(item, store.weights, opts);
     if (!(q.currentScore > 0)) {
-      return { ok: false, error: `None of your stat weights are on this ${item.itemClass ? item.itemClass.toLowerCase().replace(/s$/, '') : 'item'}, so "By my weights" would match almost anything. Use Better for my build, or set weights for its stats (Build & stats).` };
+      return { ok: false, error: `None of your stat weights are on this ${item.itemClass ? item.itemClass.toLowerCase().replace(/s$/, '') : 'item'}, so "By my weights" would match almost anything. Use Find upgrades, or set weights for its stats (Build & stats).` };
     }
     if (!q.body.query.stats.length && !q.body.query.filters.equipment_filters) {
       return { ok: false, error: 'None of your weighted stats could be matched on the trade site. Set weights for your build\'s stats first.' };
@@ -2152,163 +2226,6 @@ function priceSummary(listings, league) {
 }
 
 // ---------- where to spend your divines ----------
-// For every slot: Path of Building's weighted search within your budget, the first listings
-// checked with your build, and the best one's gain per divine. Then, if resistances are short,
-// pairs of items that cap them together. One run takes a few minutes (the trade site allows only a
-// few searches a minute); the last run per game is kept.
-const SPEND_SLOTS = ['Weapon', 'Offhand', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring', 'Belt'];
-const spendRuns = {}; // game -> { at, rows, pairs, ... }
-let spendBusy = null;
-const spendProgress = (p) => notifySettings('spend:progress', p);
-function shortResists() {
-  const st = ((pobEngine().info() || {}).stats) || {};
-  const pr = pobPriorities();
-  return ['Fire', 'Cold', 'Lightning', ...(pr.chaos && !pobCI() ? ['Chaos'] : [])].filter((El) => {
-    const v = Number(st[`${El}Resist`]); const tot = Number(st[`${El}ResistTotal`]);
-    const max = Number(st[`${El}ResistMax`]) || 75;
-    return Number.isFinite(v) && v < max - 0.5 && !(tot > v + 0.5);
-  });
-}
-ipcMain.handle('spend:get', () => JSON.parse(JSON.stringify(spendRuns[tg()] ? { ...spendRuns[tg()], rows: spendRuns[tg()].rows.map(({ search, ...x }) => x) } : null)));
-ipcMain.handle('spend:open', inGame(async (_e, slot, idx) => {
-  const run = spendRuns[tg()];
-  const row = run && run.rows.find((x) => x.slot === slot);
-  if (!row || !row.search) return { ok: false, error: 'Run "Where to spend" again first.' };
-  const shown = await showResults(row.search.r, row.search.ctx);
-  return shown ? { ok: true, inApp: true } : { ok: false, error: 'Could not show the listings.' };
-}));
-ipcMain.handle('spend:run', inGame(async () => {
-  if (spendBusy) return { ok: false, error: 'Already looking – see the progress above.' };
-  // Path of Building when your build is loaded; otherwise (PoE2) the gear score
-  const mode = pobOn() ? 'pob' : gearScoreOn() ? 'gear' : null;
-  if (!mode) return { ok: false, error: tg() === 'poe1' ? 'Load your Path of Building build on My gear first: PoE1 items are judged by Path of Building.' : 'Load your Path of Building build on My gear, or pick a build for the gear score (Build & stats), first.' };
-  spendBusy = true;
-  const game = tg();
-  try {
-    let d;
-    try { d = await loadTradeData(false); } catch (err) { return { ok: false, error: 'Could not load trade site data: ' + (err.message || err) }; }
-    await refreshDivineRate(false);
-    if (!sameGame()) return SWITCHED();
-    const league = pickLeague(d);
-    const budget = budgetNow();
-    const div = store.settings.divineRate > 0 ? store.settings.divineRate : null;
-    const rates = { ...(store.settings.currencyRates || {}), ...(div ? { divine: div } : {}) };
-    if (mode === 'pob') await pobEngine().ensureLoaded();
-    const w = store.equipped.Weapon; const off = store.equipped.Offhand;
-    const slots = SPEND_SLOTS.filter((sl) => !(sl === 'Offhand' && w && w.twoHanded && !(off && /quiver/i.test(off.itemClass || ''))));
-    const rows = [];
-    let stopped = null;
-    for (let i = 0; i < slots.length; i++) {
-      const target = slots[i];
-      spendProgress({ slot: target, done: i, total: slots.length });
-      const item = resolveItem(target);
-      const pobSlot = target === 'Ring' ? (item && resolveSlotOf(item)) || 'Ring 1' : target;
-      if (!pobVerdict.SLOT_TO_POB[pobSlot]) continue;
-      const row = { slot: target, pobSlot, current: item ? item.name : null };
-      rows.push(row);
-      if (mode === 'gear' && !item) { row.error = 'Nothing saved for this slot: copy what you wear (F2) so it has something to beat.'; continue; }
-      try {
-        const opts = { statIndex: d.index, filtersData: d.filters, preferLocal: !['Amulet', 'Ring', 'Belt'].includes(target), status: store.settings.status, ignoreRules: ignoreRules(), game, noOpen: true };
-        const sr = mode === 'pob' ? await pobSearch(item || { slot: target, itemClass: null }, pobSlot, league, budget, opts) : await spendGearSearch(item, pobSlot, league, budget, opts);
-        if (!sr) { row.error = 'Path of Building found nothing to search for in this slot.'; continue; }
-        if (!sr.ok) { row.error = sr.error || 'The search failed.'; if (sr && (sr.rateLimited || sr.switched)) { stopped = sr.error; break; } continue; }
-        const r = sr.r;
-        row.total = r.total || 0; row.url = r.url;
-        if (!r.ids || !r.ids.length) { row.none = true; continue; }
-        const raw = await fetchListings(league, r.searchId, r.ids.slice(0, 10), game);
-        const list = raw.map((x) => listingLib.summarise(x, item && item.itemClass, rates, G(game).base)).map((x) => { if (x.item) rememberListing(x.item); return scoreListing(x); });
-        if (mode === 'pob') await pobListings(list);
-        row.search = { r, ctx: sr.ctx };
-        // the gain: Path of Building's % for your build, or gear score points
-        const gainOf = (x) => (mode === 'pob' ? x.compare.pob && x.compare.pob.score : x.compare.scoreMode === 'gear' ? x.compare.delta : null);
-        // only listings for this slot (a search can turn up other item kinds)
-        const forSlot = (x) => (target === 'Ring' ? /^Ring/.test(x.compare.targetSlot || '') : x.compare.targetSlot === target);
-        const good = list.filter((x) => x.compare && forSlot(x) && x.priceEx > 0 && !['resloss', 'dmgloss', 'downgrade'].includes(x.compare.verdict) && gainOf(x) > 0);
-        const priceDiv = (x) => (div ? x.priceEx / div : null);
-        const cand = good.map((x) => ({
-          name: x.item.name, base: x.item.baseType, price: x.priceText, priceEx: x.priceEx, priceDiv: priceDiv(x),
-          gain: gainOf(x), verdict: x.compare.verdict, risks: (mode === 'pob' ? x.compare.pob.breaks : x.compare.risks) || [], resGain: mode === 'pob' ? x.compare.pob.resGain || 0 : 0,
-          perDiv: div ? gainOf(x) / Math.max(priceDiv(x), 0.05) : null, listingId: x.id, text: x.item.raw || x.item.listingText || null, itemSlot: x.compare.targetSlot,
-        }));
-        cand.sort((a, b) => (b.perDiv || 0) - (a.perDiv || 0) || b.gain - a.gain);
-        row.best = cand[0] || null;
-        row.biggest = cand.slice().sort((a, b) => b.gain - a.gain)[0] || null;
-        row.candidates = cand.slice(0, 6);
-        if (!row.best) row.noneBetter = true;
-      } catch (err) { row.error = err.message || String(err); log('spend: ' + target + ': ' + row.error); }
-      if (!sameGame()) { stopped = SWITCHED().error; break; }
-    }
-    spendProgress({ slot: null, done: slots.length, total: slots.length, pairs: true });
-    // resistances short: two items that cap them together
-    const short = shortResists();
-    let pairs = [];
-    if (mode === 'pob' && short.length && !stopped) {
-      try { pairs = await resistPairs(rows, short); } catch (err) { log('spend pairs: ' + err.message); }
-    }
-    rows.sort((a, b) => ((b.best && b.best.perDiv) || -1) - ((a.best && a.best.perDiv) || -1));
-    const run = { at: Date.now(), mode, league, budget: trade.budgetLabel(budget, game), unit: G(game).baseShort, divineRate: div, rows, pairs, short: mode === 'pob' ? short : [], stopped };
-    spendRuns[game] = run;
-    spendProgress({ done: slots.length, total: slots.length, finished: true });
-    log(`spend: ${rows.filter((x) => x.best).length} of ${rows.length} slots have an upgrade; ${pairs.length} resistance pairs`);
-    return { ok: true, ...JSON.parse(JSON.stringify({ ...run, rows: rows.map(({ search, ...x }) => x) })) };
-  } finally { spendBusy = null; }
-}));
-// without Path of Building (PoE2): the gear-score search of Find upgrades, one search per slot
-async function spendGearSearch(item, slot, league, budget, opts) {
-  const go = gearOpts();
-  const weights = gearLib.searchWeights(item.slot, { ...go, resNeed: resNeedFor(slot) });
-  if (!weights.length) return null;
-  const sizeKey = (await signedIn()) ? 'signed' : 'anon';
-  const SIZES = [{ maxFilters: 40 }, { maxFilters: 20, explicitOnly: true }, { maxFilters: 10, explicitOnly: true, coreShare: 0 }, { maxFilters: 6, explicitOnly: true, coreShare: 0 }];
-  let size = Math.min((store.settings.gearSearchSize || {})[sizeKey] || 0, SIZES.length - 1);
-  for (;;) {
-    const q = trade.buildGearQuery(item, { ...opts, weights, share: 1.06, baseShare: 0.9, ...SIZES[size] });
-    if (!q.filters) return null;
-    trade.applyBudget(q.body, budget, tg());
-    const r = await runSearch(league, q.body, `spend gear ${slot}${size ? ` size${size}` : ''}`);
-    if (!(r && r.tooComplex) || size >= SIZES.length - 1) {
-      if (!r || !r.ok) return r;
-      return { ok: true, r, body: q.body, ctx: { item, mode: 'gear', body: q.body, searchKey: searchKey(q.body), title: `Better for your build than ${item.name}`, note: 'Listings your gear score rates above what you wear, best for your build first.' } };
-    }
-    size++;
-  }
-}
-
-// pairs of listings from two slots that together cap the resistances you're short of
-async function resistPairs(rows, short) {
-  const per = rows.filter((x) => x.candidates && x.candidates.length).map((x) => ({ row: x, list: x.candidates.filter((c) => c.text && c.resGain > 0).sort((a, b) => b.resGain - a.resGain).slice(0, 2) })).filter((x) => x.list.length);
-  if (per.length < 2) return [];
-  const pobSlotOf = (row, c) => pobVerdict.SLOT_TO_POB[row.pobSlot] || pobVerdict.SLOT_TO_POB[c.itemSlot];
-  const req = []; const idx = [];
-  for (let i = 0; i < per.length; i++) for (const a of per[i].list) {
-    const bs = []; const bi = [];
-    for (let j = i + 1; j < per.length; j++) for (const b of per[j].list) { bs.push({ slot: pobSlotOf(per[j].row, b), text: b.text }); bi.push([per[j].row, b]); }
-    if (bs.length) { req.push({ a: { slot: pobSlotOf(per[i].row, a), text: a.text }, bs }); idx.push([per[i].row, a, bi]); }
-  }
-  if (!req.length) return [];
-  const t0 = Date.now();
-  const res = await pobEngine().evalPairs(req);
-  const out = [];
-  res.forEach((p, k) => {
-    if (!p || !p.ok) return;
-    const [rowA, a, bi] = idx[k];
-    p.results.forEach((x, m) => {
-      if (!x || !x.ok) return;
-      const j = pobVerdict.judge(p.before, x.after, pobWeights());
-      if (!j || j.resLoss.length || j.dmgLoss) return;
-      const capped = short.filter((El) => (j.res || []).some((row) => row.el === El && row.capped));
-      if (!capped.length) return;
-      const [rowB, b] = bi[m];
-      const priceDiv = a.priceDiv != null && b.priceDiv != null ? a.priceDiv + b.priceDiv : null;
-      out.push({ a: { slot: rowA.slot, name: a.name, price: a.price, listingId: a.listingId }, b: { slot: rowB.slot, name: b.name, price: b.price, listingId: b.listingId },
-        capped, all: capped.length === short.length, gain: j.score, priceDiv, perDiv: priceDiv ? j.score / Math.max(priceDiv, 0.05) : null });
-    });
-  });
-  log(`spend: tried ${res.reduce((n, p) => n + ((p && p.results) || []).length, 0)} pairs in ${Date.now() - t0} ms`);
-  // the ones that cap everything first, then the most capped, then the best value
-  return out.sort((x, y) => (y.capped.length - x.capped.length) || ((y.perDiv || 0) - (x.perDiv || 0))).slice(0, 5);
-}
-
 ipcMain.handle('trade:price', inGame(async (_e, target, picks) => {
   const item = resolveItem(target);
   if (!item) return { ok: false, error: 'No item to price.' };
@@ -2365,116 +2282,8 @@ ipcMain.handle('trade:price', inGame(async (_e, target, picks) => {
 
 // ---------- saved searches ----------
 
-function savedList() { return store.data.savedSearches || (store.data.savedSearches = []); }
-
-ipcMain.handle('saved:add', (_e, name) => {
-  if (!resultsState) return { ok: false };
-  const { ctx, r } = resultsState;
-  const list = savedList();
-  if (list.find((x) => x.searchKey === ctx.searchKey)) return { ok: true, already: true };
-  list.unshift({
-    id: 's' + Date.now().toString(36), name: name || ctx.title, league: r.league, game: r.game || tg(), body: ctx.body, searchKey: ctx.searchKey,
-    mode: ctx.mode, itemClass: ctx.item && ctx.item.itemClass, itemName: ctx.item && ctx.item.name,
-    lastTotal: r.total, lastRun: Date.now(), created: Date.now(), lastIds: (r.ids || []).slice(0, 100), alert: false,
-  });
-  store.save();
-  notifySettings('saved:changed');
-  return { ok: true };
-});
-// the game you're playing's saved searches (the other game's are kept for when you play it)
-ipcMain.handle('saved:list', () => JSON.parse(JSON.stringify(savedList().filter((x) => (x.game || 'poe2') === tg()).map(({ body, lastIds, ...x }) => x))));
-ipcMain.handle('saved:delete', (_e, id) => {
-  store.data.savedSearches = savedList().filter((x) => x.id !== id);
-  store.save();
-  return true;
-});
-ipcMain.handle('saved:run', inGame(async (_e, id) => {
-  const s = savedList().find((x) => x.id === id);
-  if (!s) return { ok: false, error: 'Saved search not found.' };
-  await refreshDivineRate(false);
-  const body = JSON.parse(JSON.stringify(s.body));
-  const r = await runSearch(s.league, body, `saved ${s.name}`, { game: s.game || 'poe2' });
-  if (!r.ok) return r;
-  const prev = s.lastTotal;
-  s.lastTotal = r.total; s.lastRun = Date.now(); s.lastIds = (r.ids || []).slice(0, 100); store.save();
-  const item = { itemClass: s.itemClass, name: s.itemName, slot: require('./core/slots').slotForClass(s.itemClass) };
-  await openIfAny(r, { item, mode: s.mode, title: s.name, body, searchKey: s.searchKey,
-    note: prev != null && r.total != null ? `${r.total} listings now (${r.total - prev >= 0 ? '+' : ''}${r.total - prev} since last time).` : null });
-  return { ...r, prev, ids: undefined, body: undefined };
-}));
-
 // ---------- saved-search alerts ----------
 const { Notification, session } = require('electron');
-let alertsRunning = false;
-let lastAlertRun = 0;
-ipcMain.handle('saved:alert', (_e, id, on) => {
-  const s = savedList().find((x) => x.id === id);
-  if (s) { s.alert = !!on; store.save(); }
-  return !!(s && s.alert);
-});
-ipcMain.handle('alerts:status', () => ({ every: store.settings.alertEvery || 0, lastRun: lastAlertRun, running: alertsRunning }));
-
-// keep notifications alive until they're used, or Windows may drop their click handlers
-const liveNotes = new Set();
-function keepNotification(n) {
-  liveNotes.add(n);
-  const done = () => liveNotes.delete(n);
-  n.on('close', done); n.on('click', () => setTimeout(done, 1000));
-  setTimeout(done, 10 * 60000);
-}
-async function runAlerts(force) {
-  const every = Number(store.settings.alertEvery) || 0;
-  if (alertsRunning || (!force && (!every || Date.now() - lastAlertRun < every * 60000))) return;
-  const list = savedList().filter((x) => x.alert);
-  if (!list.length) return;
-  alertsRunning = true; lastAlertRun = Date.now();
-  try {
-    await refreshDivineRate(false);
-    for (const s of list) {
-      if (searchWait() > 0 || searchLog.filter((t) => Date.now() - t < 60000).length > 6) { log('alerts: leaving the searches to you for now'); break; }
-      // alerts run for both games; the other game's use that game's saved rates
-      const sg = s.game || 'poe2';
-      const here = sg === store.activeGame();
-      const gs = here ? store.settings : (((store.data.gameSettings || {})[sg]) || {});
-      const r = await runSearch(s.league, JSON.parse(JSON.stringify(s.body)), `alert ${s.name}`, { maxWait: 0, game: sg, anyGame: true });
-      if (!r.ok) { log(`alert ${s.name}: ${r.error}`); if (r.rateLimited) break; continue; }
-      if (!Array.isArray(r.ids)) { log(`alert ${s.name}: the trade site search couldn't be read in the app`); continue; }
-      const prev = Array.isArray(s.lastIds) ? s.lastIds : null;
-      const fresh = prev ? r.ids.filter((x) => !prev.includes(x)) : [];
-      s.lastIds = r.ids.slice(0, 100); s.lastTotal = r.total; s.lastRun = Date.now();
-      store.save();
-      if (fresh.length) {
-        let detail = '';
-        try {
-          const raw = await fetchListings(s.league, r.searchId, fresh.slice(0, 3), sg);
-          const rates = { ...(gs.currencyRates || {}), ...(gs.divineRate ? { divine: gs.divineRate } : {}) };
-          const best = raw.map((x) => listingLib.summarise(x, s.itemClass, rates, G(sg).base)).sort((a, b) => (a.priceEx || 1e15) - (b.priceEx || 1e15))[0];
-          if (best) {
-            const g = best.item && here ? gearOf(best.item) : null;
-            detail = `Cheapest new: ${best.priceText}${g && g.score != null ? ` · gear score ${g.score} ${g.grade}` : ''}`;
-          }
-        } catch (err) { log('alert fetch: ' + err.message); }
-        log(`alert ${s.name}: ${fresh.length} new`);
-        if (Notification.isSupported()) {
-          const n = new Notification({ title: `${fresh.length} new listing${fresh.length === 1 ? '' : 's'}${here ? '' : ` (${G(sg).short})`}: ${s.name}`, body: detail || 'Click to see them.', icon: ICON });
-          n.on('click', async () => {
-            // the other game's listings would be judged against this game's character: open the trade site instead
-            if (sg !== store.activeGame()) { if (r.url) shell.openExternal(r.url); return; }
-            const rr = await runSearch(s.league, JSON.parse(JSON.stringify(s.body)), `alert open ${s.name}`, { game: sg });
-            if (rr.ok) await openIfAny(rr, { item: { itemClass: s.itemClass, name: s.itemName, slot: require('./core/slots').slotForClass(s.itemClass) }, mode: s.mode, title: s.name, body: s.body, searchKey: s.searchKey, note: `${fresh.length} new since the last check.` });
-          });
-          keepNotification(n);
-          n.show();
-        }
-        notifySettings('saved:changed');
-      }
-      if (r.near) { log('alerts: near the trade site rate limit, stopping this round'); break; }
-      await new Promise((res) => setTimeout(res, 3000)); // go easy on the trade site
-    }
-  } finally { alertsRunning = false; }
-}
-ipcMain.handle('alerts:run', async () => { await runAlerts(true); return { lastRun: lastAlertRun }; });
-
 // ---------- pathofexile.com account (optional) ----------
 // pathofexile.com gives every visitor a POESESSID cookie, signed in or not, so the cookie alone
 // proves nothing (that made the sign-in window close at once). Ask the site itself: the account
@@ -2635,49 +2444,6 @@ function openSettings() {
 }
 
 // ---------- auto-update (installed app only; releases on GitHub) ----------
-const upd = { state: 'idle', version: null, error: null, progress: null, checked: null };
-let autoUpdater = null;
-// the installed app and the AppImage update themselves; the portable .exe and other Linux builds don't
-function updaterAvailable() { return app.isPackaged && !process.env.PORTABLE_EXECUTABLE_DIR && (process.platform !== 'linux' || !!process.env.APPIMAGE); }
-function setupUpdater() {
-  if (!updaterAvailable()) { upd.state = app.isPackaged ? 'portable' : 'dev'; return; }
-  try { ({ autoUpdater } = require('electron-updater')); } catch (err) { upd.state = 'unavailable'; log('updater: ' + err.message); return; }
-  autoUpdater.autoDownload = store.settings.autoUpdate !== false;
-  autoUpdater.autoInstallOnAppQuit = true;
-  // a beta (0.5.0-beta.1) gets the next betas and then the release; everyone else only releases
-  autoUpdater.allowPrerelease = /-/.test(app.getVersion());
-  autoUpdater.logger = { info: (m) => log('updater: ' + m), warn: (m) => log('updater warn: ' + m), error: (m) => log('updater error: ' + m), debug: () => {} };
-  const changed = () => { notifySettings('update:changed'); buildTrayMenu(); };
-  autoUpdater.on('checking-for-update', () => { upd.state = 'checking'; upd.error = null; changed(); });
-  autoUpdater.on('update-not-available', () => { upd.state = 'latest'; upd.checked = Date.now(); changed(); });
-  autoUpdater.on('update-available', (i) => { upd.state = autoUpdater.autoDownload ? 'downloading' : 'available'; upd.version = i.version; upd.checked = Date.now(); changed(); });
-  autoUpdater.on('download-progress', (p) => { upd.progress = Math.round(p.percent); notifySettings('update:changed'); });
-  // an AppImage update can land under a new file name: point "start when I log in" at it
-  autoUpdater.on('appimage-filename-updated', (p) => { if (p) { process.env.APPIMAGE = p; applyLinuxAutostart(); } });
-  autoUpdater.on('error', (err) => { upd.state = 'error'; upd.error = String(err && err.message || err).split('\n')[0]; changed(); });
-  autoUpdater.on('update-downloaded', (i) => {
-    upd.state = 'ready'; upd.version = i.version; changed();
-    log(`update ${i.version} downloaded; installs on restart`);
-    try {
-      const n = new Notification({ title: `PoE Upgrade Checker ${i.version} is ready`, body: 'Click to restart and update now, or it installs next time you quit.', icon: ICON });
-      n.on('click', () => autoUpdater.quitAndInstall(true, true));
-      keepNotification(n);
-      n.show();
-    } catch (_) { /* ignore */ }
-  });
-  const check = () => autoUpdater.checkForUpdates().catch((err) => log('update check: ' + err.message));
-  setTimeout(check, 15000);
-  setInterval(check, 6 * HOUR);
-}
-ipcMain.handle('update:status', () => ({ ...upd, current: app.getVersion() }));
-ipcMain.handle('update:check', async () => {
-  if (!autoUpdater) return { ...upd, current: app.getVersion() };
-  try { await autoUpdater.checkForUpdates(); } catch (err) { upd.state = 'error'; upd.error = err.message; }
-  return { ...upd, current: app.getVersion() };
-});
-ipcMain.handle('update:download', async () => { if (autoUpdater) { upd.state = 'downloading'; autoUpdater.downloadUpdate().catch((e) => log('update download: ' + e.message)); } return upd; });
-ipcMain.on('update:install', () => { if (autoUpdater && upd.state === 'ready') autoUpdater.quitAndInstall(true, true); });
-
 function buildTrayMenu() {
   const paused = !!store.settings.paused;
   tray.setToolTip(paused ? 'PoE Upgrade Checker (paused)' : 'PoE Upgrade Checker');
@@ -2685,7 +2451,7 @@ function buildTrayMenu() {
     { label: hotkeyStatus.ok ? `Hotkey: ${hotkeyStatus.accelerator}` : 'Hotkey not set (see Settings)', enabled: false },
     { label: `${G(store.activeGame()).short}${G(store.activeGame()).beta ? ' (beta)' : ''} · Character: ${(store.listProfiles().find((p) => p.active) || {}).name || '—'}`, enabled: false },
     { label: `Show / hide results${resultsHotkey ? ` (${resultsHotkey})` : ''}`, click: toggleResults, enabled: !!resultsState },
-    ...(upd.state === 'ready' ? [{ label: `Restart to update to ${upd.version}`, click: () => autoUpdater && autoUpdater.quitAndInstall(true, true) }] : []),
+    ...(updates.upd.state === 'ready' ? [{ label: `Restart to update to ${updates.upd.version}`, click: () => updates.updater() && updates.updater().quitAndInstall(true, true) }] : []),
     { label: 'Settings && gear…', click: openSettings },
     { label: 'Open log', click: () => { log('log opened'); shell.openPath(logFile); } },
     { label: paused ? 'Resume watching' : 'Pause watching', click: () => { store.setSetting('paused', !paused); buildTrayMenu(); } },
@@ -2722,7 +2488,10 @@ app.whenReady().then(() => {
   }
   // the gear-score profile used to default to the Djinn summoner: keep it for people already using it
   if (!store.settings.build) store.setSetting('build', store.settings.wizardDone || Object.keys(store.equipped || {}).length ? 'djinn-varashta' : gearLib.DEFAULT_BUILD);
-  pobSync(); // the engine itself starts on first use
+  pobSync();
+  // start Path of Building for the game you're on a little after launch, so the first F2 doesn't
+  // wait for it to load (it still stops by itself after a while unused)
+  if (store.settings.warmPob !== false) setTimeout(() => { if (pobOn()) pobEngine().ensureLoaded().then(() => log('pob: ready before the first F2')).catch((err) => log('pob warm-up: ' + err.message)); }, 6000);
   process.on('uncaughtException', (err) => log('error: ' + (err && err.stack || err)));
   process.on('unhandledRejection', (err) => log('error (promise): ' + (err && err.stack || err)));
   registerHotkey();
@@ -2735,7 +2504,8 @@ app.whenReady().then(() => {
   refreshDivineRate(false).catch(() => {});
   setInterval(() => refreshDivineRate(false).catch(() => {}), HOUR);
   applyLoginItem();
-  setupUpdater();
+  updates.setupUpdater();
+  usage.start();
   const hidden = process.argv.includes('--hidden') || store.settings.openSettingsOnStart === false;
   if (!hidden) openSettings();
 });

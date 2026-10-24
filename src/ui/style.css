@@ -452,3 +452,18 @@ button.primary.gilded:hover:not(:disabled) { color: #fff; background: linear-gra
 }
 /* the top tiles fill the whole row */
 .char-big { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+
+/* keep / sell / vendor */
+.advice { margin: 4px 0 2px; font-size: 12px; }
+.advice:empty { display: none; }
+.adv { font-weight: 700; letter-spacing: .04em; padding: 1px 6px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); font-size: 11px; }
+.adv-up { color: var(--up); } .adv-sell { color: var(--gold, #c9a463); } .adv-same { color: var(--stone); } .adv-risky { color: var(--warn); }
+
+/* price history (poe.ninja, 7 days) */
+.spark-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.spark polyline { stroke: var(--stone); }
+.spark-up polyline { stroke: var(--up); } .spark-down polyline { stroke: var(--down); }
+
+/* words that differ between the games (settings window) */
+body:not(.game-poe1) .p1 { display: none; }
+body.game-poe1 .p2 { display: none; }

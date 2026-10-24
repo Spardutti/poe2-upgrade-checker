@@ -91,3 +91,20 @@ test('PoB1: links per slot, bows drop a shield, newer trees and timeless jewels'
     assert.strictEqual(r.timelessRemoved, 1);
   }
 });
+
+const GRANITE = 'Item Class: Utility Flasks\nRarity: Magic\nAbecedarian\'s Granite Flask of the Armadillo\n--------\nLasts 5.00 Seconds\nConsumes 30 of 60 Charges on use\nCurrently has 0 Charges\n+1500 to Armour\n--------\nRequirements:\nLevel: 27\n--------\nItem Level: 84\n--------\n40% increased Armour during Effect\n--------\nRight click to drink. Can only hold charges while in belt. Refills as you kill monsters.\n';
+const LIFE = 'Item Class: Life Flasks\nRarity: Magic\nSeething Divine Life Flask of Staunching\n--------\nRecovers 2400 Life over 0.30 seconds\nConsumes 15 of 45 Charges on use\nCurrently has 0 Charges\n--------\nRequirements:\nLevel: 60\n--------\nItem Level: 84\n--------\n66% reduced Recovery rate\n50% increased Amount Recovered\nGrants Immunity to Bleeding for 6 seconds if used while Bleeding\n--------\nRight click to drink. Can only hold charges while in belt. Refills as you kill monsters.\n';
+
+test('PoB1: flasks are tried in the flask slots; gems say their socket colours', { skip: skip1, timeout: 120000 }, async () => {
+  const s = await e1.loadBuild(fx('pob1/berserker-3_29.xml'));
+  assert.strictEqual(s.ok, true);
+  const [g, l] = await e1.evalItems([{ slot: 'Flask', text: GRANITE }, { slot: 'Flask', text: LIFE }]);
+  assert.strictEqual(g.ok, true, g.error);
+  assert.strictEqual(g.multi.length, 5);
+  assert.ok(g.multi.every((m) => m.before && m.after && 'active' in m));
+  assert.strictEqual(g.sub, 'Utility');
+  assert.strictEqual(l.ok, true, l.error);
+  assert.ok(l.flask && l.flask.life > 0, JSON.stringify(l.flask));
+  const cg = Object.values(s.slotGems || {}).find((x) => x.colours);
+  assert.ok(cg && cg.colours.R + cg.colours.G + cg.colours.B + cg.colours.W === cg.gems, JSON.stringify(s.slotGems));
+});

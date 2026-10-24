@@ -98,3 +98,16 @@ test('loot filter: a section in front of your filter, replaced on the next run',
   assert.ok(/HasExplicitMod >=2 "A" "B"/.test(s2.text) && /ItemLevel >= 75/.test(s2.text));
   assert.deepStrictEqual(F.tagsFor('Ring 2', {}), ['ring']);
 });
+
+test('ninja: every exchange list in one request through the proxy', () => {
+  assert.strictEqual(N.allExchangeUrl('Rise of the Abyssal', 'poe2'), 'https://poe2upgrade.com/ninja/poe2/exchange/all?league=Rise%20of%20the%20Abyssal');
+  // the combined answer prices like the single lists
+  const it = parseItem("Item Class: Stackable Currency\nRarity: Currency\nGemcutter's Prism\n--------\nStack Size: 2/20");
+  assert.strictEqual(N.priceOf(it, { exchange: Object.values({ Currency: EX2, Runes: { core: EX2.core, items: [], lines: [] } }) }, 'poe2').total, 2);
+});
+
+test('ninja: the 7-day price history from the sparkline', () => {
+  assert.deepStrictEqual(N.history({ data: [0, 10, null, 20], totalChange: 20 }), [0.833, 0.917, null, 1]);
+  assert.deepStrictEqual(N.history({ data: [] }), []);
+  assert.deepStrictEqual(N.history(null), []);
+});

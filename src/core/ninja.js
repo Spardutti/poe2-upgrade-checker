@@ -34,6 +34,8 @@ function urls(game, what, query) {
   const g = games.gameOf(game).id;
   return [`${PROXY}/${p}`, `${DIRECT}/${g}/api/economy/${p.slice(g.length + 1)}`];
 }
+// the app's proxy gathers every exchange list of a game into one answer: { types: { Currency: {...}, ... } }
+const allExchangeUrl = (league, game) => `${PROXY}/${games.gameOf(game).id}/exchange/all?league=${encodeURIComponent(league)}`;
 const exchangeUrls = (league, type, game) => urls(game, 'exchange/current/overview', { league, type });
 const itemUrls = (league, type, game) => urls(game, 'stash/current/item/overview', { league, type });
 
@@ -89,6 +91,14 @@ function convert(v, core, cur) {
   return r > 0 ? v * r : null;
 }
 const change = (s) => { const c = s && Number(s.totalChange); return Number.isFinite(c) ? Math.round(c * 10) / 10 : null; };
+// poe.ninja's 7-day sparkline: each day's % change from the first day. As prices relative to today
+// (1 = today's price), oldest first; null for a day without data. [] when there's nothing to draw.
+function history(s) {
+  const d = s && Array.isArray(s.data) ? s.data.map((v) => (v == null || !Number.isFinite(Number(v)) ? null : Number(v))) : [];
+  const last = [...d].reverse().find((v) => v != null);
+  if (last == null || d.filter((v) => v != null).length < 2) return [];
+  return d.map((v) => (v == null ? null : Math.round(((1 + v / 100) / (1 + last / 100)) * 1000) / 1000));
+}
 
 // from one exchange answer: { name(lowercase) -> { name, value(primary), change, volume, category } }
 function exchangeIndex(data) {
@@ -98,7 +108,7 @@ function exchangeIndex(data) {
   for (const l of data.lines) {
     const it = items.get(l.id);
     if (!it || !it.name || !(Number(l.primaryValue) > 0)) continue;
-    out.set(it.name.toLowerCase(), { name: it.name, value: Number(l.primaryValue), change: change(l.sparkline || l.sparkLine), volume: Number(l.volumePrimaryValue) || null, category: it.category || null, core: data.core || null });
+    out.set(it.name.toLowerCase(), { name: it.name, value: Number(l.primaryValue), change: change(l.sparkline || l.sparkLine), history: history(l.sparkline || l.sparkLine), volume: Number(l.volumePrimaryValue) || null, category: it.category || null, core: data.core || null });
   }
   return out;
 }
@@ -167,7 +177,7 @@ function priceOf(item, found, game) {
     const each = lineValue(l, ans.core, base); const div = lineValue(l, ans.core, 'divine');
     if (each == null && div == null) continue;
     const listings = l.listingCount || l.count || null;
-    hit = { each, eachDiv: div, change: change(l.sparkLine || l.sparkline), listings, name: l.name, variant: l.variant || null,
+    hit = { each, eachDiv: div, change: change(l.sparkLine || l.sparkline), history: history(l.sparkLine || l.sparkline), listings, name: l.name, variant: l.variant || null,
       gemLevel: l.gemLevel || null, gemQuality: l.gemQuality || null, links: l.links || null, mapTier: l.mapTier || null };
     break;
   }
@@ -177,7 +187,7 @@ function priceOf(item, found, game) {
       const idx = exchangeIndex(ans);
       const e = idx.get(key) || idx.get(key2);
       if (!e) continue;
-      hit = { each: convert(e.value, e.core, base), eachDiv: convert(e.value, e.core, 'divine'), change: e.change, volume: e.volume, name: e.name, category: e.category };
+      hit = { each: convert(e.value, e.core, base), eachDiv: convert(e.value, e.core, 'divine'), change: e.change, history: e.history, volume: e.volume, name: e.name, category: e.category };
       break;
     }
   }
@@ -205,4 +215,4 @@ function infoLinks(item, game) {
 const INFO_HOSTS = /^https:\/\/(www\.poewiki\.net|www\.poe2wiki\.net|poedb\.tw|poe2db\.tw)\//;
 const isInfoPage = (url) => typeof url === 'string' && INFO_HOSTS.test(url);
 
-module.exports = { PROXY, EXCHANGE_TYPES, UNIQUE_TYPES, urls, exchangeUrls, itemUrls, typesFor, extras, exchangeIndex, pickLine, priceOf, convert, infoLinks, isInfoPage };
+module.exports = { history, PROXY, EXCHANGE_TYPES, UNIQUE_TYPES, urls, allExchangeUrl, exchangeUrls, itemUrls, typesFor, extras, exchangeIndex, pickLine, priceOf, convert, infoLinks, isInfoPage };

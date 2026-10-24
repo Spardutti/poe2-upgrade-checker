@@ -113,6 +113,9 @@ function buildLinuxRuntime() {
   console.log('Built LuaJIT and lua-utf8 for Linux.');
 }
 
-for (const t of TARGETS) fetchPob(t);
-buildHost();
-buildLinuxRuntime();
+module.exports = { TARGETS };
+if (require.main === module) {
+  for (const t of TARGETS) fetchPob(t);
+  buildHost();
+  buildLinuxRuntime();
+}

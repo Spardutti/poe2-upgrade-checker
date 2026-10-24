@@ -97,7 +97,7 @@
     ])) : '';
 
     const offence = playerDps > 0 || !minionMain ? card(minionMain ? 'Your own damage' : 'Offence', table([
-      row('Full DPS', big(p.FullDPS)), row('Main skill DPS', big(p.CombinedDPS || p.TotalDPS)), isNum(p.TotalDotDPS) && p.TotalDotDPS > 0 ? row('Damage over time', big(p.TotalDotDPS)) : '',
+      Number(p.FullDPS) > 0 ? row('Full DPS', big(p.FullDPS)) : '', row('Main skill DPS', big(p.CombinedDPS || p.TotalDPS)), isNum(p.TotalDotDPS) && p.TotalDotDPS > 0 ? row('Damage over time', big(p.TotalDotDPS)) : '',
       row('Average hit', big(p.AverageHit)), isNum(p.Speed) && p.Speed > 0 ? row('Uses per second', n1(p.Speed)) : '',
       row('Critical hit chance', pct(p.CritChance)), row('Critical damage', isNum(p.CritMultiplier) ? `×${n1(p.CritMultiplier)}` : null),
       row('Hit chance', pct(p.HitChance)), row('Accuracy', n0(p.Accuracy)),
@@ -177,7 +177,7 @@
   }
 
   function noPobHtml(d, st) {
-    const why = !d.hasBuild ? 'Paste your Path of Building export on <b>My gear</b> and this page shows your whole character: damage (or your minions\'), defences, resistances against the cap, the biggest hits you can take, Spirit, attributes, skills and passive tree.'
+    const why = !d.hasBuild ? 'Paste your Path of Building export on <b>My gear</b> and this page shows your whole character: damage (or your minions\'), defences, resistances against the cap, the biggest hits you can take, ' + (st && st.game === 'poe1' ? 'mana and life reservation' : 'Spirit') + ', attributes, skills and passive tree.'
       : !d.enabled ? 'Path of Building is switched off on My gear (<i>Judge items with Path of Building</i>). Switch it on to see your character sheet.'
         : !d.available ? 'The Path of Building engine isn\'t included with this copy of the app.' : 'Path of Building isn\'t available right now.';
     const rs = d.resists;

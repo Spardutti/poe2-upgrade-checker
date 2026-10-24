@@ -6,6 +6,8 @@
   "compatibility_date": "2026-09-01",
   "main": "worker/site-worker.js",
   "assets": { "directory": "./site", "binding": "ASSETS" },
+  // anonymous usage statistics (/api/ping, /api/stats): one row per install per day, no IP addresses
+  "d1_databases": [{ "binding": "STATS", "database_name": "poe-upgrade-stats", "database_id": "02487108-39bd-41a9-a99b-8c16411330b3", "migrations_dir": "migrations/stats" }],
   "workers_dev": true,
   "routes": [
     { "pattern": "poe2upgrade.com", "custom_domain": true },

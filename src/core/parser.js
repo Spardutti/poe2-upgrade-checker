@@ -316,6 +316,7 @@ function parseItem(raw) {
       if ((m = clean.match(/^Item Level:\s*(\d+)/i))) { item.itemLevel = Number(m[1]); return; }
       if ((m = clean.match(/^Level:\s*(\d+)/i))) { item.requiredLevel = Number(m[1]); return; }
       if ((m = clean.match(/^Requires:?\s*Level\s*(\d+)/i))) { item.requiredLevel = Number(m[1]); return; }
+      if ((m = clean.match(/^Limited to:\s*(\d+)/i))) { item.limitedTo = Number(m[1]); return; }
       if (/^Corrupted$/i.test(clean)) { item.corrupted = true; return; }
       if (/^Unidentified$/i.test(clean)) { item.unidentified = true; return; }
       if (SKIP_LINE.some((r) => r.test(clean))) return;
