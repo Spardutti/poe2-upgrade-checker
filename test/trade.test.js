@@ -371,6 +371,36 @@ test('gear query can shrink for the trade site filter limit', () => {
   assert.deepStrictEqual(small.body.sort, { price: 'asc' });
 });
 
+const RES_STATS = { result: [
+  { id: 'pseudo', entries: [
+    { id: 'pseudo.pseudo_total_fire_resistance', text: '+#% total to Fire Resistance', type: 'pseudo' },
+    { id: 'pseudo.pseudo_total_cold_resistance', text: '+#% total to Cold Resistance', type: 'pseudo' },
+    { id: 'pseudo.pseudo_total_lightning_resistance', text: '+#% total to Lightning Resistance', type: 'pseudo' },
+    { id: 'pseudo.pseudo_total_all_elemental_resistances', text: '+#% total to all Elemental Resistances', type: 'pseudo' },
+  ] },
+  { id: 'explicit', entries: [
+    { id: 'explicit.fire', text: '+#% to Fire Resistance', type: 'explicit' },
+    { id: 'explicit.cold', text: '+#% to Cold Resistance', type: 'explicit' },
+    { id: 'explicit.lightning', text: '+#% to Lightning Resistance', type: 'explicit' },
+    { id: 'explicit.all_res', text: '+#% to all Elemental Resistances', type: 'explicit' },
+    { id: 'explicit.life', text: '+# to maximum Life', type: 'explicit' },
+  ] },
+] };
+const allResRing = () => require('../src/core/parser').parseItem('Item Class: Rings\nRarity: Rare\nDoom Loop\nSapphire Ring\n--------\nItem Level: 60\n--------\n+18% to Cold Resistance (implicit)\n--------\n+20% to all Elemental Resistances\n+60 to maximum Life');
+const RES_IDS = ['explicit.life', 'pseudo.pseudo_total_cold_resistance', 'pseudo.pseudo_total_fire_resistance', 'pseudo.pseudo_total_lightning_resistance'];
+
+test('"Better for my build" weighs resistance totals, so all-res mods count', () => {
+  const weights = require('../src/core/gearscore').searchWeights('Ring', { build: 'djinn-varashta' });
+  const q = T.buildGearQuery(allResRing(), { weights, statIndex: T.buildStatIndex(RES_STATS) });
+  assert.deepStrictEqual(q.body.query.stats[0].filters.map((f) => f.id).sort(), RES_IDS);
+});
+
+test('the smallest gear search counts an all-res mod for every element', () => {
+  const weights = require('../src/core/gearscore').searchWeights('Ring', { build: 'djinn-varashta' });
+  const q = T.buildGearQuery(allResRing(), { weights, statIndex: T.buildStatIndex(RES_STATS), countOnly: true, explicitOnly: true });
+  assert.deepStrictEqual(q.body.query.stats[0].filters.map((f) => f.id).sort(), RES_IDS);
+});
+
 // --- review fixes ---
 const LSTATS = { result: [{ id: 'explicit', label: 'Explicit', entries: [
   { id: 'explicit.acc', text: '+# to Accuracy Rating', type: 'explicit' },
