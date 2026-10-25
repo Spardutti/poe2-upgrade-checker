@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+- **More than 6 jewel sockets:** builds with lots of jewels (cluster jewels, big trees) keep all of them, up to 40. A Path of Building import brings every socketed jewel, and *My gear* shows your jewel slots plus one empty one to add the next.
+- **Tidier Settings:** six cards in three even columns. The results-window hotkey and the clipboard option sit with the other hotkeys, popup size and detail with the popup, and startup with updates. The usage-statistics details fold away under *What's sent*.
+- **Guide builds without a PoB link:** link a guide's Build Planner file (**.build**, from Mobalytics, Maxroll and others; Documents\My Games\Path of Exile 2\BuildPlanner) and the app turns it into a Path of Building build:
+  - the passive tree from Grinding Gear Games' own data (every passive placed), weapon-set passives included;
+  - the skills with their supports, at gem levels that fit the stage;
+  - the guide's uniques by name, and rares it spells out, but only in slots you haven't copied your own item into;
+  - **levelling guides:** pick the stage (Levels 1–30, 31–60, …) or *Follow my level*, which moves with your levelling level;
+  - "+5 to any attribute" passives follow the colours of the build's gems, and the import says what it couldn't place;
+  - the file is followed like a PoB build file, so a newer version of the guide updates your character.
+- **Movement speed counts:** Path of Building's movement speed is part of the verdict. Each point gained or lost moves the score, and losing 3% or more is never a clean upgrade (*Priorities → Keep my movement speed*). The popup shows "Speed 35% → 25%", and *Find upgrades* for boots only shows boots about as fast as yours.
+- **Verdicts name the skill** the damage was judged on ("DPS (Spark)"), and show Runic Ward changes.
+- **Where to spend remembers:** each character's last two runs are kept for a week, so they're still there after a restart. The page says how old the run is, which slots you've changed since, and which slots are better or worse value than last time. *See all* searches again when the run is old.
+- **Price check fixes, from comparisons with PoE Overlay II:**
+  - a wide market no longer makes real cheap listings look like price-fixing baits (a robe was priced at 55 div with comparable ones listed from 15);
+  - the closest search with a few listings is used; it no longer widens until it finds cheap, different items (a sceptre came out at 5 div when the only comparable ones were listed at 82–100 div);
+  - "Allies in your Presence deal …% increased Damage" is always kept on sceptres.
+- **Fix:** items copied with older versions of the app are now used by Path of Building again (they were judged against an empty slot).
+- **Licence:** the app is now free software under the GNU GPL v3 (LICENSE and NOTICE.md). Forks are welcome as long as they stay open source and use their own name and update channel.
 - **How sure is the price?** Trade-site prices now say *solid price*, *rough price* or *a guess* (hover for why: few sellers, prices far apart, or looser matches), in the popup, on F3 and in the results window.
 - **List it at… for rares, waystones and tablets too:** when the price isn't a guess, *What's it worth?* suggests a price just under the cheapest comparable listing, with *Copy price note* for your premium stash tab.
 - **F3 remembers:** pressing F3 on the same item within an hour answers at once from the last check ("checked 12 min ago"), without another trade search; *refresh* asks again.

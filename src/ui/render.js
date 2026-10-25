@@ -164,7 +164,7 @@
     const sgn = (v) => (v > 0 ? '+' : v < 0 ? '−' : '±');
     const pc = (v) => (v == null ? '' : `<b class="${v > 0.05 ? 'pos' : v < -0.05 ? 'neg' : 'dim'}">${sgn(v)}${Math.abs(Math.round(v * 10) / 10)}%</b>`);
     const dl = (label, d) => (d ? `<span class="cc ${d.delta > 0 ? 'pos' : 'neg'}">${label} ${n(d.from)} → <b>${n(d.to)}</b></span>` : '');
-    const dmgName = p.dpsKey === 'MinionDPS' ? 'Minion DPS' : 'DPS';
+    const dmgName = `<span title="${esc(p.skill === 'Full DPS' ? 'Path of Building\'s Full DPS: every skill ticked to count in it' : p.skill ? `Judged on your main skill in Path of Building: ${p.skill}` : 'Your main skill in Path of Building')}">${p.dpsKey === 'MinionDPS' ? 'Minion DPS' : 'DPS'}${p.skill && p.skill !== 'Full DPS' ? ` <span class="dim">(${esc(p.skill)})</span>` : ''}</span>`;
     // only what changes: no "±0%" (a flask, say, changes neither), and a resistance loss already said above isn't said again
     const moved = (v) => v != null && Math.abs(v) >= 0.05;
     const bits = [
@@ -183,7 +183,9 @@
     const hitLabel = p.dpsKey === 'MinionDPS' ? 'Minion hit' : 'Hit';
     const hit = p.hit && !p.noDamage && Math.abs(p.hit.delta) / Math.max(1, p.hit.from) >= 0.005
       ? `<span class="cc ${p.hit.delta > 0 ? 'pos' : 'neg'}" title="Average damage per hit of your main skill (Path of Building's Average Hit)">${hitLabel} ${n(p.hit.from)} → <b>${n(p.hit.to)}</b></span>` : '';
-    const parts = [hit, dl('ES', p.es), dl('Life', p.life), dl('Spirit', p.spirit), dl('Mana', p.mana), res].filter(Boolean);
+    // movement speed: every point is felt, a loss is flagged (Priorities: keep my movement speed)
+    const spd = p.speed ? `<span class="cc ${p.speed.delta > 0 ? 'pos' : 'neg'}${p.speed.delta <= -3 ? ' warn' : ''}" title="Movement speed with this item, from Path of Building (base speed = 0%)">Speed ${p.speed.from}% → <b>${p.speed.to}%</b></span>` : '';
+    const parts = [spd, hit, dl('ES', p.es), dl('Life', p.life), dl(p.game === 'poe1' ? 'Ward' : 'Runic Ward', p.ward), dl('Spirit', p.spirit), dl('Mana', p.mana), res].filter(Boolean);
     // resistance losses get their own banner, above everything else
     const lossBanner = opts.noBanner ? '' : window.resLossBanner(p.resLoss) + window.dmgLossBanner(p.dmgLoss);
     const capLine = p.resCapped && p.resCapped.length ? `<div class="res-cap">✓ Caps your ${esc(p.resCapped.join(' and ').toLowerCase())} resistance</div>` : '';

@@ -5,8 +5,8 @@
 // one seller listing many copies, listings nobody has touched in weeks. So:
 //   1. one listing per seller (their cheapest)
 //   2. leave out listings older than STALE_DAYS when at least 3 fresh ones remain
-//   3. drop baits: while the cheapest is under half the 4th cheapest (or far under the
-//      middle of the market), drop it, at most a third of the listings
+//   3. drop baits: while the cheapest is under a third of the 4th cheapest (or under a fifth of
+//      the middle of the market), drop it, at most a third of the listings
 //   4. cheapest = what's left at the bottom; worth = the median of the cheapest 5 sellers
 //      (what it sells for is near the bottom of the market: dearer listings are what's still unsold)
 //   5. range = cheapest to 5th cheapest
@@ -44,7 +44,10 @@ function priceStats(listings, opts = {}) {
   const mid = medianOf(p);
   const maxDrop = Math.floor(p.length / 3);
   let baits = 0;
-  while (p.length >= 4 && baits < maxDrop && (p[0] < 0.5 * p[Math.min(3, p.length - 1)] || p[0] < 0.35 * mid)) { p.shift(); baits++; }
+  // baits are far out of line (1 ex for a 20 div item), not just cheaper: a wide market (lots of
+  // overpriced listings) mustn't make the real cheap ones look like baits
+  // (against the 4th cheapest only with enough listings: in a handful, the 4th can be the odd one out)
+  while (p.length >= 4 && baits < maxDrop && ((p.length >= 6 && p[0] < 0.35 * p[3]) || p[0] < 0.2 * mid)) { p.shift(); baits++; }
   const n = p.length;
   const typicalEx = medianOf(p.slice(0, Math.min(5, n)));
   const lowEx = p[0];

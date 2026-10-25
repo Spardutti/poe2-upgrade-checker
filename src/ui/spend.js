@@ -26,7 +26,20 @@
     const per = (v) => `${n1(v)} pts`;
     const withBest = rows.filter((r) => r.best);
     const top = withBest[0];
-    const when = run.at ? new Date(run.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    // when it ran: the time today, else the day too ("Sat 18:42")
+    const stamp = (t) => { if (!t) return ''; const d = new Date(t); const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} ${time}`; };
+    const when = stamp(run.at);
+    const ageH = run.at ? (Date.now() - run.at) / 3600000 : 0;
+    const prevBest = run.prevBest || {};
+    const changed = new Set(run.changed || []);
+    // this slot's best value against your last run: cheaper, better, gone…
+    const trend = (r) => {
+      const was = prevBest[r.slot]; const b = r.best;
+      if (!was || !b || was.perDiv == null || b.perDiv == null) return '';
+      const ch = (b.perDiv - was.perDiv) / Math.max(was.perDiv, 0.01);
+      if (Math.abs(ch) < 0.1) return '';
+      return ` <span class="${ch > 0 ? 'pos' : 'neg'} small" title="Last run (${esc(stamp(run.prevAt))}): ${esc(gain(was.gain))} for ${esc(was.price)}">${ch > 0 ? '▲ better value' : '▼ worse value'} than last time</span>`;
+    };
     // every slot failed for the same reason (e.g. no damage skill set in Path of Building): say it once
     const errs = rows.map((r) => r.error).filter(Boolean);
     const sameErr = !run.partial && rows.length > 1 && errs.length === rows.length && errs.every((e) => e === errs[0]) ? errs[0] : null;
@@ -47,8 +60,8 @@
       const what = r.error ? `<span class="${r.soft ? 'dim' : 'neg'}">${esc(r.error)}</span>`
         : b ? `<b>${esc(b.name)}</b> <span class="dim">${esc(b.base || '')}</span><br><span class="pos">${gain(b.gain)}</span> for ${esc(b.price)}${b.risks && b.risks.length ? ` <span class="warn" title="${esc(b.risks.join('; '))}">⚠ ${esc(b.risks[0])}</span>` : ''}${big ? `<br><span class="dim">Biggest gain: ${gain(big.gain)} for ${esc(big.price)} (${esc(big.name)})</span>` : ''}`
           : r.none ? '<span class="dim">Nothing listed in your price range.</span>' : `<span class="dim">None of the ${r.total ? `${r.total} listed` : 'listings'} in your price range beats what you wear.</span>`;
-      return `<tr><td><b>${esc(r.slot)}</b>${r.current ? `<br><span class="dim small">${esc(r.current)}</span>` : ''}</td>
-        <td>${what}</td><td class="num">${b && b.perDiv != null ? `<b>${per(b.perDiv)}</b>` : '–'}</td>
+      return `<tr><td><b>${esc(r.slot)}</b>${r.current ? `<br><span class="dim small">${esc(r.current)}</span>` : ''}${changed.has(r.slot) ? '<br><span class="warn small" title="What you wear in this slot has changed since this run: run it again for gains against your new item">changed since</span>' : ''}</td>
+        <td>${what}${trend(r)}</td><td class="num">${b && b.perDiv != null ? `<b>${per(b.perDiv)}</b>` : '–'}</td>
         <td class="nowrap">${r.total ? `<button class="link spend-open" data-slot="${esc(r.slot)}">See all ${r.total}</button>` : ''}${!run.partial && r.searched ? `<br><button class="link spend-alert" data-slot="${esc(r.slot)}" title="Get a notification when a new listing for this slot is this much better for your build, under your price">Alert me…</button>` : ''}</td></tr>
         ${!run.partial && r.searched ? `<tr class="spend-alert-row hidden" data-for="${esc(r.slot)}"><td></td><td colspan="3">Tell me when a new ${esc(r.slot)} listing is
           <input type="number" class="num sa-gain" min="0.1" step="any" value="${esc(Math.max(1, Math.round(((b && b.gain) || (gs ? 5 : 3)) * 10) / 10))}"> ${gs ? 'gear score' : 'pts'} better for my build, for at most
@@ -62,7 +75,8 @@
           <td class="num">${p.priceDiv != null ? esc(div(p.priceDiv)) : ''}${p.gain ? `<br><span class="${p.gain > 0 ? 'pos' : 'neg'}">${p.gain > 0 ? '+' : ''}${n1(p.gain)} pts</span>` : ''}</td></tr>`).join('')}</table>
           <p class="dim small">Each pair was checked together with Path of Building: wearing both caps these resistances without losing damage. Prices are what they're listed for now.</p>`
           : '<p class="dim">No two of the listings found cap your missing resistances together. A single item from the table above, or a higher price range, may.</p>'}</div>` : '';
-    const reused = run.reused ? `<div class="card-p dim">From the search at ${esc(when)} (kept for 30 minutes). <button class="link" id="spendAgain">Search again now</button></div>` : '';
+    const old = !run.partial && ageH >= 0.5;
+    const reused = run.reused || old ? `<div class="card-p ${ageH >= 6 ? 'note' : 'dim'}">From the search ${ageH >= 20 ? 'on' : 'at'} ${esc(when)}${ageH >= 6 ? ': prices and listings will have changed since' : run.reused ? ' (kept for 30 minutes)' : ''}${changed.size ? `, and you've changed your ${esc([...changed].join(', '))} since` : ''}. <button class="link" id="spendAgain">Search again now</button></div>` : '';
     body().innerHTML = `${msg ? `<div class="card-p note">${esc(msg)}</div>` : ''}${reused}${headline}
       <div class="card-p"><h3>Every slot</h3><table class="kv spend"><tr><th>Slot</th><th>Best value in your price range</th><th>Per divine</th><th></th></tr>${rows.map(row).join('')}</table>
       <p class="dim small">${esc(run.league || '')}${run.budget ? ` · ${esc(run.budget)}` : ''}${when ? ` · checked at ${esc(when)}` : ''} · ${gs ? 'Gear score points gained over what you wear (no Path of Building build loaded, so no resistance pairs)' : '"pts" is Path of Building\'s score for your build, as in the popup: the % change to your damage and effective HP, plus half a point per resistance point toward your cap'}, checked on the first 10 listings of each search.${run.stopped ? ` Stopped early: ${esc(run.stopped)}` : ''}</p></div>

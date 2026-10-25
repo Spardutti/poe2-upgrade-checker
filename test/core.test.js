@@ -434,3 +434,11 @@ test('store keeps a linked build per character', () => {
   s2.setBuildSource(null);
   assert.equal(new Store(dir).buildSource(), null);
 });
+
+test('jewel slots: more than 6, and only the needed ones are shown', () => {
+  const { SLOT_GROUPS, JEWEL_MAX, visibleJewels, groupOf } = require('../src/core/slots');
+  assert.equal(SLOT_GROUPS.Jewel.length, JEWEL_MAX);
+  assert.equal(groupOf('Jewel 14'), 'Jewel');
+  assert.deepEqual(visibleJewels({}), ['Jewel 1', 'Jewel 2', 'Jewel 3', 'Jewel 4', 'Jewel 5', 'Jewel 6']);
+  assert.equal(visibleJewels({ 'Jewel 9': {} }).length, 10);
+});

@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('api', {
   pobSource: () => ipcRenderer.invoke('pob:source'),
   unlinkPob: () => ipcRenderer.invoke('pob:unlink'),
   linkPobFile: () => ipcRenderer.invoke('pob:linkFile'),
+  setPobStage: (stage) => ipcRenderer.invoke('pob:stage', stage),
   anointCheck: () => ipcRenderer.invoke('pob:anoints'),
   savedAlert: (id, on) => ipcRenderer.invoke('saved:alert', id, on),
   alertsStatus: () => ipcRenderer.invoke('alerts:status'),

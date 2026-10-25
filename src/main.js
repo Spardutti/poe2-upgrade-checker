@@ -13,13 +13,14 @@ const listingLib = require('./core/listing');
 const gamesLib = require('./core/games');
 const priceLib = require('./core/price');
 const priceQuery = require('./core/pricequery');
+const planner = require('./core/buildplanner');
 const { suggestWeights } = require('./core/autoweights');
 const gearLib = require('./core/gearscore');
 const characterLib = require('./core/character');
 const { parseItem } = require('./core/parser');
 const { compare } = require('./core/scorer');
 const { Store } = require('./core/store');
-const { SLOTS, MAIN_SLOTS, SLOT_GROUPS, WEAKEST_OF, groupOf } = require('./core/slots');
+const { SLOTS, MAIN_SLOTS, SLOT_GROUPS, WEAKEST_OF, groupOf, visibleJewels } = require('./core/slots');
 const { KeySender } = require('./keysender');
 
 // ---------- network: nothing waits forever ----------
@@ -215,11 +216,27 @@ function stopOtherEngines(game) {
 }
 function pobFile(id) { return path.join(app.getPath('userData'), 'pob', `${id || store.data.activeProfile || 'main'}.xml`); }
 function pobXml() { try { return fs.readFileSync(pobFile(), 'utf8'); } catch (_) { return null; } }
+// an item's text as copied in game; items saved by older versions kept only their parsed lines, so
+// their text is put back together from those (sections in the game's order)
+function itemText(it) {
+  if (!it) return null;
+  if (it.raw) return it.raw;
+  if (!Array.isArray(it.lines) || !it.lines.length || !it.name) return null;
+  const tagged = (tags) => it.lines.filter((l) => tags.includes(l.tag)).map((l) => (l.tag === 'implicit' && !/\(implicit\)$/.test(l.text) ? `${l.text} (implicit)` : l.tag === 'rune' && !/\((rune|augmented)\)$/.test(l.text) ? `${l.text} (rune)` : l.text));
+  const parts = [[`Item Class: ${it.itemClass || ''}`, `Rarity: ${it.rarity || 'Rare'}`, it.name, ...(it.baseType && it.baseType !== it.name ? [it.baseType] : [])].join('\n')];
+  const props = tagged(['base', 'info']);
+  if (props.length) parts.push(props.join('\n'));
+  if (it.itemLevel) parts.push(`Item Level: ${it.itemLevel}`);
+  for (const sect of [['rune'], ['implicit'], ['explicit', 'crafted', 'fractured', 'desecrated', undefined, null]]) { const l = tagged(sect); if (l.length) parts.push(l.join('\n')); }
+  if (it.corrupted) parts.push('Corrupted');
+  return parts.join('\n--------\n');
+}
 function pobOverrides() {
   const out = [];
   for (const [slot, pobSlot] of Object.entries(pobVerdict.SLOT_TO_POB)) {
     const it = store.equipped[slot];
-    if (it && it.raw && !it.fromPob) out.push({ slot: pobSlot, text: it.raw });
+    const text = it && !it.fromPob ? itemText(it) : null;
+    if (text) out.push({ slot: pobSlot, text });
   }
   return out;
 }
@@ -244,7 +261,7 @@ async function pobJudge(list) {
     const text = x.item && (x.item.raw || x.item.listingText);
     if (!text) return;
     // jewels: PoB tries it in every jewel socket you've allocated on the tree
-    if (x.item.slot === 'Jewel' || /^Jewel \d$/.test(x.slot || '')) { req.push({ slot: 'Jewel', text }); idx.push([i, 'Jewel']); return; }
+    if (x.item.slot === 'Jewel' || /^Jewel \d+$/.test(x.slot || '')) { req.push({ slot: 'Jewel', text }); idx.push([i, 'Jewel']); return; }
     if (x.item.slot === 'Flask') { req.push({ slot: 'Flask', text }); idx.push([i, 'Flask']); return; }
     // PoE1: a third ring slot (The Unseen Hand) when your build has a ring there
     if (tg() === 'poe1' && x.item.slot === 'Ring' && (((pobEngine().info() || {}).gear) || {})['Ring 3']) { req.push({ slot: 'Ring 3', text }); idx.push([i, 'Ring 3']); }
@@ -384,7 +401,7 @@ function pobCanJudge(item, slot) {
   if (item.unidentified) return false; // its mods are hidden: any verdict would only be about the base
   if (tg() === 'poe1' && (isClusterJewel(item) || isTimelessJewel(item))) return false;
   if (item.slot === 'Flask') return tg() === 'poe1';
-  if (item.slot === 'Jewel' || /^Jewel \d$/.test(slot || '')) return true;
+  if (item.slot === 'Jewel' || /^Jewel \d+$/.test(slot || '')) return true;
   const group = item.slot && SLOT_GROUPS[item.slot];
   return !!(pobVerdict.SLOT_TO_POB[slot] || (group && group.every((g) => pobVerdict.SLOT_TO_POB[g])) || pobVerdict.SLOT_TO_POB[item.slot]);
 }
@@ -485,6 +502,16 @@ async function pobSearch(item, slot, league, budget, opts) {
       log(`pob search: never lose damage – needs ${dmgGroup.value.min} of ${dmg.length} damage stats (your ${slot} has ${own})`);
     }
   }
+  // "keep my movement speed": boots must be about as fast as yours (PoB weighs movement speed lightly)
+  let speedGroup = null;
+  if (pr.speed && slot === 'Boots') {
+    const worn = store.equipped.Boots;
+    const ms = worn && worn.stats ? Number(worn.stats['#% increased Movement Speed']) || 0 : 0;
+    if (ms >= 5) {
+      speedGroup = { type: 'and', filters: [{ id: 'pseudo.pseudo_increased_movement_speed', value: { min: Math.max(1, ms - 2) }, disabled: false }] };
+      log(`pob search: keep movement speed – boots with at least ${ms - 2}% (yours ${ms}%)`);
+    }
+  }
   // the site's complexity limit is lower when you're not signed in: start at the size it took last time
   const SIZES = [30, 15, 10, 7, 5, 3];
   const sizeKey = (await signedIn()) ? 'signed' : 'anon';
@@ -495,6 +522,7 @@ async function pobSearch(item, slot, league, budget, opts) {
     const g = body.query.stats.find((x) => x.type === 'weight');
     g.filters = g.filters.slice(0, SIZES[size]);
     if (dmgGroup) body.query.stats.push({ ...dmgGroup, filters: dmgGroup.filters.slice(0, Math.max(3, Math.min(8, SIZES[size] / 2))) });
+    if (speedGroup) body.query.stats.push(speedGroup);
     body.query.status = { option: trade.statusOpt(opts.status) };
     delete body.engine;
     trade.applyBudget(body, budget, tg());
@@ -514,10 +542,11 @@ async function pobSearch(item, slot, league, budget, opts) {
   }
   const used = body.query.stats.find((x) => x.type === 'weight').filters.length;
   const needDmg = dmgGroup ? `; every listing has at least ${dmgGroup.value.min} of your damage mods` : droppedDmg ? '; nothing in your budget has your damage mods, so these may lose damage' : '';
+  const needSpeed = speedGroup ? `; boots at least ${speedGroup.filters[0].value.min}% movement speed` : '';
   const ctx = {
     item, mode: 'pob', body, searchKey: searchKey(body),
     title: `Best for your build: ${item.slot === 'Ring' ? 'rings' : slot === 'Jewel' ? (tg() !== 'poe1' && isRadiusJewel(item) ? 'radius jewels' : item.abyss ? 'abyss jewels' : 'jewels') : slot}`,
-    note: `Path of Building weighted this search by what each stat does to your build (${used} stats${used < wg.filters.length ? `, the trade site allowed ${used} of ${wg.filters.length}` : ''})${boosted.length ? ', with extra weight on the resistances you still need' : ''}${needDmg}. Every listing below is then checked with your build: items that lose resistance or damage are marked and go to the bottom.`,
+    note: `Path of Building weighted this search by what each stat does to your build (${used} stats${used < wg.filters.length ? `, the trade site allowed ${used} of ${wg.filters.length}` : ''})${boosted.length ? ', with extra weight on the resistances you still need' : ''}${needDmg}${needSpeed}. Every listing below is then checked with your build: items that lose resistance or damage are marked and go to the bottom.`,
   };
   if (opts.noOpen) return { ok: true, r, body, ctx, filters: used }; // "where to spend" looks at the listings itself
   const res = await openIfAny(r, ctx);
@@ -528,6 +557,9 @@ async function pobSearch(item, slot, league, budget, opts) {
 function applyPob(r, j) {
   if (!r || !j) return r;
   r.pob = j;
+  // which skill the damage was judged on (Full DPS adds several up: then it's said as such)
+  j.game = tg();
+  if (!j.skill) { const info = pobEngine().info() || {}; j.skill = j.dpsKey === 'FullDPS' ? 'Full DPS' : info.mainSkill || null; }
   r.verdict = j.verdict;
   r.scoreMode = 'pob';
   r.delta = j.byRecovery ? null : j.score; // a flask judged by its recovery: no "0% for your build"
@@ -844,7 +876,7 @@ function shownLeague() {
 }
 function serialise(result) {
   return JSON.parse(JSON.stringify({
-    ...result, links: (result && result.links) || (result && result.item ? ninjaLib.infoLinks(result.item, tg()) : []), pobNudge: !!(result && result.ok && !result.pob && !result.pobPending && !result.pobError && pobEngine().available() && !pobXml()), slots: SLOTS, slotGroups: SLOT_GROUPS, budgetLabel: trade.budgetLabel(budgetNow(), tg()),
+    ...result, links: (result && result.links) || (result && result.item ? ninjaLib.infoLinks(result.item, tg()) : []), pobNudge: !!(result && result.ok && !result.pob && !result.pobPending && !result.pobError && pobEngine().available() && !pobXml()), slots: SLOTS, slotGroups: { ...SLOT_GROUPS, Jewel: visibleJewels(store.equipped) }, budgetLabel: trade.budgetLabel(budgetNow(), tg()),
     ui: { detail: store.settings.popupDetail || 'compact', colorblind: !!store.settings.colorblind, divineRate: store.settings.divineRate || null },
     worthEx: result && result.item && result.item.id && lastWorth.has(result.item.id) ? lastWorth.get(result.item.id) : null,
     game: tg(), league: shownLeague(), unit: G().baseShort, gameBeta: !!G().beta, gameShort: G().short,
@@ -1259,6 +1291,14 @@ ipcMain.handle('setting:set', (_e, key, value) => {
   if (key === 'startWithWindows') applyLoginItem();
   if (key === 'build' || key === 'colorblind' || key === 'popupDetail' || key === 'buildTweaks' || key === 'pobDamageWeight') { if (key === 'pobDamageWeight') pobQueries.clear(); refreshAll(); }
   if (key === 'resultsHotkey') registerResultsHotkey();
+  // a guide build that follows your levelling level: its stage moves with it (a moment later, once typing stops)
+  if (key === 'leveling') {
+    const src = store.buildSource();
+    if (src && src.planner && src.type === 'file' && (src.stage === 'level' || src.stage == null)) {
+      clearTimeout(levelSyncTimer);
+      levelSyncTimer = setTimeout(() => syncBuild('stage').catch((err) => log('build sync: ' + err.message)), 1500);
+    }
+  }
   if (key === 'autoUpdate' && updates.updater()) updates.updater().autoDownload = value !== false;
   if (key === 'betaUpdates') updates.setBetas();
   if ((key === 'wizardDone' || key === 'usageStats') && value) setTimeout(() => usage.send(), 5000);
@@ -1321,6 +1361,23 @@ async function importBuild(input, opts = {}) {
     } else if (/^https?:/i.test(code)) {
       return { ok: false, error: 'Only pobb.in links can be read directly – for other sites, copy the export code instead.' };
     }
+    // a Build Planner file (.build, from a guide): turned into a Path of Building build at the stage
+    // you picked (or your level), keeping the slots you've copied your own items into
+    let plan = null;
+    if (planner.isBuildFile(code)) {
+      const b = planner.parse(code);
+      const stages = planner.stages(b);
+      const lvSet = store.settings.leveling;
+      const follow = (source && source.stage === 'level') || (!source || source.stage == null) && lvSet && lvSet.on;
+      const level = follow && lvSet && Number(lvSet.level) > 0 ? Number(lvSet.level) : source && Number(source.stage) > 0 ? Number(source.stage) : 100;
+      const have = {};
+      for (const [slot, it] of Object.entries(store.equipped || {})) if (it && !it.fromPob) have[slot] = true;
+      plan = planner.toPob(b, { level, have });
+      plan.stages = stages;
+      code = plan.xml;
+      if (!source) source = { type: 'build' };
+      source = { ...source, planner: true, stages: stages.map((x) => ({ from: x.from, to: x.to, label: x.label })), stage: source.stage != null ? source.stage : follow ? 'level' : 100, title: plan.report.name };
+    }
     const xml = pobLib.decodeCode(code);
     const r = pobLib.parsePob(xml);
     // the build says which game this character is for. A build for the other game goes into a new
@@ -1328,7 +1385,7 @@ async function importBuild(input, opts = {}) {
     const bg = gamesLib.gameFromPobXml(xml);
     if (opts.sync && bg && bg !== tg()) return { ok: false, error: `That build is now for ${G(bg).short}: import it again to make a new character for it.` };
     // checked before anything changes: a build without gear mustn't leave you on a new, empty character
-    if (!Object.keys(r.items).length) return { ok: false, error: 'No equipped items found in that build. Put your gear on the character in Path of Building (Items tab), export it again and paste it here.' };
+    if (!Object.keys(r.items).length && !plan) return { ok: false, error: 'No equipped items found in that build. Put your gear on the character in Path of Building (Items tab), export it again and paste it here.' };
     let newChar = null;
     if (bg && bg !== tg()) {
       const empty = !Object.values(store.equipped || {}).some(Boolean) && !pobXml();
@@ -1344,10 +1401,13 @@ async function importBuild(input, opts = {}) {
     }
     const slots = Object.keys(r.items);
     let kept = 0;
+    // a guide's gear from an earlier import (another stage) that this one doesn't have: taken off
+    if (plan) for (const [slot, it] of Object.entries(store.equipped || {})) if (it && it.fromGuide && !r.items[slot]) store.setEquipped(slot, null);
     for (const [slot, text] of Object.entries(r.items)) {
       const item = parseItem(text);
       if (!item) continue;
       item.fromPob = true;
+      if (plan) item.fromGuide = true;
       const cur = store.equipped[slot];
       // a copy from the game has base Armour/ES values PoB doesn't store: keep it if it's the same item
       if (cur && cur.name === item.name && !cur.fromPob) { kept++; continue; }
@@ -1365,6 +1425,15 @@ async function importBuild(input, opts = {}) {
     let message = `Imported ${slots.length} item${slots.length === 1 ? '' : 's'}${who ? ` (${who})` : ''}${r.resists ? ' and your resistances' : ''}.`;
     if (newChar) message = `New ${G(bg).short} character "${newChar}": ` + message.charAt(0).toLowerCase() + message.slice(1);
     if (kept) message += ` Kept ${kept} you'd already copied from the game (same item, more detail).`;
+    if (plan) {
+      const rp = plan.report;
+      const stageTxt = plan.stages.length > 1 ? ` at ${rp.stage.label.toLowerCase()}` : '';
+      message = `From the guide "${rp.name}"${rp.author ? ` by ${rp.author}` : ''}${stageTxt}: ${planner.summary(rp)}.`
+        + (newChar ? ` New ${G(bg).short} character "${newChar}".` : '')
+        + (Object.values(store.equipped || {}).some((it) => it && !it.fromPob) ? ' Your own copied items are used in their slots.' : ' Copy your own items (F2 on each) so they\'re judged against what you really wear.')
+        + (rp.missing.length ? ` Not placed: ${rp.missing.join('; ')}.` : '')
+        + (rp.notes.length ? ` ${rp.notes.join(' ')}` : '');
+    }
     if (r.missingBase && tg() === 'poe2') message += ` PoB doesn't store base Armour/Energy Shield, so ${r.missingBase} armour piece${r.missingBase === 1 ? '' : 's'} score a bit low until you copy them in game once.`;
     log('pob import: ' + message);
     let engine = null;
@@ -1401,10 +1470,11 @@ function readBuildFile(file) {
   if (!st.isFile()) throw new Error("That isn't a file.");
   if (st.size > MAX_BUILD_FILE) throw new Error('That file is too big to be a Path of Building build.');
   const xml = fs.readFileSync(file, 'utf8');
-  if (!/<PathOfBuilding2?[\s>]/.test(xml)) throw new Error("That file isn't a Path of Building build.");
+  if (planner.isBuildFile(xml)) { planner.parse(xml); return xml; } // a Build Planner file: checked here, converted on import
+  if (!/<PathOfBuilding2?[\s>]/.test(xml)) throw new Error("That file isn't a Path of Building build or a Build Planner (.build) file.");
   return xml;
 }
-let buildWatch = null; let buildWatchTimer = null;
+let buildWatch = null; let buildWatchTimer = null; let levelSyncTimer = null;
 function watchBuildFile() {
   if (buildWatch) { try { buildWatch.close(); } catch (_) { /* ignore */ } buildWatch = null; }
   const src = store.buildSource();
@@ -1428,31 +1498,53 @@ async function syncBuild(why) {
   if (src.type === 'file') {
     let xml;
     try { xml = readBuildFile(src.path); } catch (err) { return { ok: false, error: `Couldn't read ${path.basename(src.path)}: ${err.code === 'ENOENT' ? 'the file is gone' : err.message}` }; }
-    if (xml.trim() === (pobXml() || '').trim()) return { ok: true, same: true, message: 'Your build is already up to date.' };
+    const sum = require('crypto').createHash('sha1').update(xml).digest('hex');
+    if (planner.isBuildFile(xml) ? sum === src.sum && why !== 'stage' : xml.trim() === (pobXml() || '').trim()) return { ok: true, same: true, message: 'Your build is already up to date.' };
     input = xml;
   } else if (src.type === 'pobbin') input = src.url;
   else return { ok: false, error: 'This character has no linked build.' };
   const r = await importBuild(input, { source: src, sync: true });
+  if (r.ok && src.type === 'file') { const cur = store.buildSource(); if (cur) store.setBuildSource({ ...cur, sum: require('crypto').createHash('sha1').update(input).digest('hex') }); }
   if (store.data.activeProfile !== profile) return r;
   log(`build sync (${why}): ${r.ok ? r.message : r.error}`);
   if (r.ok) notifySettings('settings:changed');
   return r;
 }
 ipcMain.handle('pob:sync', () => syncBuild('asked'));
-ipcMain.handle('pob:source', () => { const s = store.buildSource(); return s ? { type: s.type, name: s.type === 'file' ? path.basename(s.path) : s.url, at: s.at || null } : null; });
+ipcMain.handle('pob:source', () => {
+  const s = store.buildSource();
+  if (!s) return null;
+  const lv = store.settings.leveling;
+  return { type: s.type, name: s.type === 'file' ? path.basename(s.path) : s.url || s.title || 'a guide', at: s.at || null, planner: !!s.planner, title: s.title || null,
+    stages: s.stages || null, stage: s.stage == null ? 100 : s.stage, levelNow: lv && lv.on && Number(lv.level) > 0 ? Number(lv.level) : null };
+});
+// a guide's stage: a level (its stage is used), or 'level' to follow your levelling level
+ipcMain.handle('pob:stage', async (_e, stage) => {
+  const s = store.buildSource();
+  if (!s || !s.planner) return { ok: false, error: 'This character has no guide build.' };
+  const v = stage === 'level' ? 'level' : Math.max(1, Math.min(100, Number(stage) || 100));
+  store.setBuildSource({ ...s, stage: v });
+  if (s.type !== 'file') return { ok: false, error: 'Import the .build file again to change its stage.' };
+  return syncBuild('stage');
+});
 ipcMain.handle('pob:unlink', () => { store.setBuildSource(null); watchBuildFile(); return true; });
 ipcMain.handle('pob:linkFile', async () => {
   const { dialog } = require('electron');
+  // the game's Build Planner folder (guides' .build files) when it's there, else Path of Building's builds
+  const planner2 = path.join(app.getPath('documents'), 'My Games', 'Path of Exile 2', 'BuildPlanner');
   const docs = path.join(app.getPath('documents'), 'Path of Building', 'Builds');
+  const start = tg() === 'poe2' && fs.existsSync(planner2) ? planner2 : fs.existsSync(docs) ? docs : app.getPath('documents');
   const pick = await dialog.showOpenDialog(settingsWin && !settingsWin.isDestroyed() ? settingsWin : undefined, {
-    title: 'Pick your build file from Path of Building', defaultPath: fs.existsSync(docs) ? docs : app.getPath('documents'),
-    filters: [{ name: 'Path of Building build', extensions: ['xml'] }], properties: ['openFile'],
+    title: 'Pick a build file: Path of Building (.xml) or a guide\'s Build Planner file (.build)', defaultPath: start,
+    filters: [{ name: 'Build files', extensions: ['xml', 'build'] }, { name: 'Path of Building build', extensions: ['xml'] }, { name: 'Build Planner file (PoE2)', extensions: ['build'] }], properties: ['openFile'],
   });
   if (pick.canceled || !pick.filePaths.length) return { ok: false, canceled: true };
   const file = pick.filePaths[0];
   let xml;
   try { xml = readBuildFile(file); } catch (err) { return { ok: false, error: err.message }; }
-  return importBuild(xml, { source: { type: 'file', path: file } });
+  const r = await importBuild(xml, { source: { type: 'file', path: file } });
+  if (r.ok) { const cur = store.buildSource(); if (cur) store.setBuildSource({ ...cur, sum: require('crypto').createHash('sha1').update(xml).digest('hex') }); }
+  return r;
 });
 
 // PoE1: a PoB export doesn't say what kind of weapon an item is; PoB itself knows
@@ -2562,7 +2654,8 @@ async function tradePrice(item, picks, opts0 = {}) {
   const mapish = !chosen && priceQuery.usesMapPriceQuery(item);
   const market = !chosen && !mapish && priceQuery.usesPriceQuery(item);
   const levels = chosen ? 1 : mapish ? priceQuery.MAP_LEVELS.length : market ? priceQuery.LEVELS.length : 3;
-  const enough = market || mapish ? priceQuery.ENOUGH : 3;
+  // the closest search with at least a few sellers wins: looser matches are different (usually cheaper) items
+  const enough = market || mapish ? priceQuery.MIN : 3;
   for (let level = 0; level < levels; level++) {
     q = mapish ? priceQuery.buildMapPriceQuery(item, { ...opts, level }) : market ? priceQuery.buildPriceQuery(item, { ...opts, level }) : trade.buildSimilarQuery(item, { ...opts, level });
     if (chosen) {

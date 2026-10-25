@@ -122,3 +122,18 @@ test('damage per hit: the main skill\'s average hit, or the minions\' for a mini
   const m = V.judge({ MinionDPS: 1000, MinionAverageHit: 300, AverageHit: 5, TotalEHP: 5000 }, { MinionDPS: 1200, MinionAverageHit: 360, AverageHit: 5, TotalEHP: 5000 }, {});
   assert.deepEqual([m.hit.from, m.hit.to], [300, 360]);
 });
+
+test('movement speed: a big loss breaks an upgrade, a gain adds to the score, and it can be switched off', () => {
+  const V = require('../src/core/pobverdict');
+  const base = { FullDPS: 1000, TotalEHP: 10000, MovementSpeedMod: 1.3 };
+  const slower = V.judge(base, { ...base, FullDPS: 1100, MovementSpeedMod: 1.2 });
+  assert.deepStrictEqual(slower.speed, { from: 30, to: 20, delta: -10 });
+  assert.ok(slower.breaks.some((b) => /Movement speed drops 10%/.test(b)));
+  assert.notStrictEqual(slower.verdict, 'upgrade');
+  const faster = V.judge(base, { ...base, MovementSpeedMod: 1.35 });
+  assert.ok(faster.score > 1 && !faster.breaks.length, String(faster.score));
+  const off = V.judge(base, { ...base, FullDPS: 1100, MovementSpeedMod: 1.2 }, { priorities: { speed: false } });
+  assert.ok(!off.breaks.length && off.verdict === 'upgrade' && off.speed.delta === -10);
+  const tiny = V.judge(base, { ...base, MovementSpeedMod: 1.28 });
+  assert.ok(!tiny.breaks.length);
+});

@@ -97,7 +97,10 @@ function renderSlots() {
   renderGearSummary();
   const gs = state.gearScores || {};
   const main = state.mainSlots || state.slots;
-  const extras = state.slots.filter((s) => !main.includes(s));
+  // jewel slots: the first 6, any that hold a jewel and one empty one after them (a build can have many)
+  let lastJewel = 0;
+  state.slots.forEach((s) => { const m = /^Jewel (\d+)$/.exec(s); if (m && state.equipped[s]) lastJewel = Math.max(lastJewel, Number(m[1])); });
+  const extras = state.slots.filter((s) => !main.includes(s)).filter((s) => { const m = /^Jewel (\d+)$/.exec(s); return !m || Number(m[1]) <= Math.max(6, lastJewel + 1); });
   const showExtras = extras.filter((s) => state.equipped[s]);
   const extraOpen = window.__extraOpen != null ? window.__extraOpen : showExtras.length > 0;
   const row = (s) => {
@@ -992,10 +995,26 @@ async function renderPobSource() {
   const src = await window.api.pobSource();
   if (!src) { el.innerHTML = ''; return; }
   const when = src.at ? ` · read ${new Date(src.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : '';
-  el.innerHTML = (src.type === 'file'
-    ? `Following <b>${esc(src.name)}</b>: saving it in Path of Building updates this character${when}.`
-    : `From <b>${esc(src.name.replace(/^https?:\/\//, ''))}</b>${when}.`)
-    + ` <button class="link" id="pobSyncNow">Update now</button> <button class="link" id="pobUnlink">Unlink</button>`;
+  // a guide's Build Planner file: its stages (levelling guides have several) and "follow my level"
+  let stageHtml = '';
+  if (src.planner && src.stages && src.stages.length > 1) {
+    const cur = src.stage;
+    const opts = src.stages.map((x) => `<option value="${x.to}" ${cur !== 'level' && Number(cur) >= x.from && Number(cur) <= x.to ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
+    stageHtml = `<div class="row small">Stage <select id="pobStage">${opts}<option value="level" ${cur === 'level' ? 'selected' : ''}>Follow my level${src.levelNow ? ` (${src.levelNow})` : ' (set it on Find upgrades)'}</option></select></div>`;
+  }
+  el.innerHTML = (src.planner
+    ? `Guide <b>${esc(src.title || src.name)}</b>${src.type === 'file' ? ` (<span title="${esc(src.name)}">${esc(src.name)}</span>): the file is followed, so a newer version of the guide updates this character` : ''}${when}.`
+    : src.type === 'file'
+      ? `Following <b>${esc(src.name)}</b>: saving it in Path of Building updates this character${when}.`
+      : `From <b>${esc(src.name.replace(/^https?:\/\//, ''))}</b>${when}.`)
+    + ` <button class="link" id="pobSyncNow">Update now</button> <button class="link" id="pobUnlink">Unlink</button>${stageHtml}`;
+  const stg = $('#pobStage');
+  if (stg) stg.addEventListener('change', async () => {
+    $('#pobMsg').textContent = 'Building that stage…';
+    const r = await window.api.setPobStage(stg.value === 'level' ? 'level' : Number(stg.value));
+    $('#pobMsg').textContent = r.ok ? r.message : r.error;
+    if (r.ok) { await load(); renderPob(false); } else renderPobSource();
+  });
   $('#pobSyncNow').addEventListener('click', async () => {
     $('#pobMsg').textContent = 'Reading your build again…';
     const r = await window.api.syncPob();
@@ -1058,13 +1077,13 @@ function renderModeHints() {
 function renderPriorities() {
   const p = state.priorities || {};
   $('#prRes').checked = !!p.resFirst; $('#prChaos').checked = !!p.chaos; $('#prChaos').disabled = !p.resFirst;
-  $('#prSpirit').checked = !!p.spirit; $('#prAttrs').checked = !!p.attrs; $('#prDmg').checked = !!p.keepDmg;
+  $('#prSpirit').checked = !!p.spirit; $('#prAttrs').checked = !!p.attrs; $('#prDmg').checked = !!p.keepDmg; $('#prSpeed').checked = p.speed !== false;
   $('#prNote').textContent = p.resFirst
     ? 'Resistances first: each resistance point an item adds toward your cap counts +0.5 points on its score (losing them costs the same), and Find upgrades searches for the resistances you still need.'
     : 'Resistances count through effective HP like everything else. An item that drops a resistance off the cap is still marked LOSES RESISTANCE.';
 }
-['#prRes', '#prChaos', '#prDmg', '#prSpirit', '#prAttrs'].forEach((id) => $(id).addEventListener('change', async () => {
-  state.priorities = await window.api.setPriorities({ resFirst: $('#prRes').checked, chaos: $('#prChaos').checked, keepDmg: $('#prDmg').checked, spirit: $('#prSpirit').checked, attrs: $('#prAttrs').checked });
+['#prRes', '#prChaos', '#prDmg', '#prSpirit', '#prAttrs', '#prSpeed'].forEach((id) => $(id).addEventListener('change', async () => {
+  state.priorities = await window.api.setPriorities({ resFirst: $('#prRes').checked, chaos: $('#prChaos').checked, keepDmg: $('#prDmg').checked, spirit: $('#prSpirit').checked, attrs: $('#prAttrs').checked, speed: $('#prSpeed').checked });
   renderPriorities();
 }));
 $('#pobUse').addEventListener('change', async () => { await window.api.pobEnable($('#pobUse').checked); state = await window.api.getState(); renderPob(false); });

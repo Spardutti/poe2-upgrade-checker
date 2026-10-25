@@ -10,10 +10,16 @@ const MAIN_SLOTS = [
   'Weapon', 'Offhand', 'Helmet', 'Body Armour', 'Gloves', 'Boots',
   'Belt', 'Amulet', 'Ring 1', 'Ring 2',
 ];
+// Jewel sockets: a build can have many (PoE1 trees with cluster jewels have dozens). The app
+// keeps up to JEWEL_MAX and shows the first JEWEL_SHOWN, plus any that hold a jewel and one
+// empty one after them (visibleJewels).
+const JEWEL_MAX = 40;
+const JEWEL_SHOWN = 6;
+const JEWEL_SLOTS = Array.from({ length: JEWEL_MAX }, (_, i) => `Jewel ${i + 1}`);
 const EXTRA_SLOTS = [
   'Weapon 2', 'Offhand 2',
   'Life Flask', 'Mana Flask', 'Charm 1', 'Charm 2', 'Charm 3',
-  'Jewel 1', 'Jewel 2', 'Jewel 3', 'Jewel 4', 'Jewel 5', 'Jewel 6',
+  ...JEWEL_SLOTS,
 ];
 const SLOTS = [...MAIN_SLOTS, ...EXTRA_SLOTS];
 
@@ -25,7 +31,7 @@ const SLOT_GROUPS = {
   Offhand: ['Offhand', 'Offhand 2'],
   Ring: ['Ring 1', 'Ring 2'],
   Charm: ['Charm 1', 'Charm 2', 'Charm 3'],
-  Jewel: ['Jewel 1', 'Jewel 2', 'Jewel 3', 'Jewel 4', 'Jewel 5', 'Jewel 6'],
+  Jewel: JEWEL_SLOTS,
 };
 const WEAKEST_OF = ['Ring', 'Charm', 'Jewel'];
 
@@ -84,4 +90,12 @@ function groupOf(slot) {
   return slot;
 }
 
-module.exports = { SLOTS, MAIN_SLOTS, EXTRA_SLOTS, SLOT_GROUPS, WEAKEST_OF, slotForClass, isTwoHanded, groupOf };
+// the jewel slots worth showing: the first JEWEL_SHOWN, every one that holds a jewel, and one
+// empty slot after the last filled one (so you can always add another)
+function visibleJewels(equipped) {
+  let last = 0;
+  JEWEL_SLOTS.forEach((s, i) => { if (equipped && equipped[s]) last = i + 1; });
+  return JEWEL_SLOTS.slice(0, Math.min(JEWEL_MAX, Math.max(JEWEL_SHOWN, last + 1)));
+}
+
+module.exports = { SLOTS, JEWEL_SLOTS, JEWEL_MAX, JEWEL_SHOWN, visibleJewels, MAIN_SLOTS, EXTRA_SLOTS, SLOT_GROUPS, WEAKEST_OF, slotForClass, isTwoHanded, groupOf };

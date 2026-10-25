@@ -21,11 +21,13 @@ const trade = require('./trade');
 // recent the listings must be
 const LEVELS = [
   { lo: 0.9, hi: 1.4, miss: (n) => (n >= 5 ? 1 : 0), indexed: '3days', label: 'similar values, listed in the last 3 days' },
-  { lo: 0.8, hi: 1.8, miss: (n) => (n >= 5 ? 2 : n >= 2 ? 1 : 0), indexed: '1week', label: 'close values, listed in the last week' },
-  { lo: 0.7, hi: null, miss: (n) => Math.max(n >= 2 ? 1 : 0, Math.floor(n * 0.4)), indexed: '2weeks', label: 'the main stats, listed in the last 2 weeks' },
+  { lo: 0.8, hi: 1.8, miss: (n) => (n >= 2 ? 1 : 0), indexed: '1week', label: 'close values, listed in the last week' },
+  { lo: 0.75, hi: 2.5, miss: (n) => (n >= 6 ? 2 : n >= 2 ? 1 : 0), indexed: '2weeks', label: 'the main stats, listed in the last 2 weeks' },
 ];
-// enough sellers to judge a price
-const ENOUGH = 8;
+// the closest search with at least MIN listings is used; a looser one only when the closer ones have
+// fewer (looser matches are different, usually cheaper, items). Under ENOUGH sellers the price says so.
+const ENOUGH = 5;
+const MIN = 3;
 
 // totals the trade site adds up itself (mods and implicits together)
 const PSEUDO = [
@@ -57,7 +59,7 @@ const FILLER = new RegExp([
 
 // stats that decide what kind of item it is: never the one a looser search leaves out
 // (boots without movement speed, or an amulet without its +skill levels, are different items)
-const KEY = /Movement Speed|Level of all .*Skills|Level of all .*Gems|\bSpirit\b|Physical DPS|Elemental DPS/i;
+const KEY = /Movement Speed|Level of all .*Skills|Level of all .*Gems|\bSpirit\b|Physical DPS|Elemental DPS|Allies in your Presence deal/i;
 
 const isUnique = (item) => /unique/i.test(item.rarity || '');
 
@@ -241,4 +243,4 @@ function buildMapPriceQuery(item, opts = {}) {
   return { body: { query, sort: { price: 'asc' } }, need: labels.length, total: labels.length, level: lv, levels: MAP_LEVELS.length, levelLabel: L.label, labels };
 }
 
-module.exports = { buildPriceQuery, buildMapPriceQuery, priceStats, usesPriceQuery, usesMapPriceQuery, isTablet, LEVELS, MAP_LEVELS, ENOUGH, FILLER };
+module.exports = { buildPriceQuery, buildMapPriceQuery, priceStats, usesPriceQuery, usesMapPriceQuery, isTablet, LEVELS, MAP_LEVELS, ENOUGH, MIN, FILLER };

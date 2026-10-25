@@ -547,3 +547,16 @@ details.fold > summary .fold-why { font-family: var(--f-text); letter-spacing: 0
 .conf-solid { color: var(--up, #7fbf6a); }
 .conf-rough { color: var(--warn, #d9a441); }
 .conf-guess { color: var(--dim, #9a9284); }
+
+/* Settings: cards flow into balanced columns (no gaps under short cards) */
+.opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 0 18px; align-items: start; }
+.opts .opt-col { min-width: 0; }
+.opts h3 .small { font-family: var(--f-text); letter-spacing: 0; text-transform: none; margin-left: 6px; }
+.opts .help { margin: 6px 0 4px; }
+.opts .kv { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); gap: 8px 10px; align-items: center; margin: 4px 0 10px; }
+.opts .kv .k { color: var(--stone); }
+.opts .kv .v { display: flex; gap: 8px; align-items: center; }
+.opts .kv .note { margin: 0; text-align: left; justify-self: start; }
+.opts details.fold.help > summary { font: inherit; letter-spacing: 0; color: var(--ash); text-decoration: underline; margin: 2px 0 4px; }
+.opts input.hotkey { width: 120px; }
+.opts .kv .note { white-space: nowrap; }

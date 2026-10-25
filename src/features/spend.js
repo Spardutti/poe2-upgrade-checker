@@ -14,7 +14,53 @@ module.exports = function (C) {
   // few searches a minute); the last run per game is kept.
   const SPEND_SLOTS = ['Weapon', 'Offhand', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring', 'Belt'];
   const spendRuns = {}; // character -> { at, rows, pairs, ... } (each character's own build and gear)
+  const prevRuns = {}; // character -> the run before that (for "cheaper than last time")
   const runKey = () => C.store.data.activeProfile || C.tg();
+  // each character's last two runs are kept on disk for a week, so they're still there after a
+  // restart (with enough of each slot's search to show its listings or set an alert again)
+  const KEEP = 7 * 24 * 3600 * 1000;
+  const runsFile = () => path.join(app.getPath('userData'), 'spend-runs.json');
+  let loaded = false;
+  function loadRuns() {
+    if (loaded) return; loaded = true;
+    try {
+      const all = JSON.parse(fs.readFileSync(runsFile(), 'utf8'));
+      for (const [k, v] of Object.entries(all || {})) {
+        if (!v || !v.run || !(Date.now() - v.run.at < KEEP) || !Array.isArray(v.run.rows)) continue;
+        spendRuns[k] = v.run;
+        if (v.prev && Date.now() - v.prev.at < KEEP) prevRuns[k] = v.prev;
+      }
+    } catch (_) { /* none yet */ }
+  }
+  // a slot's search, without the listings: enough to search again or set an alert
+  const keepSearch = (sr) => {
+    if (!sr || !sr.r) return null;
+    const { r, ctx } = sr;
+    return { r: { ok: true, total: r.total, url: r.url, league: r.league, game: r.game, searchId: r.searchId, ids: (r.ids || []).slice(0, 100), body: r.body }, ctx: ctx ? { mode: ctx.mode, title: ctx.title, note: ctx.note, body: ctx.body, searchKey: ctx.searchKey, item: ctx.item ? { name: ctx.item.name, itemClass: ctx.item.itemClass, slot: ctx.item.slot, baseType: ctx.item.baseType, rarity: ctx.item.rarity } : null } : null };
+  };
+  function saveRuns() {
+    try {
+      const out = {};
+      for (const k of Object.keys(spendRuns)) {
+        const run = spendRuns[k];
+        out[k] = { run: { ...run, rows: run.rows.map((x) => ({ ...x, search: keepSearch(x.search) })) }, prev: prevRuns[k] ? slimRun(prevRuns[k]) : null };
+      }
+      const tmp = runsFile() + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(out));
+      fs.renameSync(tmp, runsFile());
+    } catch (err) { C.log('spend: could not save the last run: ' + err.message); }
+  }
+  const slimRun = (run) => ({ ...run, rows: run.rows.map(({ search, ...x }) => x) });
+  // for the page: the run, the slots whose gear you've changed since, and each slot's best last time
+  function forPage(run) {
+    if (!run) return null;
+    const key = runKey();
+    const prev = prevRuns[key];
+    const prevBest = {};
+    if (prev) for (const x of prev.rows || []) if (x.best) prevBest[x.slot] = { perDiv: x.best.perDiv, gain: x.best.gain, price: x.best.price, priceDiv: x.best.priceDiv };
+    const changed = run.rows.filter((x) => { const it = C.resolveItem(x.slot); return (it ? it.name : null) !== (x.current || null); }).map((x) => x.slot);
+    return JSON.parse(JSON.stringify({ ...slimRun(run), prevBest, prevAt: prev ? prev.at : null, changed }));
+  }
   let spendBusy = null;
   const spendProgress = (p) => C.notifySettings('spend:progress', p);
   function shortResists() {
@@ -26,18 +72,29 @@ module.exports = function (C) {
       return Number.isFinite(v) && v < max - 0.5 && !(tot > v + 0.5);
     });
   }
-  ipcMain.handle('spend:get', () => JSON.parse(JSON.stringify(spendRuns[runKey()] ? { ...spendRuns[runKey()], rows: spendRuns[runKey()].rows.map(({ search, ...x }) => x) } : null)));
+  ipcMain.handle('spend:get', () => { loadRuns(); return forPage(spendRuns[runKey()]); });
   ipcMain.handle('spend:open', C.inGame(async (_e, slot, idx) => {
+    loadRuns();
     const run = spendRuns[runKey()];
     const row = run && run.rows.find((x) => x.slot === slot);
     if (!row || !row.search) return { ok: false, error: 'Run "Where to spend" again first.' };
-    const shown = await C.showResults(row.search.r, row.search.ctx);
+    let r = row.search.r;
+    // a run from earlier (or before a restart): the trade site forgets searches, so search again
+    if (Date.now() - run.at > 20 * 60000 || !r.ids || !r.ids.length) {
+      const body = (row.search.ctx && row.search.ctx.body) || r.body;
+      if (!body) return { ok: false, error: 'Run "Where to spend" again first.' };
+      const fresh = await C.runSearch(run.league, body, `spend ${slot} again`);
+      if (!fresh || !fresh.ok) return { ok: false, error: (fresh && fresh.error) || 'The search failed.' };
+      r = fresh; row.search = { r, ctx: row.search.ctx };
+    }
+    const shown = await C.showResults(r, row.search.ctx);
     return shown ? { ok: true, inApp: true } : { ok: false, error: 'Could not show the listings.' };
   }));
   // a build-value alert from a slot: "tell me when a Gloves listing is +X% for my build under Y div".
   // It's a saved search (this slot's search, priced up to Y div) whose new listings are checked with
   // your build when alerts run; only the ones that clear +X% are notified.
   ipcMain.handle('spend:alert', C.inGame((_e, slot, minGain, maxPrice) => {
+    loadRuns();
     const run = spendRuns[runKey()];
     const row = run && run.rows.find((x) => x.slot === slot);
     if (!row || !row.search || !row.search.ctx || !row.search.ctx.body) return { ok: false, error: 'Run "Where to spend" again first.' };
@@ -69,10 +126,11 @@ module.exports = function (C) {
   const slim = (run) => JSON.parse(JSON.stringify({ ...run, rows: run.rows.map(({ search, ...x }) => x) }));
   ipcMain.handle('spend:run', C.inGame(async (_e, force) => {
     if (spendBusy) return { ok: false, error: 'Already looking – see the progress above.' };
+    loadRuns();
     const last = spendRuns[runKey()];
     const want = { mode: C.pobOn() ? 'pob' : C.gearScoreOn() ? 'gear' : null, budget: C.trade.budgetLabel(C.budgetNow(), C.tg()), league: C.shownLeague() || null };
     if (!force && last && Date.now() - last.at < REUSE && last.mode === want.mode && last.budget === want.budget && (!want.league || last.league === want.league)) {
-      return { ok: true, reused: true, ...slim(last) };
+      return { ok: true, reused: true, ...forPage(last) };
     }
     // Path of Building when your build is loaded; otherwise (PoE2) the gear score
     const mode = C.pobOn() ? 'pob' : C.gearScoreOn() ? 'gear' : null;
@@ -147,10 +205,12 @@ module.exports = function (C) {
       }
       rows.sort((a, b) => ((b.best && b.best.perDiv) || -1) - ((a.best && a.best.perDiv) || -1));
       const run = { at: Date.now(), mode, league, budget: C.trade.budgetLabel(budget, game), unit: C.G(game).baseShort, divineRate: div, rows, pairs, short: mode === 'pob' ? short : [], stopped };
+      if (spendRuns[key] && !spendRuns[key].partial) prevRuns[key] = slimRun(spendRuns[key]);
       spendRuns[key] = run;
+      saveRuns();
       spendProgress({ done: slots.length, total: slots.length, finished: true });
       C.log(`spend: ${rows.filter((x) => x.best).length} of ${rows.length} slots have an upgrade; ${pairs.length} resistance pairs`);
-      return { ok: true, ...JSON.parse(JSON.stringify({ ...run, rows: rows.map(({ search, ...x }) => x) })) };
+      return { ok: true, ...forPage(run) };
     } finally { spendBusy = null; }
   }));
   // without Path of Building (PoE2): the gear-score search of Find upgrades, one search per slot

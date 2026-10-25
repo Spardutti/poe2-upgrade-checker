@@ -35,7 +35,11 @@ function dpsKey(o) {
 
 // Your priorities (My gear → Priorities). Defaults: capping resistances comes first, and losing
 // Spirit or attribute requirements breaks the build.
-const DEFAULT_PRIORITIES = { resFirst: true, chaos: false, keepDmg: true, spirit: true, attrs: true };
+const DEFAULT_PRIORITIES = { resFirst: true, chaos: false, keepDmg: true, spirit: true, attrs: true, speed: true };
+// with "keep my movement speed": losing this many points of movement speed (30% -> 27%) breaks an
+// upgrade, and each point gained or lost moves the score by MS_POINT
+const MS_LOSS = 3;
+const MS_POINT = 0.3;
 // with "never lose damage", an item that costs more than this much of your damage is LOSES DAMAGE,
 // however much resistance or EHP it adds (your build's main damage mods matter as much as resistances)
 const DMG_LOSS = 5;
@@ -97,6 +101,18 @@ function judge(before, after, opts = {}) {
     if (have != null && need != null && have < need && hadOk) breaks.push(`Not enough ${({ Str: 'Strength', Dex: 'Dexterity', Int: 'Intelligence' })[at]} to use your gear (${Math.round(have)} of ${Math.round(need)})`);
   }
 
+  // movement speed (PoB's multiplier, 1.3 = 30% faster than base): you feel every point of it
+  const msA = n(before.MovementSpeedMod); const msB = n(after.MovementSpeedMod);
+  const msDelta = msA != null && msB != null ? Math.round((msB - msA) * 1000) / 10 : null;
+  let speed = null;
+  if (msDelta) {
+    speed = { from: Math.round((msA - 1) * 1000) / 10, to: Math.round((msB - 1) * 1000) / 10, delta: msDelta };
+    if (pr.speed) {
+      score += msDelta * MS_POINT;
+      if (msDelta <= -MS_LOSS) breaks.push(`Movement speed drops ${Math.abs(msDelta)}% (${speed.from}% → ${speed.to}%)`);
+    }
+  }
+
   const t = opts.thresholds || { upgrade: 3, small: 1, down: -1 };
   let verdict = score >= t.upgrade ? 'upgrade' : score >= t.small ? 'small' : score <= t.down ? 'downgrade' : 'same';
   if (breaks.length) verdict = score > 0 ? 'risky' : 'downgrade';
@@ -114,7 +130,7 @@ function judge(before, after, opts = {}) {
     dpsKey: key, dps: { from: dpsA, to: dpsB, pct: dpsPct == null ? null : Math.round(dpsPct * 10) / 10 },
     ehp: { from: n(before.TotalEHP), to: n(after.TotalEHP), pct: ehpPct == null ? null : Math.round(ehpPct * 10) / 10 },
     es: delta('EnergyShield'), life: delta('Life'), mana: delta('Mana'), spirit: delta('Spirit'), spiritFree: delta('SpiritUnreserved'),
-    minionLife: delta('MinionLife'),
+    minionLife: delta('MinionLife'), ward: delta('Ward'), speed,
     // the main skill's average damage per hit (yours, or your minions' when they do the damage)
     hit: key === 'MinionDPS' ? delta('MinionAverageHit') : delta('AverageHit'),
     res,
@@ -131,4 +147,4 @@ function best(list) {
 // Chaos Inoculation sets maximum life to 1 (and makes you immune to chaos damage)
 const hasCI = (stats) => !!stats && Number(stats.Life) > 0 && Number(stats.Life) <= 1;
 
-module.exports = { hasCI, judge, best, dpsOf, dpsKey, SLOT_TO_POB, DEFAULT_PRIORITIES, RES_POINT, DMG_LOSS };
+module.exports = { hasCI, judge, best, dpsOf, dpsKey, SLOT_TO_POB, DEFAULT_PRIORITIES, RES_POINT, DMG_LOSS, MS_LOSS, MS_POINT };

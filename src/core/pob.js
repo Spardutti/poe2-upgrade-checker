@@ -6,6 +6,7 @@
 // into the same text the game copies, so the normal parser can read it.
 
 const zlib = require('zlib');
+const { JEWEL_MAX } = require('./slots');
 
 const MAX_XML = 20 * 1024 * 1024;
 function decodeCode(code) {
@@ -169,7 +170,7 @@ function parsePob(xml) {
   let j = 1;
   for (const m of treeXml.matchAll(/<Socket\b[^>]*>/g)) {
     const itemId = attr(m[0], 'itemId');
-    if (itemId && itemId !== '0' && items[itemId] && j <= 6) slots[`Jewel ${j++}`] = items[itemId];
+    if (itemId && itemId !== '0' && items[itemId] && j <= JEWEL_MAX) slots[`Jewel ${j++}`] = items[itemId];
   }
   // resistances (PoB shows capped values + how far over the cap you are)
   const stats = {};

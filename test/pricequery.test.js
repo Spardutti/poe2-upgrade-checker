@@ -66,7 +66,7 @@ test('price query: each level is looser and older', () => {
   const qs = [0, 1, 2].map((level) => PQ.buildPriceQuery(item, { statIndex: idx, preferLocal: true, level }));
   const lifeMin = qs.map((q) => all(q).find((x) => x.id === 'pseudo.pseudo_total_life').value.min);
   assert.ok(lifeMin[0] > lifeMin[1] && lifeMin[1] > lifeMin[2], lifeMin.join());
-  assert.ok(all(qs[2]).every((x) => x.value.max === undefined));
+  assert.ok(all(qs[2]).every((x) => x.value.max >= x.value.min * 3)); // the last step: a wide range, never an open one
   // movement speed on boots is never the stat a looser search drops
   for (const q of qs) assert.deepStrictEqual(q.body.query.stats[0], { type: 'and', filters: [all(q).find((x) => x.id === 'pseudo.pseudo_increased_movement_speed')] });
   assert.deepStrictEqual(qs.map((q) => q.body.query.filters.trade_filters.filters.indexed.option), ['3days', '1week', '2weeks']);

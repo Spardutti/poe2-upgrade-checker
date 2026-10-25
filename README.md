@@ -39,7 +39,7 @@
   - Items that cap a resistance you're short of are marked "✓ Caps your … resistance" and go to the top of trade results.
   - Items that drop a resistance off the cap get a red **LOSES RESISTANCE** verdict with exactly what drops, e.g. "Lightning 75% → 38%".
   - **Chaos Inoculation** is recognised, and chaos resistance is then ignored everywhere.
-- **Never breaks your build:** an item that costs a big part of your damage (**LOSES DAMAGE**), leaves you short of Spirit or can't be worn is flagged, however much else it adds. Each check can be switched off under *Priorities*.
+- **Never breaks your build:** an item that costs a big part of your damage (**LOSES DAMAGE**), leaves you short of Spirit, costs you 3% or more movement speed or can't be worn is flagged, however much else it adds. Each check can be switched off under *Priorities*.
 - **Character page:** your whole character from Path of Building: DPS or minion DPS, effective HP, energy shield, resistances against the cap, the biggest hit you can take, Spirit, attributes, skills with supports, keystones and ascendancy.
 - **Upgrade popup:** the verdict, the change in every stat, each mod's tier and roll, open prefixes and suffixes for crafting, and *What's it worth?* (or **Price by chosen stats…** to pick exactly which stats and minimums the price check matches, with a total elemental resistance row and 80/90/100% minimum buttons). Links to the wiki and poedb.
 - **Where to spend:** every slot searched in your price range and checked with your build, ranked by how much better your build gets **per divine** ("Gloves: +14% for 3 div. Amulet: +6% for 20 div."). When resistances are short, it also looks for **two items that cap them together**. Without a Path of Building build (PoE2), it ranks by gear score instead.
@@ -62,6 +62,7 @@
 - **Your gear:**
   - Every slot, including weapon swap, jewels, flasks and charms.
   - Import from Path of Building (pobb.in links or codes). A pobb.in link can be read again with one click, or link the build file PoB saves and the app follows it each time you save.
+  - **No PoB link?** Link a guide's Build Planner file (`.build`): the tree, skills and the guide's gear become a Path of Building build, with a stage picker for levelling guides (or *Follow my level*).
   - Several characters, each with their own gear and build.
 - **Gear score fallback:** without a PoB build, a 0–100 gear score from build profiles (minion summoner, ES caster, life + res) and your own stat weights.
 - **Built for playing:**
@@ -286,6 +287,10 @@ How it works on Linux, and what to check if F2 doesn't:
   5. It waits for the build, then opens the release page. If the build failed, it opens the log instead.
   - Options: `release.bat -Version 0.5.0` (pick the number), `-Yes` (no questions), `-NoWait` (don't wait for the build).
   - **A beta for testers:** `release-beta.bat` publishes a version like `0.5.0-beta.1` as a GitHub *pre-release*. Installed copies of the normal version never update to it; whoever installs it from the release page gets the next betas and then the finished version. The changelog's *Unreleased* section is its release notes and stays as it is, so the next `release.bat` (which offers `0.5.0`) still lists everything.
+
+## License
+
+Free and open source under the **GNU General Public License v3** ([LICENSE](LICENSE)), with a few additional terms in [NOTICE.md](NOTICE.md). In short: you can fork it, change it and release your own version, as long as yours stays open source under the same licence, keeps the notices, and has its own name, app ID, update channel and support address (so it isn't mistaken for this app). Bundled Path of Building and the fonts keep their own licences.
 
 ## Credits
 
