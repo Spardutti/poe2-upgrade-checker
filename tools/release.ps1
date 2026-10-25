@@ -153,6 +153,24 @@ if ($pobCode -eq 2 -and -not $Yes) {
   if ($go -notmatch '^(y|yes)$') { exit 0 }
 }
 
+# ---------- the GitHub release workflow ----------
+# ci\release.yml is the editable copy of .github\workflows\release.yml (Claude can't write to
+# .github\workflows). When they differ, the change is shown and copied over with your OK, so it's
+# part of this release's commit and the build uses it.
+$wfSrc = Join-Path $root 'ci\release.yml'; $wfDst = Join-Path $root '.github\workflows\release.yml'
+if ((Test-Path $wfSrc) -and ((Read-Text 'ci\release.yml') -replace "`r", '') -ne ((Read-Text '.github\workflows\release.yml') -replace "`r", '')) {
+  Say ''
+  Say 'ci\release.yml has changes for the GitHub release workflow:' 'Yellow'
+  $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+  & git --no-pager diff --no-index -- $wfDst $wfSrc 2>$null | ForEach-Object { Write-Host $_ }
+  $ErrorActionPreference = $eap
+  $go = if ($Yes) { 'y' } else { Read-Host 'Use them for this release? (Y/n)' }
+  if ($go -match '^(n|no)$') { Fail 'Stopped: the workflow and ci\release.yml differ. Copy it yourself or undo the change in ci\release.yml, then run this again.' }
+  New-Item -ItemType Directory -Force -Path (Split-Path $wfDst) | Out-Null
+  Copy-Item $wfSrc $wfDst -Force
+  Say 'Workflow updated from ci\release.yml.' 'Green'
+}
+
 # ---------- 2. version ----------
 $pkgText = Read-Text 'package.json'
 if ($pkgText -notmatch '"version"\s*:\s*"([^"]+)"') { Fail "Couldn't find the version in package.json." }

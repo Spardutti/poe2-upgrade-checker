@@ -48,6 +48,18 @@ jobs:
             const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
             if (/-/.test(p.version)) { p.build.publish = p.build.publish.map((x) => ({ ...x, releaseType: "prerelease" })); fs.writeFileSync("package.json", JSON.stringify(p, null, 2)); console.log("beta " + p.version + ": pre-release"); }
           '
+      # the release is made here, before the build: electron-builder 26 uploads the installer and the
+      # portable .exe at the same time, and when no release exists yet each upload made its own, so the
+      # tag got two releases (0.5.1-beta.1) and the release-notes step then failed
+      - name: Create the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          if gh release view "v$VER" >/dev/null 2>&1; then echo "release v$VER already exists"; exit 0; fi
+          if [[ "$VER" == *-* ]]; then gh release create "v$VER" --verify-tag --title "$VER (beta)" --notes "Building..." --prerelease
+          else gh release create "v$VER" --verify-tag --title "$VER" --notes "Building..."; fi
       - name: Build and upload the installer and portable .exe
         run: npx electron-builder@26.18.0 --win nsis portable --publish always
         env:

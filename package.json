@@ -1,6 +1,6 @@
 {
   "name": "poe2-upgrade-checker",
-  "version": "0.5.1-beta.1",
+  "version": "0.5.1-beta.2",
   "description": "Free Path of Exile overlay (PoE2, and PoE1 in beta): press F2 on an item to see if it's really an upgrade for your build, judged by Path of Building's own calculations. Finds better gear on the trade site within your budget.",
   "main": "src/main.js",
   "private": true,

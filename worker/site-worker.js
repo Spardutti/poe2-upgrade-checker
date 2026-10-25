@@ -125,6 +125,21 @@ async function download(ctx) {
   return Response.redirect(url || RELEASES, 302);
 }
 
+// ---------- rate limits (Workers Rate Limiting bindings, wrangler.site.jsonc) ----------
+// Counted per visitor address for the current minute only, in Cloudflare's memory: the address isn't
+// stored or logged. Only work that costs something is counted: a price list that isn't cached yet
+// (each one is a call to poe.ninja), a usage ping (a database write) and the stats page (its key).
+// Without the binding (local test) everything is allowed.
+async function allowed(env, binding, request, what) {
+  const rl = env[binding];
+  if (!rl || typeof rl.limit !== 'function') return true;
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  try { return (await rl.limit({ key: `${what}:${ip}` })).success; } catch (_) { return true; } // never block on a limiter fault
+}
+const tooMany = () => new Response(JSON.stringify({ error: 'Too many requests: try again in a minute.' }), { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '60', 'Cache-Control': 'no-store' } });
+// league names: letters, digits, spaces and a little punctuation ("Rise of the Abyssal", "HC SSF Mercenaries")
+const LEAGUE = /^[A-Za-z0-9 '()._-]{1,80}$/;
+
 // every answer: HTTPS only from now on, and no guessing a file's type
 async function secured(res) {
   const out = new Response(res.body, res);
@@ -144,13 +159,28 @@ async function handle(request, env, ctx) {
     const url = new URL(request.url);
     // one address for the site: www.poe2upgrade.com goes to poe2upgrade.com
     if (url.hostname === 'www.poe2upgrade.com') { url.hostname = 'poe2upgrade.com'; return Response.redirect(url.toString(), 301); }
-    if (url.pathname === '/api/ping') return request.method === 'POST' ? ping(request, env).catch(() => json({ ok: false }, 500)) : json({ ok: false }, 405);
+    if (url.pathname === '/api/ping') {
+      if (request.method !== 'POST') return json({ ok: false }, 405);
+      if (!await allowed(env, 'RL_PING', request, 'ping')) return tooMany();
+      return ping(request, env).catch(() => json({ ok: false }, 500));
+    }
     if (url.pathname === '/download' || url.pathname === '/download/') return download(ctx);
-    if (url.pathname === '/api/stats') return stats(url, env).catch((e) => new Response('Error: ' + e.message, { status: 500 }));
+    if (url.pathname === '/api/stats') {
+      if (!await allowed(env, 'RL_STATS', request, 'stats')) return tooMany();
+      return stats(url, env).catch(() => new Response('Error', { status: 500 }));
+    }
     if (!url.pathname.startsWith('/ninja/')) return env.ASSETS.fetch(request);
     if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 });
+    const league = url.searchParams.get('league');
+    if (league != null && !LEAGUE.test(league)) return new Response(JSON.stringify({ error: 'bad league' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     const all = url.pathname.match(ALL);
-    if (all) return exchangeAll(all[1], (url.searchParams.get('league') || '').slice(0, 80), ctx);
+    if (all) {
+      const key = new Request(`https://poe2upgrade.com/ninja-cache/${all[1]}/exchange/all?league=${encodeURIComponent(league || '')}`);
+      const hit = await caches.default.match(key);
+      if (hit) return hit;
+      if (!await allowed(env, 'RL_NINJA', request, 'ninja')) return tooMany();
+      return exchangeAll(all[1], league || '', ctx);
+    }
     const m = url.pathname.match(ALLOWED);
     if (!m) return new Response('Not found', { status: 404 });
     const q = QUERY.filter((k) => url.searchParams.get(k)).map((k) => `${k}=${encodeURIComponent(url.searchParams.get(k).slice(0, 80))}`).join('&');
@@ -160,6 +190,7 @@ async function handle(request, env, ctx) {
     const cache = caches.default;
     const hit = await cache.match(key);
     if (hit) return hit;
+    if (!await allowed(env, 'RL_NINJA', request, 'ninja')) return tooMany();
     let res;
     try {
       res = await fetch(target, { headers: { 'User-Agent': UA, Accept: 'application/json' }, cf: { cacheTtl: TTL[m[1]], cacheEverything: true } });
