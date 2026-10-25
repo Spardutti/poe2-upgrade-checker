@@ -35,7 +35,7 @@ function sorted(list) {
   const rank = (x) => (x.compare && x.compare.resRank) || 0;
   // items that lose resistance or damage go below everything else when sorting by upgrade or value
   const lost = (x) => (x.compare && (x.compare.verdict === 'resloss' || x.compare.verdict === 'dmgloss') ? 1 : 0);
-  const by = {
+  let by = {
     // caps a resistance you're short of → adds toward the cap → no change → loses resistance; then best upgrade
     res: (a, b) => (rank(b) - rank(a)) || (num(b.compare && b.compare.delta) - num(a.compare && a.compare.delta)),
     upgrade: (a, b) => (lost(a) - lost(b)) || (num(b.compare && b.compare.delta) - num(a.compare && a.compare.delta)),
@@ -44,18 +44,31 @@ function sorted(list) {
     gear: (a, b) => ((b.gear && b.gear.score != null ? b.gear.score : -1) - (a.gear && a.gear.score != null ? a.gear.score : -1)),
     site: () => 0,
   }[mode];
+  // sellers you can buy from now come first (an offline seller can't answer a whisper)
+  const away = (x) => (!x.instant && !x.online ? 1 : 0);
+  const by0 = by; by = (a, b) => (mode === 'site' ? 0 : away(a) - away(b)) || by0(a, b);
   let out = (list || []).map((x, i) => ({ ...x, _i: i }));
   if ($('#noCorrupt').checked) out = out.filter((x) => !(x.item && x.item.corrupted));
   if ($('#onlyUp').checked) out = out.filter((x) => x.compare && (['upgrade', 'small', 'risky', 'new'].includes(x.compare.verdict)));
-  return out.sort((a, b) => by(a, b) || a._i - b._i);
+  out = out.sort((a, b) => by(a, b) || a._i - b._i);
+  if ($('#onePerSeller').checked) { const seen = new Set(); out = out.filter((x) => { const k = x.account || x.seller || x.id; if (seen.has(k)) return false; seen.add(k); return true; }); }
+  return out;
 }
 
+// the listing that gives most for your build per divine, and the biggest upgrade (among ones you can buy now)
+let best = { value: null, up: null };
+function pickBest(list) {
+  const ok = list.filter((x) => x.compare && x.compare.delta > 0 && !['resloss', 'dmgloss'].includes(x.compare.verdict) && (x.instant || x.online));
+  const top = (f) => ok.reduce((m, x) => (f(x) != null && (m == null || f(x) > f(m)) ? x : m), null);
+  const v = top((x) => x.valuePerDiv); const u = top((x) => x.compare.delta);
+  best = { value: v && v.id, up: u && u.id };
+}
 function card(x) {
   const it = x.item;
   const c = x.compare;
   const [vt, vc] = c ? (VERDICT[c.verdict] || VERDICT.same) : ['?', 'same'];
   const lines = (it ? it.lines : []).filter((l) => l.tag !== 'info');
-  const mods = lines.map((l) => `<div class="mod ${esc(l.tag)}">${esc(l.text)}</div>`).join('');
+  const mods = window.modsHtml ? window.modsHtml(lines) : lines.map((l) => `<div class="mod ${esc(l.tag)}">${esc(l.text)}</div>`).join('');
   const gearMode = c && (c.scoreMode === 'gear' || c.scoreMode === 'pob');
   const n = modCount();
   const changed = c ? c.rows.filter((r) => r.diff) : [];
@@ -67,7 +80,9 @@ function card(x) {
   const loss = c && (c.verdict === 'dmgloss' || c.verdict === 'resloss');
   const value = x.valuePerDiv != null && Math.abs(x.valuePerDiv) >= 0.05 && c && c.delta > 0 && !loss ? `<span class="value" title="${c && c.scoreMode === 'pob' ? 'Path of Building points for your build' : gearMode ? 'Gear score points gained' : 'Upgrade score'} per divine spent">${fmt(x.valuePerDiv, 1)} / div</span>` : '';
   const rr = c ? c.resRank || 0 : 0;
-  return `<article class="listing ${rr < 0 ? 'res-loss' : rr === 2 ? 'res-cap-item' : ''}">
+  const offline = !x.instant && !x.online;
+  const ribbons = [best.up === x.id ? '<span class="ribbon">Biggest upgrade</span>' : '', best.value === x.id ? '<span class="ribbon">Best value</span>' : ''].filter(Boolean).join('');
+  return `<article class="listing ${rr < 0 ? 'res-loss' : rr === 2 ? 'res-cap-item' : ''} ${offline ? 'offline' : ''}">${ribbons ? `<div class="ribbons">${ribbons}</div>` : ''}
     <div class="l-top">
       <div>
         <div class="name ${esc(((it && it.rarity) || '').toLowerCase())}">${esc(it ? it.name : 'Unreadable listing')}</div>
@@ -87,7 +102,7 @@ function card(x) {
     <details><summary>Item mods</summary>${mods}</details>
     <div class="actions">
       ${x.instant ? `<button class="primary gilded" data-hideout="${esc(x.id)}" title="${data.signedIn ? 'Asks the trade site to take you to the seller\'s hideout, straight from here' : 'Takes you to the seller\'s hideout from here – you sign in to pathofexile.com once the first time'}">Travel to hideout</button>` : ''}
-      ${x.whisper ? `<button class="primary gilded" data-whisper="${esc(x.id)}" title="Copies the seller's whisper – paste it in game chat with Enter, Ctrl+V">Copy whisper</button>` : ''}
+      ${x.whisper ? `<button class="${offline ? '' : 'primary gilded'}" data-whisper="${esc(x.id)}" title="${offline ? 'The seller is offline: they won\'t see a whisper until they come back' : 'Copies the seller\'s whisper – paste it in game chat with Enter, Ctrl+V'}">${offline ? 'Copy whisper (seller offline)' : 'Copy whisper'}</button>` : ''}
       <button class="link" data-listing="${esc(x.id)}" title="Opens the trade site in your browser on just this seller's listing">on trade site ↗</button>
     </div>
   </article>`;
@@ -119,6 +134,7 @@ function render() {
   $('#save').disabled = !!data.saved;
   const all = data.listings || [];
   const list = sorted(all);
+  pickBest(list);
   // a failed search or fetch must not leave the previous search's listings on screen
   $('#list').innerHTML = data.error ? `<div class="note">${esc(data.error)}</div>`
     : list.map(card).join('') || `<div class="note">${!all.length && data.total ? 'The listings couldn\'t be loaded. Use Open on trade site to see them in your browser.' : !all.length ? 'Nothing listed.' : `None of the ${all.length} loaded listings ${$('#onlyUp').checked ? 'is an upgrade' : 'is left'}. Untick ${[$('#onlyUp').checked && '<b>Upgrades only</b>', $('#noCorrupt').checked && '<b>Hide corrupted</b>'].filter(Boolean).join(' or ')}${data.more ? ', or load more' : ''}.`}</div>`;
@@ -170,6 +186,8 @@ $('#sort').addEventListener('change', render);
 $('#onlyUp').addEventListener('change', render);
 // remembered in this window only (per computer): a convenience, not a setting
 try { $('#noCorrupt').checked = localStorage.getItem('noCorrupt') === '1'; } catch (_) { /* ignore */ }
+try { $('#onePerSeller').checked = localStorage.getItem('onePerSeller') === '1'; } catch (_) { /* ignore */ }
+$('#onePerSeller').addEventListener('change', () => { try { localStorage.setItem('onePerSeller', $('#onePerSeller').checked ? '1' : '0'); } catch (_) { /* ignore */ } render(); });
 $('#noCorrupt').addEventListener('change', () => { try { localStorage.setItem('noCorrupt', $('#noCorrupt').checked ? '1' : '0'); } catch (_) { /* ignore */ } render(); });
 function modCount() { const v = $('#modCount').value; return v === 'all' ? 1e9 : Number(v) || 4; }
 try { const v = localStorage.getItem('modCount'); if (v && [...$('#modCount').options].some((o) => o.value === v)) $('#modCount').value = v; else $('#modCount').value = '4'; } catch (_) { $('#modCount').value = '4'; }

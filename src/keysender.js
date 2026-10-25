@@ -117,7 +117,8 @@ while ($true) {
   try {
     $parts = $line.Split(' ')
     $target = [PoeKeys]::Prepare([int]($(if ($parts.Count -gt 1) { $parts[1] } else { 0 })), ($parts.Count -gt 2 -and $parts[2] -eq 'nudge'))
-    [PoeKeys]::Copy($parts[0] -eq 'advanced')
+    # only ever press Ctrl+C in the game: in another window it would copy (or, in a terminal, interrupt) something else
+    if ($target -match '^fg=(PathOfExile[^;]*|\\?);') { [PoeKeys]::Copy($parts[0] -eq 'advanced') } else { $target += ';skipped' }
     [Console]::Out.WriteLine('ok ' + $target)
   } catch { [Console]::Out.WriteLine('err ' + $_.Exception.Message) }
 }
@@ -328,7 +329,9 @@ for line in sys.stdin:
     try:
         app_pid = int(parts[1]) if len(parts) > 1 else 0
         target = prepare(app_pid, len(parts) > 2 and parts[2] == 'nudge')
-        copy(parts[0] == 'advanced')
+        # only ever press Ctrl+C in the game: in another window it would copy (or, in a terminal, interrupt) something else
+        if target.startswith('fg=PathOfExile;') or target.startswith('fg=?;'): copy(parts[0] == 'advanced')
+        else: target += ';skipped'
         out('ok ' + target)
     except Exception as e:
         out('err %s' % e)

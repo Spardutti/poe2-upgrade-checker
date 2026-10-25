@@ -19,10 +19,25 @@
       .replace(/^\+\+/, '+').replace(/^\+-/, '-');
   }
 
+  // a trade stat's template as a name: "# to maximum Life" -> "Maximum Life", "#% increased Energy Shield" -> "Increased Energy Shield"
+  function statName(key) {
+    let t = String(key).replace(/^\[(Base|Weapon)\]\s*/, '').replace(/\s*\(Local\)\s*$/i, '');
+    t = t.replace(/^[+-]?#%?\s*(to\s+)?/i, '').replace(/#%?/g, '…').trim();
+    return t ? t.charAt(0).toUpperCase() + t.slice(1) : String(key);
+  }
+  window.statName = statName;
+  // an item's mods, each with its tier (T1 is the best) and how high it rolled, when the game said (advanced copy)
+  window.modsHtml = function (lines) {
+    return (lines || []).filter((l) => l.tag !== 'info').map((l) => {
+      const t = l.tier != null ? `<span class="tier ${l.tier <= 2 ? 'tier-top' : l.tier <= 4 ? 'tier-mid' : 'tier-low'}" title="${esc(l.affix ? `"${l.affix}", ` : '')}tier ${l.tier} (T1 is the best)">T${esc(l.tier)}</span>` : '';
+      const roll = l.roll != null ? ` <span class="dim small" title="How high in its range it rolled">${esc(l.roll)}%</span>` : '';
+      return `<div class="mod ${esc(l.tag)}">${t}${esc(l.text)}${roll}</div>`;
+    }).join('');
+  };
   const VERDICT = {
     upgrade: { text: 'UPGRADE', cls: 'up' },
     small: { text: 'SMALL UPGRADE', cls: 'up' },
-    risky: { text: 'UPGRADE, BUT…', cls: 'risky' },
+    risky: { text: 'UPGRADE ⚠', cls: 'risky' },
     resloss: { text: 'LOSES RESISTANCE', cls: 'down' },
     dmgloss: { text: 'LOSES DAMAGE', cls: 'down' },
     downgrade: { text: 'DOWNGRADE', cls: 'down' },
@@ -59,9 +74,15 @@
       else t += ' Untick a stat or lower some minimums.';
     } else {
       t = `${res.inApp ? 'Showing in the results window' : res.opened ? 'Opened in your browser' : 'Search ready'} (${where})${res.total != null ? ` – ${res.total} listing${res.total === 1 ? '' : 's'}` : ''}.`;
+      if (res.mode === 'price' && res.summary && res.summary.typical) {
+        // the answer first, big; the details small under it
+        const sm = res.summary;
+        el.innerHTML = `<div class="price-answer">≈ <b>${esc(sm.typical)}</b></div><div class="dim small">${[sm.range ? `most ${esc(sm.range)}` : '', `${esc(res.total)} similar listed`, sm.cheapest ? `cheapest ${esc(sm.cheapest)}` : '', res.level > 0 ? `compared with ${esc(res.levelLabel)}` : ''].filter(Boolean).join(' · ')}${sm.notes && sm.notes.length ? `. ${esc(sm.notes.join('; '))}` : ''}</div>`;
+        return;
+      }
       if (res.mode === 'price' && res.summary) {
         const sm = res.summary;
-        t = `${sm.verdict || ''} ${sm.cheapest && sm.typical ? `Cheapest ${sm.cheapest}. ` : ''}${res.total} similar listed.${sm.notes && sm.notes.length ? ` Note: ${sm.notes.join('; ')}.` : ''}`;
+        t = `${sm.verdict || ''} ${res.total} similar listed.${sm.notes && sm.notes.length ? ` Note: ${sm.notes.join('; ')}.` : ''}`;
       }
       if (res.mode === 'price' && res.level > 0) t += ` Compared with ${res.levelLabel}.`;
       if (res.mode === 'craft' && res.keyStats) t += ` Rare bases with ${res.keyStats.join(' + ')} and an open affix to craft.`;
@@ -70,7 +91,7 @@
         if (res.level > 0) t += ' (Loosened: nothing matched your exact values.)';
       }
       if (res.mode === 'gear') t += res.level === 1 ? ' No clear upgrade listed; these are a little better than yours.' : res.level > 1 ? ` Nothing beats yours yet; these come close (${res.levelLabel}).` : ` Clearly better for your build than yours${res.score != null ? ` (gear score ${res.score})` : ''} – best for your build first.`;
-      if (res.fallback) t += ' The direct search failed, so a pre-filled link was used – see the log.';
+      if (res.fallback) t = "The trade site didn't answer the search (it may be busy or down). Try again in a moment, or open it on the trade site.";
     }
     if (res.skipped && res.skipped.length) t += ` ${res.skipped.length} rune bonus${res.skipped.length === 1 ? '' : 'es'} left out (you can socket your own).`;
     if (res.ignored && res.ignored.length) t += ` Ignored: ${res.ignored.length} stat${res.ignored.length === 1 ? '' : 's'}.`;
@@ -79,7 +100,7 @@
     el.textContent = t;
     if (res.url && !res.opened) {
       const a = document.createElement('button');
-      a.className = 'link'; a.textContent = 'Open on trade site anyway';
+      a.className = 'link'; a.textContent = res.fallback ? 'Open on trade site' : 'Open on trade site anyway';
       a.addEventListener('click', () => window.api.openUrl(res.url));
       el.appendChild(document.createTextNode(' ')); el.appendChild(a);
     }
@@ -113,7 +134,7 @@
 
   // Big red warning for resistances an item drops off (or further under) the cap.
   // rows: [{ el, from, to, max }] (PoB) or the app's own res rows ({ label, from, to, cap })
-  window.resLossBanner = function (rows) {
+  window.resLossBanner = function (rows, o) {
     if (!rows || !rows.length) return '';
     const txt = rows.map((r) => {
       const el = r.el || String(r.label || '').replace(/ res$/, '');
@@ -121,12 +142,13 @@
       const from = Math.round(r.from); const to = Math.round(r.to);
       return `<b>${esc(el)}</b> ${Math.min(from, max)}% → <b>${to}%</b> <span>(${to - Math.min(from, max)} ${from >= max ? 'off the cap' : 'further under the cap'})</span>`;
     }).join(' · ');
-    return `<div class="res-loss-banner">⚠ LOSES RESISTANCE: ${txt}</div>`;
+    return o && o.plain ? `<div class="loss-line">${txt}</div>` : `<div class="res-loss-banner">⚠ LOSES RESISTANCE: ${txt}</div>`;
   };
   // the same for an item that costs a big part of your damage (e.g. a ring without your minion mods)
-  window.dmgLossBanner = function (d) {
+  window.dmgLossBanner = function (d, o) {
     if (!d) return '';
     const n = (v) => (v >= 1000 ? Math.round(v).toLocaleString('en') : Math.round(v));
+    if (o && o.plain) return `<div class="loss-line"><b>${d.minion ? 'Minion DPS' : 'DPS'} ${n(d.from)} → ${n(d.to)}</b> (−${Math.abs(d.pct)}%: it doesn't have the damage mods your item gives)</div>`;
     return `<div class="res-loss-banner">⚠ LOSES DAMAGE: <b>${d.minion ? 'Minion DPS' : 'DPS'} ${n(d.from)} → ${n(d.to)}</b> <span>(−${Math.abs(d.pct)}%: it doesn't have the damage mods your item gives)</span></div>`;
   };
 
@@ -141,9 +163,18 @@
     const pc = (v) => (v == null ? '' : `<b class="${v > 0.05 ? 'pos' : v < -0.05 ? 'neg' : 'dim'}">${sgn(v)}${Math.abs(Math.round(v * 10) / 10)}%</b>`);
     const dl = (label, d) => (d ? `<span class="cc ${d.delta > 0 ? 'pos' : 'neg'}">${label} ${n(d.from)} → <b>${n(d.to)}</b></span>` : '');
     const dmgName = p.dpsKey === 'MinionDPS' ? 'Minion DPS' : 'DPS';
-    const head = `<span class="pob-tag" title="Calculated by Path of Building with your build">PoB</span>
-      <span class="pob-main">${p.noDamage ? `<span class="dim" title="Your main skill in Path of Building deals no damage. Set your damage skill as the main skill in PoB and import again.">no damage to compare</span>` : `${dmgName} ${pc(p.dps && p.dps.pct)}`} · Effective HP ${pc(p.ehp && p.ehp.pct)}${p.resFirst && p.resGain ? ` · <span title="Resistance points toward your cap (Priorities: cap resistances first)">res toward cap <b class="${p.resGain > 0 ? 'pos' : 'neg'}">${p.resGain > 0 ? '+' : '−'}${Math.abs(p.resGain)}</b></span>` : ''}</span>`;
-    const res = (p.res || []).filter((r) => r.capped !== r.wasCapped || !r.capped || Math.round(r.from) !== Math.round(r.to)).map((r) => {
+    // only what changes: no "±0%" (a flask, say, changes neither), and a resistance loss already said above isn't said again
+    const moved = (v) => v != null && Math.abs(v) >= 0.05;
+    const bits = [
+      p.noDamage ? '<span class="dim" title="Your main skill in Path of Building deals no damage. Set your damage skill as the main skill in PoB and import again.">no damage to compare</span>' : moved(p.dps && p.dps.pct) ? `${dmgName} ${pc(p.dps.pct)}` : '',
+      moved(p.ehp && p.ehp.pct) ? `Effective HP ${pc(p.ehp.pct)}` : '',
+      p.resFirst && p.resGain && !(opts.lossShown && p.resGain < 0) ? `<span title="Resistance points toward your cap (Priorities: cap resistances first)"><b class="${p.resGain > 0 ? 'pos' : 'neg'}">${p.resGain > 0 ? '+' : '−'}${Math.abs(p.resGain)}</b> res to cap</span>` : '',
+    ].filter(Boolean);
+    const head = bits.length ? `<span class="pob-tag" title="Calculated by Path of Building with your build">PoB</span>
+      <span class="pob-main">${bits.join(' · ')}</span>` : opts.flask ? '' : `<span class="pob-tag" title="Calculated by Path of Building with your build">PoB</span> <span class="dim">No change to damage or effective HP</span>`;
+    const res = (p.res || []).filter((r) => r.capped !== r.wasCapped || !r.capped || Math.round(r.from) !== Math.round(r.to))
+      .filter((r) => !(opts.lossShown && ((r.wasCapped && !r.capped) || (p.resLoss || []).some((x) => x.el === r.el)))) // said in the loss line
+      .map((r) => {
       const bad = r.wasCapped && !r.capped; const good = !r.wasCapped && r.capped;
       return `<span class="cc ${bad || (!r.capped && r.to < r.from) ? 'neg warn' : good || r.to > r.from ? 'pos' : 'dim'}">${esc(r.el)} res ${Math.round(r.from)}% → <b>${Math.round(r.to)}%</b>${bad ? ' ⚠ off the cap' : good ? ' ✓ capped' : !r.capped ? ' (under cap)' : ''}</span>`;
     }).join('');
@@ -156,7 +187,7 @@
     const capLine = p.resCapped && p.resCapped.length ? `<div class="res-cap">✓ Caps your ${esc(p.resCapped.join(' and ').toLowerCase())} resistance</div>` : '';
     const other = (p.breaks || []).filter((b) => !/res (drops off|goes further under)|^(Minion damage|Damage) drops/.test(b));
     const risk = other.length ? `<div class="risks">⚠ ${other.map(esc).join(' · ')}</div>` : '';
-    return `${lossBanner}${capLine}<div class="pob">${head}</div>${risk}${parts.length ? `<div class="charch">${opts.compact ? parts.slice(0, 5).join('') : parts.join('')}</div>` : ''}`;
+    return `${lossBanner}${capLine}${head ? `<div class="pob">${head}</div>` : ''}${risk}${parts.length ? `<div class="charch">${opts.compact ? parts.slice(0, 5).join('') : parts.join('')}</div>` : ''}`;
   };
 
   // Gear score block: "78 A · for your build · yours 56 (+22)" + why? details
@@ -301,9 +332,10 @@
     const unit = (v) => (p.each != null ? `${nf(p.each * v)} ${p.unit}` : `${nf(v * 100)}%`);
     return `<svg class="spark ${up ? 'spark-up' : 'spark-down'}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Price over the last 7 days, from ${esc(unit(pts[0][1]))} to ${esc(unit(1))}"><title>Last 7 days on poe.ninja: ${esc(unit(lo))} to ${esc(unit(hi))}</title><polyline points="${xy}" fill="none" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
   };
-  window.ninjaLine = function (p) {
+  window.ninjaLine = function (p, advice) {
     if (!p) return '';
-    return `<div class="ninja"><span class="pob-tag" title="poe.ninja, ${esc(p.league || '')}">NINJA</span> ${ninjaPrice(p)} ${trend(p)}${window.sparkHtml(p, 56, 14)}${p.few ? ' <span class="dim" title="Few listed: the price is a rough guess">few listed</span>' : ''}</div>`;
+    if (advice) return `<div class="ninja">${ninjaPrice(p)} <span class="adv-inline">· ${esc(advice)}</span> ${trend(p)}${window.sparkHtml(p, 56, 14)}${p.unsure ? ` <span class="dim">price of the ${esc(p.variant || 'most common')} version?</span>` : ''}</div>`;
+    return `<div class="ninja"><span class="pob-tag" title="poe.ninja, ${esc(p.league || '')}">NINJA</span> ${ninjaPrice(p)} ${trend(p)}${window.sparkHtml(p, 56, 14)}${p.few ? ' <span class="dim" title="Few listed: the price is a rough guess">few listed</span>' : ''}${p.unsure ? ` <span class="dim" title="This unique comes in several versions and the app can't tell which one this is">price of the ${esc(p.variant || 'most common')} version?</span>` : ''}</div>`;
   };
   const linksHtml = (links) => (links || []).map((l) => `<button class="link info-link" data-url="${esc(l.url)}">${esc(l.label)}</button>`).join('');
   const bindLinks = (el) => el.querySelectorAll('.info-link').forEach((b) => b.addEventListener('click', () => window.api.openUrl(b.dataset.url)));
@@ -335,13 +367,13 @@
     const what = [p && p.gemLevel ? `level ${p.gemLevel}${p.gemQuality ? `, ${p.gemQuality}% quality` : ''}` : '', p && p.links ? `${p.links}-link` : '', p && p.mapTier ? `tier ${p.mapTier}` : '', p && p.variant && !p.gemLevel ? p.variant : ''].filter(Boolean).join(' · ');
     el.innerHTML = `<div class="card price-card">
         <div class="name ${esc((it.rarity || '').toLowerCase())}">${esc(it.name || '')}</div>
-        <div class="meta">${esc(it.itemClass || '')}${p && p.stack > 1 ? ` · stack of ${nf(p.stack)}` : ''}${r.gameBeta ? ` <span class="beta-tag">${esc(r.gameShort || 'PoE1')} BETA</span>` : ''}</div>
+        <div class="meta">${esc(it.itemClass || '')}${p && p.stack > 1 ? ` · stack of ${nf(p.stack)}` : ''}</div>
         ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
         ${r.pricePending ? '<div class="note"><span class="spinner"></span> Getting the price from poe.ninja…</div>' : ''}
         ${p ? `<div class="price-big">${ninjaPrice(p)} <span class="dim">each</span></div>
           ${p.stack > 1 ? `<div>Stack: ${ninjaPrice(p, true)}</div>` : ''}
           ${window.sparkHtml(p, 200, 34) ? `<div class="spark-row">${window.sparkHtml(p, 200, 34)}<span class="dim small">last 7 days</span></div>` : ''}
-          <div class="dim small">${trend(p)}${what ? ` · priced as ${esc(what)}` : ''}${p.few ? ' · few listed, so a rough guess' : ''} · poe.ninja${p.league ? `, ${esc(p.league)}` : ''}</div>` : ''}
+          <div class="dim small">${trend(p)}${what ? ` · priced as ${esc(what)}` : ''}${p.few ? ' · few listed, so a rough guess' : ''}${p.unsure ? ` · several versions: this is the ${esc(p.variant || 'most common')} one's price` : ''} · poe.ninja${p.league ? `, ${esc(p.league)}` : ''}</div>` : ''}
         ${window.gemHtml(r)}
         ${p ? window.adviceHtml(r) : ''}
         ${window.sellHtml(r)}
@@ -382,7 +414,7 @@
     const tier = (it.lines || []).map((l) => l.text || '').find((t) => /^(Map|Waystone) Tier:/i.test(t));
     el.innerHTML = `<div class="card map-card">
         <div class="name ${esc((it.rarity || '').toLowerCase())}">${esc(it.name || '')}</div>
-        <div class="meta">${esc(it.baseType && it.baseType !== it.name ? it.baseType + ' · ' : '')}${esc(tier || it.itemClass || '')}${r.gameBeta ? ` <span class="beta-tag">${esc(r.gameShort || 'PoE1')} BETA</span>` : ''}</div>
+        <div class="meta">${esc(it.baseType && it.baseType !== it.name ? it.baseType + ' · ' : '')}${esc(tier || it.itemClass || '')}</div>
         ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
         <div class="verdict ${vc}"><span class="badge">${vt}</span>${c.all ? `<span class="dim">for your build: ${esc(c.all.text)}</span>` : ''}</div>
         ${r.pending ? '<div class="note"><span class="spinner"></span> Checking the mods with Path of Building…</div>' : ''}
@@ -425,7 +457,8 @@
     }
     const it = r.item;
     const unique = /unique/i.test(it.rarity || '');
-    const v = r.verdict === 'unjudged' && r.pobPending ? { text: 'CHECKING…', cls: 'same' } : VERDICT[r.verdict] || VERDICT.same;
+    const checking = !!(r.pobPending && !r.pob && !r.isEquipped);
+    const v = checking ? { text: 'CHECKING…', cls: 'same checking' } : VERDICT[r.verdict] || VERDICT.same;
     const rarity = (it.rarity || '').toLowerCase();
     const full = opts.expanded || ui.detail === 'full';
     const gearMode = r.scoreMode === 'gear' || r.scoreMode === 'pob';
@@ -452,7 +485,7 @@
     const g = r.gear;
     const yours = r.gearEquipped && r.gearEquipped.score != null ? r.gearEquipped.score : null;
     const gearChip = g && g.score != null ? `<span class="gs g-${esc(g.grade)}" title="Gear score for ${esc(g.buildName || 'your build')}">${g.score} ${esc(g.grade)}</span>` : '';
-    const gearLine = !g || r.pob ? '' : g.unrated === 'unidentified' ? '<div class="dim">Unidentified – identify it to see its gear score.</div>'
+    const gearLine = !g || r.pob || checking ? '' : g.unrated === 'unidentified' ? '<div class="dim">Unidentified – identify it to see its gear score.</div>'
       : g.unique ? '' : `<div class="gear">${gearChip}<span>gear score${yours != null ? ` · yours ${yours}` : ''}</span> <button class="link gear-why" data-why="p">why?</button></div>
         <div class="gear-detail hidden" data-whybox="p">${window.gearCompareHtml(g, r.isEquipped ? null : r.gearEquipped)}</div>`;
 
@@ -471,22 +504,27 @@
 
     const lossRows = r.isEquipped ? [] : r.pob ? (r.pob.resLoss || []) : ((r.character && r.character.res) || []).filter((x) => x.from != null && x.delta < 0 && x.under && (x.el !== 'chaos' || !x.wasUnder));
     const dmgLoss = !r.isEquipped && r.pob ? r.pob.dmgLoss : null;
-    const lossBanner = window.resLossBanner(lossRows) + window.dmgLossBanner(dmgLoss);
+    const named = ['resloss', 'dmgloss'].includes(r.verdict);
+    const lossBanner = window.resLossBanner(lossRows, { plain: named }) + window.dmgLossBanner(dmgLoss, { plain: named });
+    // keep / sell / vendor next to the price when there is one; KEEP needs no words under an upgrade
+    const adv = window.keepSell && window.keepSell.advise(r);
+    const advWord = adv && r.ninja && (adv.action === 'sell' || adv.action === 'vendor') ? (adv.action === 'sell' ? 'worth selling' : 'not worth selling') : null;
+    const adviceBlock = advWord || (adv && adv.action === 'keep' && !adv.text) ? '' : window.adviceHtml(r);
     el.innerHTML = `
       <div class="card ${lossRows.length || dmgLoss ? 'res-loss' : ''}">
         <div class="name ${esc(rarity)}">${esc(it.name || '')}</div>
-        <div class="meta">${it.baseType && it.baseType !== it.name ? `${esc(it.baseType)} · ` : ''}${esc(it.itemClass || '')}${it.itemLevel ? ` · ilvl ${it.itemLevel}` : ''}${r.gameBeta ? ` <span class="beta-tag" title="Path of Exile 1 support is new: if a verdict looks wrong, send the log (Tray → Open log) to support@poe2upgrade.com">${esc(r.gameShort || 'PoE1')} BETA</span>` : ''}</div>
+        <div class="meta">${it.baseType && it.baseType !== it.name ? `${esc(it.baseType)} · ` : ''}${esc(it.itemClass || '')}${it.itemLevel ? ` · ilvl ${it.itemLevel}` : ''}</div>
         ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
         ${unique && !r.pob ? `<div class="verdict same"><span class="badge">UNIQUE</span>${r.replacing.length && !r.isEquipped ? `<span class="dim">vs ${esc(r.replacing.join(' + '))}</span>` : ''}</div>
           <div class="dim">${r.pobPending ? 'Checking with Path of Building…' : r.game === 'poe1' ? 'Load your Path of Building Community build on My gear to see what it does for your build – or check its price.' : "Uniques have fixed mods, so there's no gear score – check its price, or compare the changes below."}</div>`
           : `<div class="verdict ${v.cls}">
           <span class="badge">${v.text}</span>
-          ${r.isEquipped || emptySlot ? '' : scoreHtml(pointsLabel(r))}
+          ${r.isEquipped || emptySlot || checking ? '' : scoreHtml(pointsLabel(r))}
           ${r.isEquipped ? '' : r.replacing.length ? `<span class="dim">vs ${esc(r.replacing.join(' + '))}</span>` : r.verdict === 'unjudged' ? '' : it.slot === 'Flask' ? (r.pobPending ? '<span class="dim">trying it in your flask slots</span>' : '') : `<span class="dim">${esc(r.targetSlot)} slot is empty</span>`}
         </div>`}
         ${lossBanner}
-        ${r.ninja ? window.ninjaLine(r.ninja) : ''}
-        ${window.adviceHtml(r)}
+        ${r.ninja ? window.ninjaLine(r.ninja, advWord) : ''}
+        ${adviceBlock}
         ${window.sellHtml(r)}
         ${gearLine}
         ${craft}
@@ -497,7 +535,7 @@
         ${r.pobNudge && !r.isEquipped ? (r.game === 'poe1'
     ? '<div class="note">PoE1 items are judged by Path of Building: paste your <b>Path of Building Community</b> export on <b>My gear</b> (this character is your PoE1 one).</div>'
     : '<div class="dim small">For exact verdicts, paste your Path of Building export on <b>My gear</b>.</div>') : ''}
-        ${r.isEquipped ? '' : r.pob || r.pobPending || r.pobError ? window.pobBlock(r.pob, { pending: r.pobPending, error: r.pobError, compact: !full, noBanner: true }) : window.characterBlock(r.character, { compact: !full, risks: r.risks, noBanner: true })}
+        ${r.isEquipped ? '' : r.pob || r.pobPending || r.pobError ? window.pobBlock(r.pob, { pending: r.pobPending, error: r.pobError, compact: !full, noBanner: true, lossShown: true, flask: it.slot === 'Flask' }) : window.characterBlock(r.character, { compact: !full, risks: r.risks, noBanner: true })}
         ${r.notes.filter((n) => !/^Nothing saved/.test(n) || (!emptySlot && it.slot !== 'Flask')).filter((n) => full || /unidentified|two-handed|Two-handed/i.test(n)).map((n) => `<div class="note">${esc(n)}</div>`).join('')}
         ${emptySlot ? `<div class="actions">${equipButtons(r)}</div>` : ''}
         <div class="actions main-actions">${primary}</div>
@@ -508,15 +546,18 @@
         <div class="more-box ${full ? '' : 'hidden'}" id="moreBox">
           ${r.ignoring && r.ignoring.length ? `<div class="dim">Ignoring: ${esc(r.ignoring.join(', '))} <button class="link" id="ignoreChange">change</button></div>` : ''}
           ${!full ? r.notes.filter((n) => !/unidentified|two-handed/i.test(n) && !(it.slot === 'Flask' && /^Nothing saved/.test(n))).map((n) => `<div class="note">${esc(n)}</div>`).join('') : ''}
+          ${(it.lines || []).some((l) => l.tier != null) ? `<div class="mods-tiers"><div class="dim small">Mods and tiers</div>${window.modsHtml(it.lines)}</div>` : ''}
           ${r.isEquipped ? '' : rows ? `<table class="rows"><thead><tr><th>Change</th>${gearMode ? '' : '<th>Weight</th><th>Score</th>'}<th></th></tr></thead><tbody>${rows}</tbody></table>`
             : '<div class="note">No stat differences.</div>'}
           ${r.isEquipped || emptySlot || it.slot === 'Flask' ? '' : `<div class="actions">${equipButtons(r)}</div>`}
-          <div class="actions">
-            ${r.replacing.length && !r.isEquipped && !unique ? '<button class="link" id="likeFind2" title="Listings with the stats of the item you just copied">Items like this one</button>' : ''}
-            ${r.replacing.length && !unique ? '<button class="link" id="sameFind" title="Listings with every stat of your equipped item at your value or higher">Same stats or better</button>' : ''}
+          <div class="more-searches"><span class="dim small">More searches:</span>
+            ${r.replacing.length && !r.isEquipped && !unique ? '<button class="link" id="likeFind2" title="Listings with the stats of the item you just copied">Like this item</button>' : ''}
+            ${r.replacing.length && !unique ? `<button class="link" id="sameFind" title="Listings with every stat of your equipped item at your value or higher">As good as my ${esc(r.targetSlot || 'item')}</button>` : ''}
             ${r.replacing.length && !gearMode ? '<button class="link" id="weightFind" title="Listings that beat your equipped item by your stat weights">By my weights</button>' : ''}
             ${!unique && it.slot ? '<button class="link" id="craftFind" title="Bases with your key stats and an open affix to craft">Craftable bases</button>' : ''}
-            <button class="link" id="customFind" title="Pick which of this item\'s stats to search for">Custom search…</button>
+            <button class="link" id="customFind" title="Pick which of this item\'s stats to search for">Pick stats…</button>
+          </div>
+          <div class="actions">
             ${linksHtml(r.links)}
             ${opts.closable ? '<button class="link" id="settingsBtn">Settings</button>' : ''}
           </div>
@@ -554,15 +595,31 @@
       const f = await window.api.findRows(ref);
       const rows = ((f && f.rows) || []).filter((x) => x.source !== 'base' || /^\[(Base|Weapon)\]/.test(x.key));
       if (!rows.length) { msgEl().textContent = 'No stats to choose from.'; resize(); return; }
+      // the trade site's totals: one "total elemental resistance" counts fire, cold, lightning and all-res mods alike
+      const ele = { fire: 1, cold: 1, lightning: 1 };
+      let resSum = 0; let resRows = 0;
+      for (const x of rows) {
+        const k = String(x.key); const v = Number(x.value) || 0;
+        if (x.source === 'socket' || x.source === 'base') continue;
+        if (/^\+?#% to all Elemental Resistances$/i.test(k)) { resSum += 3 * v; resRows++; continue; }
+        const m = k.match(/^\+?#% to (Fire|Cold|Lightning)(?: and (Fire|Cold|Lightning))? Resistances?$/i);
+        if (m && ele[m[1].toLowerCase()]) { resSum += (m[2] ? 2 : 1) * v; resRows++; x.inTotal = true; }
+        if (/all Elemental Resistances/i.test(k)) x.inTotal = true;
+      }
+      if (resRows >= 2 && resSum > 0) rows.unshift({ key: 'Total elemental resistance', id: 'pseudo.pseudo_total_elemental_resistance', idType: 'pseudo', value: resSum, total: true });
       box.innerHTML = `<div class="dim small">Match these stats (at least the value shown):</div>
-        ${rows.map((x, i) => `<label class="pp-row"><input type="checkbox" data-i="${i}" ${x.source === 'socket' ? '' : 'checked'}> <span>${esc(x.key.replace(/^\[(Base|Weapon)\] /, ''))}</span>
+        <div class="pp-presets"><span class="dim small">Minimums:</span> <button class="link" data-pct="0.8">80%</button> <button class="link" data-pct="0.9">90%</button> <button class="link" data-pct="1">100%</button></div>
+        ${rows.map((x, i) => `<label class="pp-row"><input type="checkbox" data-i="${i}" ${x.source === 'socket' || x.inTotal ? '' : 'checked'}> <span title="${esc(x.key)}">${x.total ? `<b>${esc(x.key)}</b> (%)` : `${esc(statName(x.key))}${/#%/.test(x.key) ? ' (%)' : ''}`}</span>
           <input type="number" class="num pp-min" data-i="${i}" value="${esc(Math.floor(Number(x.value) * 10) / 10)}" step="any"></label>`).join('')}
         <div class="actions"><button class="find" id="pricePickGo">Price with these</button></div>`;
       box.classList.remove('hidden');
+      box.querySelectorAll('[data-pct]').forEach((b) => b.addEventListener('click', () => {
+        rows.forEach((x, i) => { const inp = box.querySelector(`.pp-min[data-i="${i}"]`); if (inp) inp.value = Math.floor(Number(x.value) * Number(b.dataset.pct) * 10) / 10; });
+      }));
       resize();
       run(box.querySelector('#pricePickGo'), () => {
         const picks = rows.map((x, i) => ({ x, on: box.querySelector(`input[type=checkbox][data-i="${i}"]`).checked, min: box.querySelector(`.pp-min[data-i="${i}"]`).value }))
-          .filter((p) => p.on).map((p) => ({ key: p.x.key, min: p.min === '' ? null : Number(p.min), source: p.x.source }));
+          .filter((p) => p.on).map((p) => ({ key: p.x.key, min: p.min === '' ? null : Number(p.min), source: p.x.source, id: p.x.id, idType: p.x.idType }));
         if (!picks.length) return Promise.resolve({ ok: false, error: 'Tick at least one stat.' });
         return withWorth(window.api.priceCheck(ref, picks));
       }, 'Checking prices…');

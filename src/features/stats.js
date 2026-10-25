@@ -56,6 +56,5 @@ module.exports = function (C) {
     setTimeout(send, 30000);
     setInterval(send, EVERY);
   }
-  ipcMain.handle('stats:info', () => ({ on: on(), what: 'a random install number, the app version, Windows or Linux, beta or not, and which of the two games you used that day' }));
   return { used, send, start };
 };

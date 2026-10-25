@@ -20,7 +20,7 @@ const ROOT = path.join(__dirname, '..');
 // update a tag together with a test run against a real build (npm test runs PoB1's own test builds)
 const TARGETS = [
   {
-    name: 'Path of Building (PoE2)', repo: 'https://github.com/PathOfBuildingCommunity/PathOfBuilding-PoE2.git', tag: 'v0.23.1',
+    name: 'Path of Building (PoE2)', repo: 'https://github.com/PathOfBuildingCommunity/PathOfBuilding-PoE2.git', tag: 'v0.23.1', commit: '7d6f530cbdab20389ff8bc6ba97a37ac27f74e41',
     dest: path.join(ROOT, 'vendor', 'pob'),
     paths: ['/src/**/*.lua', '/src/**/*.json', '!/src/Export/',
       '/runtime/lua/', '/runtime/lua51.dll', '/runtime/lua-utf8.dll', '/runtime/vcruntime140.dll', '/LICENSE.md', '/manifest.xml'],
@@ -29,7 +29,7 @@ const TARGETS = [
     // PoE1. Runs in the same host and LuaJIT as PoE2's (vendor/pob/runtime). Older passive trees
     // are left out (a build made on one is moved to the newest tree when it loads), and so is the
     // 170 MB of timeless jewel data (zips): those jewels aren't judged.
-    name: 'Path of Building Community (PoE1)', repo: 'https://github.com/PathOfBuildingCommunity/PathOfBuilding.git', tag: 'v2.67.2',
+    name: 'Path of Building Community (PoE1)', repo: 'https://github.com/PathOfBuildingCommunity/PathOfBuilding.git', tag: 'v2.67.2', commit: 'b32759ab0f31a1c8499a0d420cb0f0633d4fe478',
     dest: path.join(ROOT, 'vendor', 'pob1'),
     paths: ['/src/**/*.lua', '/src/**/*.json', '/src/**/*.jsonc', '!/src/Export/**', '!/src/TreeData/**', '/src/TreeData/*.lua',
       '/src/TreeData/3_29/*.lua', '/src/TreeData/3_28/*.lua', '/src/TreeData/3_19/Assets.lua', '/src/TreeData/legion/*', '!/src/TreeData/legion/*.png',
@@ -65,6 +65,13 @@ function fetchPob(t) {
   run('git', ['clone', '--quiet', '--depth', '1', '--branch', POB_TAG, '--filter=blob:none', '--no-checkout', POB_REPO, DEST]);
   run('git', ['-C', DEST, 'sparse-checkout', 'set', '--no-cone', ...t.paths]);
   run('git', ['-C', DEST, 'checkout', '--quiet']);
+  // a tag can be moved: the release only ships the exact commit that was tested (update both together)
+  const head = execFileSync('git', ['-C', DEST, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  if (t.commit && head !== t.commit) {
+    fs.rmSync(DEST, { recursive: true, force: true });
+    console.error(`${t.name} ${POB_TAG} is commit ${head} on GitHub, not the tested ${t.commit}. Nothing was installed: check the tag before releasing.`);
+    process.exit(1);
+  }
   fs.rmSync(path.join(DEST, '.git'), { recursive: true, force: true });
   fs.writeFileSync(STAMP, POB_TAG + '\n');
 }

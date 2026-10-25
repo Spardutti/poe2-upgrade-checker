@@ -1,6 +1,54 @@
 # Changelog
 
+## Unreleased
+- **Your build stays in sync:**
+  - A pobb.in link is remembered for the character: *Update now* reads it again.
+  - Or link the build file Path of Building saves (*Or link your PoB build file…*): each time you save in PoB, the app reads it again by itself. Only the file you pick is read.
+- **Best anoint / instil** on the Character page: Path of Building tries every notable that can go on your amulet and lists the best for your build, with what each does to your damage and effective HP and the oils (PoE1) or distilled emotions (PoE2) it takes.
+- **Mod tiers:** *More* in the popup lists the item's mods with their tier (T1, T2…) and how high each rolled, and results show tiers too. New installs copy items with advanced details (the game's Ctrl+Alt+C) so tiers are there from the start.
+- **Price by chosen stats:** one *Total elemental resistance* row (the trade site's own total, so fire, cold, lightning and all-res mods count alike), and 80% / 90% / 100% buttons to set every minimum at once.
+- **Results:** *One per seller* shows only each seller's best listing.
+- **A cleaner popup:**
+  - It says CHECKING… until Path of Building answers, instead of showing a gear-score verdict that then changes.
+  - A resistance or damage loss is said once, in one line under the badge.
+  - Changes of zero are left out.
+  - The poe.ninja price reads "≈ 9 div · worth selling".
+  - *What's it worth?* answers with a big number, the range and listing count under it.
+  - The other searches are grouped under "More searches".
+  - Primary buttons are gold, so red only ever means a loss; colour-blind mode now covers banners and borders too.
+  - Nothing is smaller than 12 px.
+  - At Extra large size the popup is never cut off.
+  - When the trade site doesn't answer, the popup offers a button instead of opening your browser over the game.
+- **Results window:** only the controls stay pinned while you scroll. Sellers who are online come first (offline ones are dimmed). The listings with the best value and the biggest upgrade are labelled.
+- **My gear:**
+  - One line per item (click it for all its mods), and Clear asks once more.
+  - The resistance boxes hide when Path of Building is loaded, since it knows your resistances.
+  - The setup guide notices a loaded build and ends by waiting for your first F2: "✓ It works".
+- **Find upgrades:**
+  - The filter bar no longer covers the panels under it.
+  - Waystones and maps only offer a price check.
+  - Saved searches, alerts and recent searches are one Watchlist with two tabs.
+- **Other pages:** Build & stats folds the gear-score tools away when Path of Building is loaded. Settings has an Appearance group and an Advanced section. Where to spend shows one message when every slot fails the same way.
+- **Safer app:** its windows can't be turned into websites (a link dropped on a window does nothing), only its own pages can talk to it, and the pathofexile.com sign-in window stays on pathofexile.com with no browser permissions. F2 only presses Ctrl+C when the game is the active window, and the log never contains what you copied. A crafted Path of Building code can no longer freeze the app. Without signing in, the app no longer retries a refused trade search through a hidden browser page.
+- **Fixes:**
+  - Uniques with several versions imported from Path of Building only keep the version they are (a Kaom's Heart no longer counts both versions' life).
+  - The gem check finds support gems ("Impale Support").
+  - *Where to spend* results belong to the character they were made for.
+  - Unidentified items get no verdict ("identify it, then press the hotkey again").
+  - Uniques with several versions are priced as the version they are; when the app can't tell, it says so and doesn't suggest a listing price.
+  - Dual wielders: a one-hand weapon is also compared with the weapon in your other hand.
+  - The results window keeps acting on the search it shows while a new one loads.
+  - A unique's poe.ninja price stays after changing a setting.
+  - *Judge with Path of Building* is set separately for each game.
+  - Requests that get no answer give up after 20 seconds instead of spinning forever.
+- **Security: updated to Electron 44** (Chromium 152, Node 24). The app was on Electron 33, which stopped getting security fixes in April 2025; this matters because the app opens pathofexile.com's trade and sign-in pages in its own windows. The clipboard handling was reworked for Electron 44, which reads and writes the clipboard asynchronously.
+- **Newer build tools:** electron-updater 6.8, electron-builder 26, Node 24 and the latest GitHub Actions for the release builds.
+- **From contributors:** Find upgrades counts "+#% to all Elemental Resistances" and "+# to all Attributes" mods toward the resistances and attributes you search for (thanks Spardutti, #3).
+- **From contributors:** The popup's × closes it, and hovering the item's name keeps it open (thanks Spardutti, #4).
+- **From contributors:** Map check: maps with more than 6 mods, and unique maps, keep their mods without a number (like "Players cannot Regenerate Life, Mana or Energy Shield"), so the check no longer misses them (thanks Spardutti, #2).
+
 ## 0.5.0 - 2026-10-25
+- **From contributors:** Gear score: resistance is capped on the total you still need, not on each line, and runes take resistance after mods (thanks Spardutti, #1).
 - **Corrupted items:** trade results mark corrupted listings in red next to the item level, the results window has *Hide corrupted*, and Find upgrades has *Skip corrupted items*, which leaves them out of every upgrade search (Find upgrades, Where to spend, alerts). Price checks still match the item's own corruption.
 - **Damage per hit:** item comparisons show how your main skill's average hit changes ("Hit 310,969 → 305,687", your minions' for a minion build) next to the DPS and effective HP change, and the Character page shows it as *Damage per hit*. Dual-wield builds now get it (and crit and hit chance) too.
 - **Move the popup:** drag it by its name and it stays there for the next items (Settings → Popup → Position: *Where I dragged it*; pick another position to go back).

@@ -217,6 +217,19 @@ if ($log -match '(?m)^## Unreleased[^\r\n]*') {
 Write-Text 'CHANGELOG.md' $log
 }
 
+# contributors: every pull request merged from GitHub since the last release gets a line in the
+# changelog (thanks, with its number), unless the changelog already mentions it (tools\credits.js)
+$lastFull = ($tags | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' -and $_ -ne "v$ver" } | Sort-Object { [version]($_.Substring(1)) } | Select-Object -Last 1)
+$credArgs = @('tools/credits.js', '--heading', $(if ($Beta) { '## Unreleased' } else { "## $ver" }))
+if ($lastFull) { $credArgs += @('--since', $lastFull) }
+if ($Beta) { $credArgs += '--create' }
+$eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+$credOut = @(& node @credArgs 2>&1 | ForEach-Object { "$_" }); $credCode = $LASTEXITCODE
+$ErrorActionPreference = $eap
+foreach ($l in $credOut) { if ($credCode -eq 0) { Say $l 'Green' } else { Say $l 'Yellow' } }
+if ($credCode -ne 0) { Say "Couldn't credit contributors in the changelog: check it before the release goes out." 'Yellow' }
+
+
 # ---------- 4. commit, push, tag ----------
 Run-Git add -A | Out-Null
 if (@(Run-Git status --porcelain).Count) { Run-Git @identity commit -q -m "Release $ver" | Out-Null }

@@ -50,6 +50,8 @@
             <input id="pobInput" class="grow" placeholder="https://pobb.in/abc123  or  eNrtXd…">
             <button id="pobImport" class="primary">Import</button>
           </div>
+          <div class="row"><button id="pobLinkFile" class="link" title="Pick the build file Path of Building saves (Documents\Path of Building\Builds). Each time you save it in PoB, the app reads it again.">Or link your PoB build file so it stays in sync…</button></div>
+          <div class="dim small" id="pobSource"></div>
           <div class="note" id="pobMsg"></div>
           <div id="pobStatus" class="pob-status"></div>
           <div class="row" id="pobControls">
@@ -74,7 +76,7 @@
           </div>
           <div class="dim small" id="prNote"></div>
           </div>
-          <div class="card-p">
+          <div class="card-p" id="resCard">
             <h3>Your resistances</h3>
           <div class="help">The <b>uncapped</b> numbers from your in-game character sheet (hover each one), with the gear you wear now. They follow your gear changes from then on.</div>
           <div class="row resrow">
@@ -159,7 +161,7 @@
             <div id="findItem" class="finditem"></div>
             <div class="row"><span id="findNotice" class="note"></span></div>
             <div class="actions find-actions">
-              <button id="findGear" class="primary" title="Listings that score higher for your build (gear score), even with a different mix of stats. If nothing beats yours, it shows the ones that come close.">Find upgrades</button>
+              <button id="findGear" class="primary" title="Listings that are better for your build, even with a different mix of stats. If nothing beats yours, it shows the ones that come close.">Find upgrades</button>
               <button id="findSimilar" title="Listings with this item's stats at its values or higher. If nothing is listed it loosens step by step (90%, 80%, 65%) and tells you. Rune bonuses are left out – you can socket your own.">Same stats or better</button>
               <button id="findQuick" title="Anything that scores higher with your stat weights, even with different stats">By my weights</button>
               <button id="findCraft" title="Bases with this slot's key stats and an open affix you can craft">Craftable bases</button>
@@ -203,9 +205,14 @@
             <datalist id="ignoreStatsList"></datalist>
           </div>
           </div>
-          <div class="card-p">
-            <h3>Saved searches &amp; alerts</h3>
-          <div class="help">Save a search from the results window (☆ Save search) and run it again here with one click. Tick <b>Alert</b> to get a Windows notification when something new is listed.</div>
+          <div class="card-p" id="watchCard">
+            <h3>Watchlist</h3>
+            <div class="seg" role="tablist">
+              <button class="seg-btn active" data-watch="saved" role="tab">Saved &amp; alerts</button>
+              <button class="seg-btn" data-watch="recent" role="tab">Recent searches</button>
+            </div>
+            <div class="watch-pane" data-pane="saved">
+          <div class="help">Save a search from the results window (☆ Save search) or from Recent searches, and run it again with one click. Tick <b>Alert</b> to get a notification when something new is listed. Build-value alerts from <b>Where to spend</b> are here too.</div>
           <div class="row">
             <label>Check alerts every <select id="alertEvery">
               <option value="0">never</option><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">hour</option>
@@ -213,11 +220,11 @@
             <span class="dim" id="alertStatus"></span>
           </div>
           <table class="list" id="savedList"></table>
-          </div>
-          <div class="card-p">
-            <h3>Recent searches <button class="link small" id="historyClear">Clear</button></h3>
-            <div class="help">Your last 30 trade searches. Run one again, or save it to get alerts.</div>
+            </div>
+            <div class="watch-pane hidden" data-pane="recent">
+            <div class="help">Your last 30 trade searches. Run one again, or save it to get alerts. <button class="link" id="historyClear">Clear the list</button></div>
             <table class="list" id="historyList"></table>
+            </div>
           </div>
         </div>
       </div>
@@ -233,16 +240,17 @@
           <h3>Your build</h3>
           <div class="row"><label>Build <select id="buildSel"></select></label></div>
           <div class="help" id="buildHelp"></div>
-          <h3>Gear score editor</h3>
+          <details class="fold" id="gsEditorFold" open><summary>Gear score editor <span class="dim small fold-why hidden">only used without Path of Building</span></summary>
           <div class="help">How much each stat matters to you. 1× is the build's default, 0× turns it off, 2× doubles it. Changes apply to this character only.</div>
           <table class="list" id="buildEditor"></table>
           <div class="row"><button id="buildTweaksReset">Reset to the build's defaults</button><span class="note" id="buildMsg"></span></div>
+          </details>
         </div></div>
         <div class="col side-col"><div class="card-p" id="gsExplainCard">
           <h3><span class="p2">How the gear score works</span><span class="p1">How items are judged</span></h3>
           <div id="gsExplain"></div>
         </div><div class="card-p" id="weightsCard">
-          <h3>Stat weights</h3>
+          <details class="fold" id="weightsFold" open><summary>Stat weights <span class="dim small fold-why hidden">advanced: for By my weights searches</span></summary>
           <div class="help">
             Only used for <b>By my weights</b> searches<span class="p2">, and for the verdict when the build is turned off</span>.
             A weight says how many points one unit of a stat is worth: Life 1 and Fire Res 1.5 means +10% fire res = +15 life.
@@ -260,6 +268,7 @@
           <h3>Import / export weights</h3>
           <textarea id="weightsJson" rows="6"></textarea>
           <div class="row"><button id="exportW">Refresh export</button><button id="importW">Import</button><span id="importMsg" class="dim"></span></div>
+          </details>
         </div></div>
       </div>
     </section>
@@ -289,14 +298,8 @@
         <button id="hotkeySave">Save</button>
         <span id="hotkeyMsg" class="note"></span>
       </div>
-      <div class="row">
-        <label>Show / hide results window <input id="resultsHotkey" class="hotkey" readonly placeholder="click, then press keys"></label>
-        <button id="resultsHotkeySave">Save</button>
-        <span id="resultsHotkeyMsg" class="note"></span>
-      </div>
       <div class="help">Hover an item in game and press the check-item hotkey. The app presses Ctrl+C for you (one keystroke per press). Pick a key the game doesn&rsquo;t use: an F-key like F2 works best. Letters such as D also reach the game (with WASD movement, D walks your character).</div>
       <div class="row"><label><input type="checkbox" id="advancedCopy"> Use advanced copy (Ctrl+Alt+C) – needed to spot open prefixes/suffixes for crafting</label></div>
-      <div class="row"><label><input type="checkbox" id="watchClipboard"> Also show the popup when I press Ctrl+C myself (gear only)</label></div>
       </div>
       <div class="card-p">
         <h3>Popup</h3>
@@ -309,22 +312,23 @@
           <option value="dragged">Where I dragged it</option>
         </select></label>
         <span class="help">Drag the popup by its name to move it; it stays there.</span>
-        <label>Size <select id="uiScale">
-          <option value="0.9">Small</option><option value="1">Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option>
-        </select></label>
-        <label>Detail <select id="popupDetail">
-          <option value="compact">Compact (More ▾ for the rest)</option>
-          <option value="full">Always show everything</option>
-        </select></label>
       </div>
-      <div class="row"><label><input type="checkbox" id="colorblind"> Colour-blind friendly colours (blue = better, orange = worse)</label></div>
       <div class="row"><label>Hide popup after <input type="number" id="autoHide" min="2" max="120" class="num"> seconds (it stays open while your mouse is over it)</label></div>
       <div class="row"><label><input type="checkbox" id="paused"> Pause (ignore the hotkey and the clipboard)</label></div>
       </div>
       <div class="card-p">
+        <h3>Appearance</h3>
+      <div class="row">
+        <label>Size <select id="uiScale">
+          <option value="0.9">Small</option><option value="1">Normal</option><option value="1.15">Large</option><option value="1.3">Extra large</option>
+        </select></label>
+      </div>
+      <div class="row"><label><input type="checkbox" id="colorblind"> Colour-blind friendly colours (blue = better, orange = worse)</label></div>
+      <div class="help">Size changes every window: the popup, this one and the results.</div>
+      </div>
+      <div class="card-p">
         <h3>Startup</h3>
       <div class="row"><label><input type="checkbox" id="startWithWindows"> <span id="startWithLabel">Start with Windows</span> (quietly, in the tray)</label></div>
-      <div class="row"><label><input type="checkbox" id="openSettingsOnStart"> Open this window when the app starts</label></div>
       </div>
       <div class="card-p">
         <h3>Trade site account (optional)</h3>
@@ -335,13 +339,30 @@
         <h3>Updates</h3>
       <div class="help">The installed app checks GitHub for a new version when it starts and every few hours, downloads it quietly, and installs it the next time you quit or restart.</div>
       <div class="row"><label><input type="checkbox" id="autoUpdate"> Download updates automatically</label></div>
-      <div class="row"><label><input type="checkbox" id="betaUpdates"> Get beta versions</label> <span class="dim small" id="betaNote">New features a little earlier, for testing. They can have bugs: send the log (Tray → Open log) to support@poe2upgrade.com if something breaks.</span></div>
       <div class="row"><button id="updCheck">Check for updates</button><button class="primary hidden" id="updAction"></button><span class="dim" id="updStatus"></span></div>
       </div>
       <div class="card-p">
         <h3>Usage statistics</h3>
       <div class="help">So we know how many people use the app and in which game, it sends poe2upgrade.com one small anonymous message when it starts and every few hours: a random install number (made on this PC), the app version, Windows or Linux, beta or not, and which of the two games you used that day. Nothing else: no account, character, items, builds or searches, and the site doesn't keep IP addresses.</div>
       <div class="row"><label><input type="checkbox" id="usageStats"> Send anonymous usage statistics</label></div>
+      </div>
+      <div class="card-p">
+        <details class="fold"><summary>Advanced</summary>
+      <div class="row">
+        <label>Show / hide results window <input id="resultsHotkey" class="hotkey" readonly placeholder="click, then press keys"></label>
+        <button id="resultsHotkeySave">Save</button>
+        <span id="resultsHotkeyMsg" class="note"></span>
+      </div>
+      <div class="row"><label><input type="checkbox" id="watchClipboard"> Also show the popup when I press Ctrl+C myself (gear only)</label></div>
+      <div class="row">
+        <label>Detail <select id="popupDetail">
+          <option value="compact">Compact (More ▾ for the rest)</option>
+          <option value="full">Always show everything</option>
+        </select></label>
+      </div>
+      <div class="row"><label><input type="checkbox" id="openSettingsOnStart"> Open this window when the app starts</label></div>
+      <div class="row"><label><input type="checkbox" id="betaUpdates"> Get beta versions</label> <span class="dim small" id="betaNote">New features a little earlier, for testing. They can have bugs: send the log (Tray → Open log) to support@poe2upgrade.com if something breaks.</span></div>
+        </details>
       </div>
       <div class="card-p">
         <h3>Troubleshooting</h3>
@@ -351,7 +372,7 @@
       </div>
       <div class="help">
         If the test popup appears here but not in game, switch the game to <b>Windowed Fullscreen</b> (Options → Graphics).
-        If the hotkey does nothing, open the log. Your data is saved in <span id="dataDirText">%APPDATA%\poe2-upgrade-checker</span>.
+        If the hotkey does nothing, open the log. Your data is saved in <span id="dataDirText">%APPDATA%\PoE2 Upgrade Checker</span>.
       </div>
       </div>
       </div>

@@ -91,7 +91,30 @@ function listingToItem(result, itemClass) {
   const text = blocks.join('\n--------\n');
   const item = parseItem(text);
   if (item) item.listingText = text;
+  if (item) addTiers(item, it);
   return item;
+}
+
+// The trade site says each explicit mod's tier ("P1" = top prefix tier, "S3"...) in item.extended:
+// mods.explicit[] (name, tier) and hashes.explicit[k] = [stat, [indexes into mods.explicit]] in the
+// order of explicitMods. Put the best tier of each mod line on the parsed line.
+function addTiers(item, it) {
+  try {
+    const ext = it.extended || {}; const mods = (ext.mods && ext.mods.explicit) || []; const hashes = (ext.hashes && ext.hashes.explicit) || [];
+    if (!mods.length || !hashes.length) return;
+    const byText = new Map();
+    arr(it.explicitMods).forEach((m, k) => {
+      const idx = (hashes[k] && Array.isArray(hashes[k][1]) ? hashes[k][1] : []).map((i) => mods[i]).filter(Boolean);
+      const tiers = idx.map((x) => ({ n: Number(String(x.tier || '').replace(/^\D+/, '')), name: x.name })).filter((x) => x.n > 0);
+      if (!tiers.length) return;
+      const best = tiers.sort((a, b) => a.n - b.n)[0];
+      for (const line of modLines(m)) byText.set(line, best);
+    });
+    for (const l of item.lines || []) {
+      const t = byText.get(l.text);
+      if (t && l.tier == null) { l.tier = t.n; if (t.name) l.affix = t.name; }
+    }
+  } catch (_) { /* tiers are a nice-to-have */ }
 }
 
 // A listing price we can use: a positive amount and a currency. Anything else is "no price"

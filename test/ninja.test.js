@@ -144,3 +144,18 @@ test('map check: other items still drop no-number text from a block over 6 lines
   const it = parseItem(['Item Class: Body Armours', 'Rarity: Rare', 'A', 'Plate Vest', '--------', 'Armour: 100', '--------', 'Item Level: 80', '--------', ...lines].join('\n'));
   assert.deepStrictEqual(it.lines.map((l) => l.text).filter((t) => lines.includes(t)), lines.slice(0, 6));
 });
+
+test('a unique with several versions is priced as the version it is, or flagged unsure', () => {
+  const ninja = require('../src/core/ninja');
+  const { parseItem } = require('../src/core/parser');
+  const lines = [
+    { name: 'Impresence', variant: 'Lightning', chaosValue: 400, divineValue: 2, listingCount: 30 },
+    { name: 'Impresence', variant: 'Physical', chaosValue: 60, divineValue: 0.3, listingCount: 200 },
+  ];
+  const lightning = parseItem('Item Class: Amulets\nRarity: Unique\nImpresence\nOnyx Amulet\n--------\nItem Level: 84\n--------\nAdds 10 to 80 Lightning Damage\nConductivity has no Reservation');
+  assert.equal(ninja.priceOf(lightning, { items: [{ lines }] }, 'poe1').variant, 'Lightning');
+  const unknown = parseItem('Item Class: Amulets\nRarity: Unique\nImpresence\nOnyx Amulet\n--------\nItem Level: 84\n--------\n+10 to Strength');
+  const p = ninja.priceOf(unknown, { items: [{ lines }] }, 'poe1');
+  assert.equal(p.unsure, true);
+  assert.equal(ninja.sellNote(p), null);
+});

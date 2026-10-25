@@ -403,3 +403,34 @@ test('gear score: resistance at or below what you still need counts in full, wit
   assert.equal(exact.score, 8);
   assert.equal(exact.resNote, null);
 });
+
+test('advanced copy: each mod line gets its tier, affix name and roll', () => {
+  const { parseItem } = require('../src/core/parser');
+  const it = parseItem('Item Class: Rings\nRarity: Rare\nGale Loop\nTwo-Stone Ring\n--------\nItem Level: 84\n--------\n{ Prefix Modifier "Virile" (Tier: 3) — Life }\n+68(60-69) to maximum Life\n{ Suffix Modifier "of the Furnace" (Tier: 2) — Elemental, Fire, Resistance }\n+42(42-45)% to Fire Resistance');
+  const life = it.lines.find((l) => /maximum Life/.test(l.text));
+  assert.deepStrictEqual([life.tier, life.affix, life.roll], [3, 'Virile', 89]);
+  assert.strictEqual(it.lines.find((l) => /Fire Resistance/.test(l.text)).tier, 2);
+  assert.ok(!Object.prototype.hasOwnProperty.call(it.lines, 'push'));
+});
+
+test('trade listings: tiers from the trade site', () => {
+  const L = require('../src/core/listing');
+  const it = L.listingToItem({ item: { rarity: 'Rare', name: 'Rift Band', typeLine: 'Two-Stone Ring', ilvl: 84, frameType: 2, explicitMods: ['+68 to maximum Life'],
+    extended: { mods: { explicit: [{ name: 'Virile', tier: 'P3' }] }, hashes: { explicit: [['explicit.stat_3299347043', [0]]] } } } }, 'Rings');
+  assert.strictEqual(it.lines.find((l) => /maximum Life/.test(l.text)).tier, 3);
+});
+
+test('store keeps a linked build per character', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'poe2uc-'));
+  const s = new Store(dir);
+  s.setBuildSource({ type: 'pobbin', url: 'https://pobb.in/abc' });
+  const first = s.data.activeProfile;
+  s.createProfile('Second', false);
+  assert.equal(s.buildSource(), null);
+  s.switchProfile(first);
+  assert.equal(s.buildSource().url, 'https://pobb.in/abc');
+  const s2 = new Store(dir);
+  assert.equal(s2.buildSource().type, 'pobbin');
+  s2.setBuildSource(null);
+  assert.equal(new Store(dir).buildSource(), null);
+});

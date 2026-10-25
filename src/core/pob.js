@@ -7,14 +7,20 @@
 
 const zlib = require('zlib');
 
+const MAX_XML = 20 * 1024 * 1024;
 function decodeCode(code) {
   const s = String(code || '').trim();
   if (s.startsWith('<')) return s; // raw XML pasted
   const b64 = s.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
   const buf = Buffer.from(b64, 'base64');
   if (!buf.length) throw new Error('That code is empty.');
-  try { return zlib.inflateSync(buf).toString('utf8'); } catch (_) { /* try raw */ }
-  try { return zlib.inflateRawSync(buf).toString('utf8'); } catch (_) { /* fall through */ }
+  // a real build is well under 20 MB unpacked: a bigger one would only be there to eat memory
+  const opts = { maxOutputLength: MAX_XML };
+  for (const fn of [zlib.inflateSync, zlib.inflateRawSync]) {
+    try { return fn(buf, opts).toString('utf8'); } catch (err) {
+      if (err && (err.code === 'ERR_BUFFER_TOO_LARGE' || /larger than|too large/i.test(err.message || ''))) throw new Error('That build is too big to be a Path of Building export.');
+    }
+  }
   throw new Error("That doesn't look like a Path of Building code.");
 }
 
@@ -70,9 +76,20 @@ function convertItem(raw, slot) {
   const base = names[1] || names[0] || '';
   let ilvl = null; let implicitCount = 0; let corrupted = false;
   const props = []; const implicits = []; const mods = [];
+  // uniques with several versions: PoB keeps every version's lines, tagged {variant:1,2}, and says which one
+  // the item is ("Selected Variant: 2", plus "Selected Alt Variant: N" for a second choice). Without a
+  // "Selected" line PoB uses the last variant.
+  const variantCount = lines.filter((l) => /^Variant:/i.test(l)).length;
+  const selected = new Set(lines.map((l) => (l.match(/^Selected (?:Alt )?Variant(?: \w+)?:\s*(\d+)/i) || [])[1]).filter(Boolean).map(Number));
+  if (!selected.size && variantCount) selected.add(variantCount);
+  const otherVariant = (l) => {
+    const v = l.match(/\{variant:([\d,\s]+)\}/i);
+    return !!v && selected.size > 0 && !v[1].split(',').map(Number).some((n) => selected.has(n));
+  };
   for (; i < lines.length; i++) {
     const l = lines[i];
     let m;
+    if (otherVariant(l)) { if (implicitCount > 0 && !/^\w[\w ]*:\s/.test(l)) implicitCount--; continue; }
     if ((m = l.match(/^Item Level:\s*(\d+)/i))) { ilvl = m[1]; continue; }
     if ((m = l.match(/^Implicits:\s*(\d+)/i))) { implicitCount = Number(m[1]); continue; }
     if (/^(Armour|Evasion Rating|Energy Shield|Spirit|Runic Ward|Physical Damage|Attacks per Second|Critical Hit Chance|Block Chance):\s*[\d.]/i.test(l)) { props.push(l); continue; }
@@ -128,7 +145,9 @@ function parsePob(xml) {
   const activeSet = attr(itemsTag, 'activeItemSet');
   let setXml = xml;
   if (activeSet) {
-    const sm = xml.match(new RegExp(`<ItemSet\\b[^>]*\\bid="${activeSet}"[^>]*>([\\s\\S]*?)<\\/ItemSet>`));
+    // the id comes from the build file: escape it, so a crafted one can't hang the app
+    const id = String(activeSet).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const sm = xml.match(new RegExp(`<ItemSet\\b[^>]*\\bid="${id}"[^>]*>([\\s\\S]*?)<\\/ItemSet>`));
     if (sm) setXml = sm[1];
   }
   const slots = {};

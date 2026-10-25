@@ -277,10 +277,20 @@ function parseItem(raw) {
     }
     // in advanced text the header line says what kind of mod follows; the line itself has no tag
     let headerTag = null;
+    let headerTier = null; let headerAffix = null; let lineRoll = null;
+    // advanced copy: every mod line under a { ... (Tier: N) } header gets its tier, and its roll (how high
+    // in its range it rolled, 0-100%) from "+89(80-99)"
+    const push0 = item.lines.push;
+    item.lines.push = function (...xs) {
+      for (const x of xs) if (x && x.tag !== 'info') { if (headerTier != null) { x.tier = headerTier; if (headerAffix) x.affix = headerAffix; } if (lineRoll != null) x.roll = lineRoll; }
+      return push0.apply(this, xs);
+    };
     let inReminder = false;
     // a flask's (or charm's) property block: charges, duration, recovery and the flask's own buff
     const flaskBlock = block.some((l) => /^(Currently has \d+ Charges?|Consumes \d+ of \d+ Charges? on use)$/i.test(l));
     block.forEach((line) => {
+      const rr = line.match(/(-?\d+(?:\.\d+)?)\((-?\d+(?:\.\d+)?)[-–](-?\d+(?:\.\d+)?)\)/);
+      lineRoll = rr && Number(rr[3]) !== Number(rr[2]) ? Math.max(0, Math.min(100, Math.round(((Number(rr[1]) - Number(rr[2])) / (Number(rr[3]) - Number(rr[2]))) * 100))) : null;
       // reminder text, "(Maximum Resistances cannot be raised above 90%)", is never a mod;
       // it can run over several lines
       if (inReminder) { if (/\)\s*$/.test(line)) inReminder = false; return; }
@@ -299,6 +309,8 @@ function parseItem(raw) {
           item.eldritch[which] = true;
           if (eld[2]) item.eldritch[which + 'Rank'] = eld[2];
         }
+        const tm = line.match(/\((?:Tier|Rank):\s*(\d+)\)/i); headerTier = tm ? Number(tm[1]) : null;
+        const am = line.match(/Modifier\s+"([^"]+)"/i); headerAffix = am ? am[1] : null;
         headerTag = /Implicit Modifier/i.test(line) ? 'implicit'
           : /Enchant/i.test(line) ? 'enchant'
           : /Master Crafted/i.test(line) ? 'crafted'
@@ -382,6 +394,7 @@ function parseItem(raw) {
       add(stat.key, stat.value);
       item.lines.push({ text: line, key: stat.key, value: stat.value, tag });
     });
+    delete item.lines.push; // back to the normal push (the tier tagging is for this block's lines only)
   });
 
   if (legacies.length) applyLegacies(item, legacies, add);

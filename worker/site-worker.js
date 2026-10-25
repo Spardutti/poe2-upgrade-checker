@@ -51,7 +51,7 @@ async function exchangeAll(game, league, ctx) {
 // POST /api/ping { id, v, p, beta, poe1, poe2 }: one row per install per day. The install id is a
 // random number the app made; it's hashed again here, and nothing else is kept: no IP address, no
 // account, no character, no items. GET /api/stats?key=… shows the totals (the key is in D1's config).
-const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+const json = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 async function sha(text) {
   const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
@@ -125,8 +125,22 @@ async function download(ctx) {
   return Response.redirect(url || RELEASES, 302);
 }
 
+// every answer: HTTPS only from now on, and no guessing a file's type
+async function secured(res) {
+  const out = new Response(res.body, res);
+  out.headers.set('X-Content-Type-Options', 'nosniff');
+  out.headers.set('Strict-Transport-Security', 'max-age=31536000');
+  return out;
+}
+
 export default {
   async fetch(request, env, ctx) {
+    return secured(await handle(request, env, ctx));
+  },
+};
+
+async function handle(request, env, ctx) {
+  {
     const url = new URL(request.url);
     // one address for the site: www.poe2upgrade.com goes to poe2upgrade.com
     if (url.hostname === 'www.poe2upgrade.com') { url.hostname = 'poe2upgrade.com'; return Response.redirect(url.toString(), 301); }
@@ -156,7 +170,7 @@ export default {
     const out = new Response(body, {
       status: res.status,
       headers: {
-        'Content-Type': res.headers.get('Content-Type') || 'application/json',
+        'Content-Type': 'application/json', // always: never let poe.ninja's answer be read as a page on this site
         'Cache-Control': res.ok ? `public, max-age=${TTL[m[1]]}` : 'no-store',
         'Access-Control-Allow-Origin': '*',
         'X-Proxied-From': 'poe.ninja',
@@ -164,5 +178,5 @@ export default {
     });
     if (res.ok) ctx.waitUntil(cache.put(key, out.clone()));
     return out;
-  },
-};
+  }
+}

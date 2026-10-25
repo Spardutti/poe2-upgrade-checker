@@ -176,7 +176,7 @@
     // three groups of related cards, each stacked without gaps: what you deal, what you survive,
     // what you wear and how you're built
     const stack = (cls, title, parts) => { const inner = parts.filter(Boolean).join(''); return inner ? `<section class="char-stack ${cls}"><h4 class="char-group">${esc(title)}</h4>${inner}</section>` : ''; };
-    return `${hero}<div class="char-cols">${stack('s-off', 'Offence', [minionCard, offence, skills])}${stack('s-def', 'Defence', [defence, res, maxHit, st.game === 'poe1' ? bossCard() : '', resources])}${stack('s-build', 'Gear & build', [gear, misc || tree ? `<div class="char-sub">${misc}${tree}</div>` : '', '<div class="card-p" id="strBox"></div>'])}</div>`;
+    return `${hero}<div class="char-cols">${stack('s-off', 'Offence', [minionCard, offence, skills])}${stack('s-def', 'Defence', [defence, res, maxHit, st.game === 'poe1' ? bossCard() : '', resources])}${stack('s-build', 'Gear & build', [gear, anointCard(st.game), misc || tree ? `<div class="char-sub">${misc}${tree}</div>` : '', '<div class="card-p" id="strBox"></div>'])}</div>`;
   }
 
   // PoE1 boss check: Path of Building's boss skill presets, one at a time
@@ -203,6 +203,34 @@
     bossAt = sheetAt;
     bossLast = await window.api.bossCheck().catch((err) => ({ ok: false, error: err.message || String(err) }));
     const out = $('#bossOut'); if (out) out.innerHTML = bossTable(bossLast);
+    b.disabled = false; b.textContent = 'Check again';
+  });
+
+  // the best notables for your amulet: anoint (PoE1, oils) or instil (PoE2, distilled emotions)
+  let anointLast = null;
+  function anointCard(game) {
+    const word = game === 'poe1' ? 'anoint' : 'instil';
+    return card(game === 'poe1' ? 'Best anoint' : 'Best instil', `<div class="help">Every notable that can go on your amulet, tried by Path of Building in place of its current one. Notables already on your tree are left out.</div>
+      <div id="anointOut">${anointLast ? anointTable(anointLast) : ''}</div>
+      <div class="row"><button id="anointBtn">${anointLast ? 'Check again' : `Find the best ${word}`}</button></div>`);
+  }
+  const sgn = (v) => (!isNum(v) || Math.abs(v) < 0.05 ? '' : `${v > 0 ? '+' : ''}${n1(v)}%`);
+  function anointTable(r) {
+    if (!r.ok) return `<div class="note">${esc(r.error)}</div>`;
+    if (!r.top.length) return '<div class="dim">Path of Building found no notables to try.</div>';
+    const cur = r.current[0];
+    const dmg = r.top[0] && r.top[0].dpsKey === 'MinionDPS' ? 'Minion DPS' : 'DPS';
+    const rows = r.top.filter((x) => x.score > 0 || x.current).slice(0, 8).map((x) => `<tr${x.current ? ' class="cur"' : ''}><td title="${esc(x.stats.join('\n'))}"><b>${esc(x.name)}</b>${x.current ? ' <span class="dim small">(yours)</span>' : ''}<div class="dim small">${esc(x.recipe.map((o) => (r.game === 'poe1' ? String(o).replace(/(\w)Oil$/, '$1 Oil') : `Distilled ${o}`)).join(' + '))}</div></td><td>${sgn(x.dps) || '–'}</td><td>${sgn(x.ehp) || '–'}</td></tr>`).join('');
+    const now = r.noAmulet ? 'Your build has no amulet, so a plain one was used.' : r.now.length ? `Your amulet has <b>${esc(r.now.join(', '))}</b>${cur ? '' : ' (on your tree too, so it adds nothing)'}.` : 'Your amulet has nothing on it yet.';
+    return `<div class="small">${now}</div>${rows ? `<table class="kv anoint"><tr><th>Notable</th><th>${dmg}</th><th>Effective HP</th></tr>${rows}</table>` : '<div class="dim">None of them would help this build.</div>'}
+      <div class="dim small">Compared with the amulet bare. Hover a name for what it does.${r.checked < r.total ? ` Checked ${r.checked} of ${r.total} (out of time).` : ''}</div>`;
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest && e.target.closest('#anointBtn');
+    if (!b) return;
+    b.disabled = true; b.innerHTML = '<span class="spinner"></span> Trying every notable…';
+    anointLast = await window.api.anointCheck().catch((err) => ({ ok: false, error: err.message || String(err) }));
+    const out = $('#anointOut'); if (out) out.innerHTML = anointTable(anointLast);
     b.disabled = false; b.textContent = 'Check again';
   });
 
@@ -245,6 +273,6 @@
   document.querySelector('.tabs button[data-tab="char"]').addEventListener('click', () => render(false));
   $('#charRefresh').addEventListener('click', () => render(true));
   // keep it current while it's open (gear copied, build changed, character switched)
-  window.api.onChanged(() => { if ($('#tab-char').classList.contains('active')) render(false); });
+  window.api.onChanged(() => { anointLast = null; if ($('#tab-char').classList.contains('active')) render(false); });
   window.renderCharacter = render;
 })();

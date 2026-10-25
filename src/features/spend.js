@@ -13,7 +13,8 @@ module.exports = function (C) {
   // pairs of items that cap them together. One run takes a few minutes (the trade site allows only a
   // few searches a minute); the last run per game is kept.
   const SPEND_SLOTS = ['Weapon', 'Offhand', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring', 'Belt'];
-  const spendRuns = {}; // game -> { at, rows, pairs, ... }
+  const spendRuns = {}; // character -> { at, rows, pairs, ... } (each character's own build and gear)
+  const runKey = () => C.store.data.activeProfile || C.tg();
   let spendBusy = null;
   const spendProgress = (p) => C.notifySettings('spend:progress', p);
   function shortResists() {
@@ -25,9 +26,9 @@ module.exports = function (C) {
       return Number.isFinite(v) && v < max - 0.5 && !(tot > v + 0.5);
     });
   }
-  ipcMain.handle('spend:get', () => JSON.parse(JSON.stringify(spendRuns[C.tg()] ? { ...spendRuns[C.tg()], rows: spendRuns[C.tg()].rows.map(({ search, ...x }) => x) } : null)));
+  ipcMain.handle('spend:get', () => JSON.parse(JSON.stringify(spendRuns[runKey()] ? { ...spendRuns[runKey()], rows: spendRuns[runKey()].rows.map(({ search, ...x }) => x) } : null)));
   ipcMain.handle('spend:open', C.inGame(async (_e, slot, idx) => {
-    const run = spendRuns[C.tg()];
+    const run = spendRuns[runKey()];
     const row = run && run.rows.find((x) => x.slot === slot);
     if (!row || !row.search) return { ok: false, error: 'Run "Where to spend" again first.' };
     const shown = await C.showResults(row.search.r, row.search.ctx);
@@ -37,13 +38,13 @@ module.exports = function (C) {
   // It's a saved search (this slot's search, priced up to Y div) whose new listings are checked with
   // your build when alerts run; only the ones that clear +X% are notified.
   ipcMain.handle('spend:alert', C.inGame((_e, slot, minGain, maxPrice) => {
-    const run = spendRuns[C.tg()];
+    const run = spendRuns[runKey()];
     const row = run && run.rows.find((x) => x.slot === slot);
     if (!row || !row.search || !row.search.ctx || !row.search.ctx.body) return { ok: false, error: 'Run "Where to spend" again first.' };
     const g = Number(minGain); const m = Number(maxPrice);
     // PoE1 prices in chaos, PoE2 in divines
     const unit = C.G(C.tg()).id === 'poe1' ? 'chaos' : 'div';
-    if (!(g > 0) || g > 1000) return { ok: false, error: run.mode === 'gear' ? 'Enter how many gear score points better it must be.' : 'Enter how much better (%) it must be.' };
+    if (!(g > 0) || g > 1000) return { ok: false, error: run.mode === 'gear' ? 'Enter how many gear score points better it must be.' : 'Enter how many points better for your build it must be.' };
     if (!(m > 0) || m > 1000000) return { ok: false, error: `Enter the most you would pay, in ${unit === 'chaos' ? 'chaos' : 'divines'}.` };
     const body = JSON.parse(JSON.stringify(row.search.ctx.body));
     C.trade.applyBudget(body, C.budgetNow({ currency: unit === 'chaos' ? 'chaos' : 'divine', max: m }), C.tg());
@@ -68,7 +69,7 @@ module.exports = function (C) {
   const slim = (run) => JSON.parse(JSON.stringify({ ...run, rows: run.rows.map(({ search, ...x }) => x) }));
   ipcMain.handle('spend:run', C.inGame(async (_e, force) => {
     if (spendBusy) return { ok: false, error: 'Already looking – see the progress above.' };
-    const last = spendRuns[C.tg()];
+    const last = spendRuns[runKey()];
     const want = { mode: C.pobOn() ? 'pob' : C.gearScoreOn() ? 'gear' : null, budget: C.trade.budgetLabel(C.budgetNow(), C.tg()), league: C.shownLeague() || null };
     if (!force && last && Date.now() - last.at < REUSE && last.mode === want.mode && last.budget === want.budget && (!want.league || last.league === want.league)) {
       return { ok: true, reused: true, ...slim(last) };
@@ -77,7 +78,7 @@ module.exports = function (C) {
     const mode = C.pobOn() ? 'pob' : C.gearScoreOn() ? 'gear' : null;
     if (!mode) return { ok: false, error: C.tg() === 'poe1' ? 'Load your Path of Building build on My gear first: PoE1 items are judged by Path of Building.' : 'Load your Path of Building build on My gear, or pick a build for the gear score (Build & stats), first.' };
     spendBusy = true;
-    const game = C.tg();
+    const game = C.tg(); const key = runKey();
     try {
       let d;
       try { d = await C.loadTradeData(false); } catch (err) { return { ok: false, error: 'Could not load trade site data: ' + (err.message || err) }; }
@@ -146,7 +147,7 @@ module.exports = function (C) {
       }
       rows.sort((a, b) => ((b.best && b.best.perDiv) || -1) - ((a.best && a.best.perDiv) || -1));
       const run = { at: Date.now(), mode, league, budget: C.trade.budgetLabel(budget, game), unit: C.G(game).baseShort, divineRate: div, rows, pairs, short: mode === 'pob' ? short : [], stopped };
-      spendRuns[game] = run;
+      spendRuns[key] = run;
       spendProgress({ done: slots.length, total: slots.length, finished: true });
       C.log(`spend: ${rows.filter((x) => x.best).length} of ${rows.length} slots have an upgrade; ${pairs.length} resistance pairs`);
       return { ok: true, ...JSON.parse(JSON.stringify({ ...run, rows: rows.map(({ search, ...x }) => x) })) };

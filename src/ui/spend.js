@@ -27,6 +27,15 @@
     const withBest = rows.filter((r) => r.best);
     const top = withBest[0];
     const when = run.at ? new Date(run.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    // every slot failed for the same reason (e.g. no damage skill set in Path of Building): say it once
+    const errs = rows.map((r) => r.error).filter(Boolean);
+    const sameErr = !run.partial && rows.length > 1 && errs.length === rows.length && errs.every((e) => e === errs[0]) ? errs[0] : null;
+    if (sameErr) {
+      body().innerHTML = `<div class="card-p note">${esc(sameErr)}</div><div class="row"><button class="primary" data-goto-gear>Go to My gear</button></div>`;
+      const g = body().querySelector('[data-goto-gear]');
+      if (g) g.addEventListener('click', () => document.querySelector('.tabs button[data-tab="gear"]').click());
+      return;
+    }
     const headline = run.partial ? '' : top
       ? `<div class="card-p spend-top"><h3>Best value: ${esc(top.slot)}</h3>
           <p><b>${esc(top.best.name)}</b> for ${esc(top.best.price)}: <b class="pos">${gain(top.best.gain)}</b> for your build${top.best.perDiv != null ? ` · <b>${per(top.best.perDiv)} per divine</b>` : ''}.</p>

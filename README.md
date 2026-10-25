@@ -13,7 +13,7 @@
 
 | | |
 |---|---|
-| **Is this an upgrade?** Hover an item and press **F2**. With your Path of Building export loaded, the app runs **Path of Building's own calculations** on your build: what the item does to your DPS (or minion DPS), effective HP, resistances and Spirit compared with what you wear. Items that would drop a resistance or cost you damage are flagged in red, never called an upgrade. | <img src="docs/popup.png" alt="The popup: Doom Vise is an UPGRADE, +26.8% for your build, and caps your lightning resistance" width="380"> |
+| **Is this an upgrade?** Hover an item and press **F2**. With your Path of Building export loaded, the app runs **Path of Building's own calculations** on your build: what the item does to your DPS (or minion DPS), effective HP, resistances and Spirit compared with what you wear. Items that would drop a resistance or cost you damage are flagged in red, never called an upgrade. | <img src="docs/popup.png" alt="The popup: Doom Vise is an UPGRADE, +26.8 points for your build, and caps your lightning resistance" width="380"> |
 | **Where's a better one?** One click searches the official trade site for upgrades within your budget, weighted by what each stat is worth to your build. Results open in the app, judged against your gear, with *Travel to hideout* and a ready-made whisper. | |
 
 <sub>Screenshots of the app with a real Path of Building build (a Disciple of Varashta summoner). Trade listings in them are examples.</sub>
@@ -41,23 +41,25 @@
   - **Chaos Inoculation** is recognised, and chaos resistance is then ignored everywhere.
 - **Never breaks your build:** an item that costs a big part of your damage (**LOSES DAMAGE**), leaves you short of Spirit or can't be worn is flagged, however much else it adds. Each check can be switched off under *Priorities*.
 - **Character page:** your whole character from Path of Building: DPS or minion DPS, effective HP, energy shield, resistances against the cap, the biggest hit you can take, Spirit, attributes, skills with supports, keystones and ascendancy.
-- **Upgrade popup:** the verdict, the change in every stat, open prefixes and suffixes for crafting, and *What's it worth?* (or **Choose stats…** to pick exactly which stats and minimums the price check matches). Links to the wiki and poedb.
+- **Upgrade popup:** the verdict, the change in every stat, each mod's tier and roll, open prefixes and suffixes for crafting, and *What's it worth?* (or **Price by chosen stats…** to pick exactly which stats and minimums the price check matches, with a total elemental resistance row and 80/90/100% minimum buttons). Links to the wiki and poedb.
 - **Where to spend:** every slot searched in your price range and checked with your build, ranked by how much better your build gets **per divine** ("Gloves: +14% for 3 div. Amulet: +6% for 20 div."). When resistances are short, it also looks for **two items that cap them together**. Without a Path of Building build (PoE2), it ranks by gear score instead.
 - **Map and waystone check:** F2 on a map or waystone. Path of Building works out what the player mods do to *your* character ("–12% max resistances: effective HP –14%"), monster mods are checked against your build (reflect against your damage types, no leech or no regeneration against what you rely on), and you can mark any mod dangerous, careful or fine.
 - **Prices for everything else:** F2 on currency, fragments, essences, runes, divination cards, gems (by level, quality and corruption), maps and uniques (by links) shows its poe.ninja price, the whole stack's, and the 7-day trend.
 - **Gem check:** F2 on a skill or support gem: if your build uses that gem, Path of Building swaps in this one's level and quality and shows the DPS and effective HP change.
 - **Selling helper:** for anything poe.ninja prices, a suggested listing price a little under poe.ninja and *Copy price note* (`~price 4 divine`) to paste into the item's note in a premium stash tab.
+- **Best anoint / instil:** on the Character page, Path of Building tries every notable that can go on your amulet and lists the best for your build, with the oils (PoE1) or distilled emotions (PoE2) each takes.
 - **Boss check (PoE1):** on the Character page, how many of each big boss hit you can take (Path of Building's boss presets, Pinnacle and Uber), e.g. "Shaper Slam: one-shot".
 - **Search strings:** on the Character page, a search to paste at vendors and in your stash (movement speed, the resistances you're short of, life, + gem levels, three linked sockets in PoE1), and one for the map device that leaves out maps or waystones with the mods you marked dangerous. The map card can copy that one too.
 - **Leveling mode** (Find upgrades): only items you can wear at your level, in every upgrade search.
 - **Search history** (Find upgrades): your last 30 trade searches, to run again or save.
+- **One per seller** (trade results): only each seller's best listing.
 - **Loot filter from your build** (My gear): highlights rares on the bases you wear and identified rares with two or more of the mods Path of Building values most for each slot. It's saved as a copy of your own filter with this section in front.
 - **Trade search:**
   - *Better for my build*, *same stats or better*, *craftable bases*, or a custom search built from any of the trade site's ~3,600 stats.
   - Price range in divines (or exalts, using poe.ninja's live rate), ignored and excluded stats, and saved searches with **new-listing alerts**.
 - **Your gear:**
   - Every slot, including weapon swap, jewels, flasks and charms.
-  - Import from Path of Building (pobb.in links or codes).
+  - Import from Path of Building (pobb.in links or codes). A pobb.in link can be read again with one click, or link the build file PoB saves and the app follows it each time you save.
   - Several characters, each with their own gear and build.
 - **Gear score fallback:** without a PoB build, a 0–100 gear score from build profiles (minion summoner, ES caster, life + res) and your own stat weights.
 - **Built for playing:**
@@ -85,13 +87,17 @@
 ## Fair play and privacy
 
 - **Nothing touches the game:**
-  - It never reads game memory and never injects anything.
-  - Its only input to the game is **one Ctrl+C per hotkey press**, the same as copying an item yourself.
+  - It never reads game memory, game files or injects anything.
+  - Its only input to the game is **one copy keystroke per hotkey press**: Ctrl+C (Ctrl+Alt+C with *advanced copy*), the same as copying an item yourself. It's only sent when the game is the active window; to make sure the game gets it, the app may bring the game window to the front, or nudge the mouse by one pixel when its own popup was covering the item.
 - **Where data goes:**
-  - It talks to the official trade site (pathofexile.com), poe.ninja's prices (through a small cache on poe2upgrade.com, as poe.ninja asks desktop apps to do), GitHub (for updates) and the anonymous usage count below. Path of Building runs locally on your PC.
-  - **Anonymous usage statistics:** so we know how many people use the app and in which game, it sends poe2upgrade.com a small message when it starts and every few hours: a random install number made on your PC, the app version, Windows or Linux, beta or not, and which of the two games you used that day. Nothing else (no account, character, items, builds or searches), and the site doesn't keep IP addresses. Turn it off with **Settings → Send anonymous usage statistics** (or in the first-run guide); then nothing is sent.
-  - Your gear and settings stay on your PC, in `%APPDATA%\poe2-upgrade-checker`.
-- **Signing in is optional** and only used for *Travel to hideout* and bigger searches. You sign in on pathofexile.com's own login page, and the app only keeps the resulting login cookie, on your PC.
+  - The official trade site (pathofexile.com) for searches and listings.
+  - poe.ninja's prices, through a small cache on poe2upgrade.com as poe.ninja asks desktop apps to do (straight from poe.ninja only if that cache is down).
+  - pobb.in, only when you paste a pobb.in link to import a build.
+  - GitHub, to check for and download updates.
+  - Path of Building runs locally on your PC.
+  - **Usage statistics** (on by default; turn off with **Settings → Send anonymous usage statistics** or in the first-run guide, and then nothing is sent): when the app starts and every few hours it sends poe2upgrade.com a random install number made on your PC (it stays the same, so we count people rather than starts), the app version, Windows or Linux, beta or not, and which of the two games you used that day. No account, character, items, builds or searches, and the site doesn't keep IP addresses.
+  - Your gear, builds and settings stay on your PC, in `%APPDATA%\PoE2 Upgrade Checker` (Linux: `~/.config/PoE2 Upgrade Checker`). The log never contains what you copy.
+- **Signing in is optional** and only used for *Travel to hideout* and bigger searches. You sign in on pathofexile.com's own login page, in a separate browser profile kept on your PC (the login cookie and the site's own stored data); **Settings → Sign out** clears it. That window stays on pathofexile.com and its sign-in providers and gets no browser permissions. Without signing in, the app only makes its own requests to the trade site and never retries them through a browser page.
 - **Not affiliated:** this is a fan-made tool, not affiliated with or endorsed by Grinding Gear Games.
 
 ## First-time setup
@@ -135,7 +141,7 @@ It updates when you change gear or switch character; *Recalculate* reruns it. Wi
 
 - **Verdict:** **UPGRADE**, **SMALL UPGRADE**, **SIDEGRADE**, **DOWNGRADE**, **UPGRADE, BUT…** (with the reason), **LOSES RESISTANCE** or **LOSES DAMAGE**, e.g. "+12.4% for your build vs Doom Vise". Underneath: what Path of Building says changes (minion DPS, effective HP, ES, Spirit, each resistance against its cap).
 - **Compact view:** you see the top changes and two buttons, **Find upgrades** and **What's it worth?**. Click **More** for the full change table, Set as …, Items like this one, Craftable bases and Custom search. Settings → Popup can make **Full** the default.
-- **Craft info:** with *advanced item descriptions* turned on in game, the popup shows open prefixes and suffixes, e.g. "Open: 2 prefixes, 2 suffixes – craftable".
+- **Craft info:** with *advanced item descriptions* turned on in game, the popup shows open prefixes and suffixes, e.g. "Open: 2 prefixes, 2 suffixes – craftable", and under *More* each mod's tier (T1 is best) and how high it rolled.
 - **Uniques** get a Path of Building verdict too, plus *What's it worth?* and *Find cheaper copies*. **Unidentified** items aren't rated.
 - While the game copies, the popup shows "Reading item…". If you press **Ctrl+C** yourself on something that isn't gear (currency, gems), no popup appears.
 - **Settings → Popup:** position (next to the cursor, left, right or top of the screen), text size, a colour-blind palette (blue and orange), and prices shown in both units, e.g. "220 ex (≈0.3 div)".

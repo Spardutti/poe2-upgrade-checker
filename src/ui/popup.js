@@ -3,7 +3,8 @@ const root = document.getElementById('root');
 
 // Measure synchronously: requestAnimationFrame doesn't run while the window is
 // hidden, which is what stopped the popup from ever showing a second time.
-const report = () => window.api.resize(Math.ceil(root.getBoundingClientRect().height) + 8);
+// the whole page (card, margins and all), so nothing is cut off at any text size
+const report = () => { const b = root.getBoundingClientRect(); const m = parseFloat(getComputedStyle(document.body).marginBottom) || 0; window.api.resize(Math.ceil(root.offsetTop + b.height + m) + 6); };
 
 // A re-render of the same item (settings changed, Path of Building answered) keeps
 // what you had open: More ▾ and any search message. A new item starts fresh.

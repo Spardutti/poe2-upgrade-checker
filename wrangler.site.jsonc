@@ -3,7 +3,7 @@
 // Deployed by deploy-site.bat. The name is the Worker created in the Cloudflare dashboard.
 {
   "name": "rough-sun-a9b2",
-  "compatibility_date": "2026-09-01",
+  "compatibility_date": "2026-10-20",
   "main": "worker/site-worker.js",
   "assets": { "directory": "./site", "binding": "ASSETS", "not_found_handling": "404-page", "html_handling": "auto-trailing-slash",
     // every request goes through the Worker (worker/site-worker.js) first: it owns /download, /api and

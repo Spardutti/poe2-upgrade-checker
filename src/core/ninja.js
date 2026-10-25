@@ -149,6 +149,21 @@ function pickLine(lines, item, game) {
     if (byLinks.length) c = byLinks;
     const plain = c.filter((l) => !l.corrupted === !item.corrupted);
     if (plain.length) c = plain;
+    // a unique with several versions ("Lightning", "Physical"...): the one whose name is in the item's mods
+    const variants = [...new Set(c.map((l) => l.variant).filter(Boolean))];
+    if (variants.length > 1) {
+      const text = String(item.raw || item.listingText || '').toLowerCase();
+      const score = (v) => String(v).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^(and|the|of|with|jewel|jewels|passive|passives)$/.test(w))
+        .filter((w) => new RegExp(`\\b${w}`).test(text)).length;
+      const best = Math.max(...c.map((l) => score(l.variant || '')));
+      const top = best > 0 ? c.filter((l) => score(l.variant || '') === best) : [];
+      if (top.length && new Set(top.map((l) => l.variant)).size === 1) c = top;
+      else {
+        // can't tell which version it is: say so rather than quote another version's price
+        const pick = c.sort((a, b) => (b.listingCount || b.count || 0) - (a.listingCount || a.count || 0))[0];
+        return { ...pick, unsure: true };
+      }
+    }
   }
   return c.sort((a, b) => (b.listingCount || b.count || 0) - (a.listingCount || a.count || 0))[0];
 }
@@ -177,7 +192,7 @@ function priceOf(item, found, game) {
     const each = lineValue(l, ans.core, base); const div = lineValue(l, ans.core, 'divine');
     if (each == null && div == null) continue;
     const listings = l.listingCount || l.count || null;
-    hit = { each, eachDiv: div, change: change(l.sparkLine || l.sparkline), history: history(l.sparkLine || l.sparkline), listings, name: l.name, variant: l.variant || null,
+    hit = { each, eachDiv: div, change: change(l.sparkLine || l.sparkline), history: history(l.sparkLine || l.sparkline), listings, name: l.name, variant: l.variant || null, unsure: !!l.unsure,
       gemLevel: l.gemLevel || null, gemQuality: l.gemQuality || null, links: l.links || null, mapTier: l.mapTier || null };
     break;
   }
@@ -220,7 +235,7 @@ const isInfoPage = (url) => typeof url === 'string' && INFO_HOSTS.test(url);
 // The note's price is for the whole stack.
 const FULL = { ex: 'exalted', chaos: 'chaos' };
 function sellNote(p, opts) {
-  if (!p) return null;
+  if (!p || p.unsure) return null; // not sure which version of the unique it is: no price to list at
   const cut = 1 - ((opts && opts.undercut) != null ? opts.undercut : 0.05);
   const div = p.totalDiv != null ? p.totalDiv * cut : null;
   const base = p.total != null ? p.total * cut : null;

@@ -22,6 +22,7 @@ function gameWords() {
   const rb = $('#resBuffer'); if (rb && rb.parentElement) rb.parentElement.title = `How far over the cap a resistance must be before more of it stops counting. PoB numbers can include ${p1 ? 'flasks' : 'charms'} and buffs that aren't always on.`;
   const aug = document.querySelector('option[value="augment"]'); if (aug) aug.textContent = p1 ? 'Enchant / other' : 'Rune';
 }
+let foldedFor = null; // the Path of Building state the folds were last set for (a click you make stays)
 async function load() {
   state = await window.api.getState();
   gameWords();
@@ -104,20 +105,24 @@ function renderSlots() {
     const gcell = !it ? '' : !g ? '' : g.score == null ? `<span class="dim">${g.unique ? 'unique' : g.unrated === 'unidentified' ? 'unidentified' : 'not rated'}</span>`
       : `<span class="gs g-${esc(g.grade)}" title="${esc((g.missing || []).length ? 'Missing: ' + g.missing.join(', ') : '')}">${g.score} ${esc(g.grade)}</span>`;
     return `<tr class="slotrow"><td>${esc(s)}</td><td>${gcell}</td>
-      <td>${it ? `<b>${esc(it.name)}</b> <span class="dim">${esc(it.baseType !== it.name ? it.baseType : '')}</span><div class="dim">${esc(summary(it))}</div>`
+      <td class="item-cell">${it ? `<b>${esc(it.name)}</b> <span class="dim">${esc(it.baseType !== it.name ? it.baseType : '')}</span>${it.fromPob ? ' <span class="dim small">· from PoB</span>' : ''}<div class="dim mods-line" title="${esc(summary(it))}">${esc(summary(it).replace(/\(-?\d+(?:\.\d+)?-\d+(?:\.\d+)?\)/g, ''))}</div>`
         : '<span class="empty">not set</span>'}</td>
       <td class="nowrap">${it ? `<button data-quick="${esc(s)}">Find upgrades</button>
-        <button data-custom="${esc(s)}">Custom…</button>
-        <button data-clear="${esc(s)}">Clear</button>` : ''}${it && it.fromPob ? '<div class="dim small">from PoB</div>' : ''}</td></tr>`;
+        <button class="link" data-custom="${esc(s)}">Custom…</button>
+        <button class="link" data-clear="${esc(s)}" title="Forget the item saved for this slot">Clear</button>` : ''}</td></tr>`;
   };
   $('#slots').innerHTML = `<tr><th>Slot</th><th>${state.game === 'poe1' ? '' : 'Gear score'}</th><th>Item</th><th></th></tr>` + main.map(row).join('')
     + `<tr><td colspan="4"><button class="link" id="extraToggle">${extraOpen ? '▾' : '▸'} ${state && state.game === 'poe1' ? 'Weapon swap, flasks &amp; jewels' : 'Weapon swap, flasks, charms &amp; jewels'} (${showExtras.length} saved)</button></td></tr>`
     + (extraOpen ? extras.map(row).join('') : '')
     + '<tr><td colspan="4" class="note" id="gearMsg"></td></tr>';
   $('#extraToggle').addEventListener('click', () => { window.__extraOpen = !extraOpen; renderSlots(); });
+  // Clear asks once more (a mis-click would lose the saved item)
   document.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', async () => {
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Clear it?'; setTimeout(() => { if (b.isConnected) { delete b.dataset.sure; b.textContent = 'Clear'; } }, 4000); return; }
     await window.api.clearSlot(b.dataset.clear); load();
   }));
+  // the full mods of an item: click its line
+  document.querySelectorAll('.mods-line').forEach((m) => m.addEventListener('click', () => m.classList.toggle('open')));
   // the answer shows right under the button you clicked (the table's last row is often off screen)
   document.querySelectorAll('[data-quick]').forEach((b) => b.addEventListener('click', async () => {
     document.querySelectorAll('.slot-msg').forEach((x) => x.remove());
@@ -194,6 +199,10 @@ async function buildFindRows() {
     findRows = [];
   } else {
     $('#findItem').innerHTML = `<b>${esc(it.name)}</b> ${esc(it.baseType !== it.name ? it.baseType : '')} <span class="dim">(${esc(it.itemClass)}${it.rarity ? ', ' + esc(it.rarity) : ''})</span>`;
+    // not gear (a waystone, a map, currency...): only a price check makes sense
+    const notGear = !it.slot;
+    for (const id of ['findGear', 'findSimilar', 'findCraft', 'findWeights']) { const b = document.getElementById(id); if (b) b.classList.toggle('hidden-notgear', notGear); }
+    if (notGear) $('#findNotice').textContent = "This isn't gear, so there's nothing to upgrade: What's it worth? prices it.";
     const scale = Number($('#minScale').value) || 1;
     findRows = rows.map((x) => ({
       key: x.key, source: x.source, current: x.value,
@@ -221,7 +230,7 @@ function renderFindRows() {
   $('#findStats').innerHTML = '<tr><th>Keep</th><th>Stat</th><th>Yours</th><th>Min</th><th>Max</th></tr>' + findRows.map((r, i) => `
     <tr>
       <td><input type="checkbox" data-i="${i}" data-f="keep" ${r.keep ? 'checked' : ''}></td>
-      <td title="${esc(r.key)}">${esc(niceKey(r.key))}${r.current == null ? ` <span class="dim">(added${r.idType ? ', ' + esc({ pseudo: 'total', augment: 'rune' }[r.idType] || r.idType) : ''})</span>` : r.ignored ? ' <span class="dim">(ignored)</span>' : r.source === 'socket' ? ' <span class="dim">(rune)</span>' : r.source === 'implicit' ? ' <span class="dim">(implicit)</span>' : ''}</td>
+      <td title="${esc(r.key)}">${esc(window.statName ? window.statName(r.key) + (/#%/.test(r.key) ? " (%)" : "") : niceKey(r.key))}${r.current == null ? ` <span class="dim">(added${r.idType ? ', ' + esc({ pseudo: 'total', augment: 'rune' }[r.idType] || r.idType) : ''})</span>` : r.ignored ? ' <span class="dim">(ignored)</span>' : r.source === 'socket' ? ' <span class="dim">(rune)</span>' : r.source === 'implicit' ? ' <span class="dim">(implicit)</span>' : ''}</td>
       <td class="dim">${r.current == null ? '' : esc(r.current)}</td>
       <td><input type="number" data-i="${i}" data-f="min" value="${esc(r.min)}"></td>
       <td><input type="number" data-i="${i}" data-f="max" value="${esc(r.max)}"></td>
@@ -756,7 +765,7 @@ const WIZ = [
     title: 'Welcome to PoE Upgrade Checker',
     body: () => `<p>Hover any item in game and press your hotkey: a popup tells you if it's an <b>upgrade for your build</b> – worked out by Path of Building with your own build – and finds better items on the trade site in one click.</p>
       <p class="help">This guide takes about a minute. You can run it again from <b>My gear → Setup guide</b>.</p>
-      <p class="help"><b>Game setting:</b> set the game to <b>Windowed Fullscreen</b> (Options → Graphics), or the popup can't show over the game.</p>
+      <div class="warnbox">⚠ Set the game to <b>Windowed Fullscreen</b> (Options → Graphics). In fullscreen the popup can't show over the game: it's the most common reason it seems to do nothing.</div>
       <p class="help"><label><input type="checkbox" id="wizStats" ${state.settings.usageStats !== false ? 'checked' : ''}> Send anonymous usage statistics</label>: a random install number, the app version and which game you play, so we know how many people use it. No account, items or builds. You can change this in Settings.</p>`,
     after: () => { $('#wizStats').addEventListener('change', async () => { await window.api.setSetting('usageStats', $('#wizStats').checked); const u = $('#usageStats'); if (u) u.checked = $('#wizStats').checked; }); },
   },
@@ -794,9 +803,9 @@ const WIZ = [
   },
   {
     title: 'Your build',
-    body: () => `<p><b>Best:</b> paste your <b>Path of Building</b> export (in Path of Building: Import/Export Build → Generate; Path of Building 2 for PoE2, Path of Building Community for PoE1) or a pobb.in link. The app then judges every item with Path of Building's own calculations for <i>your</i> build – any class, any skill – and loads your gear.</p>
+    body: () => (state.pobOn ? `<p class="ok-line">✓ Your Path of Building build is loaded for this character, so every item is judged with it.</p><p class="help">To use another build, paste its export or pobb.in link:</p>` : '') + `<p${state.pobOn ? ' class="hidden"' : ''}><b>Best:</b> paste your <b>Path of Building</b> export (in Path of Building: Import/Export Build → Generate; Path of Building 2 for PoE2, Path of Building Community for PoE1) or a pobb.in link. The app then judges every item with Path of Building's own calculations for <i>your</i> build – any class, any skill – and loads your gear.</p>
       <div class="row"><input id="wizPob" class="grow" placeholder="https://pobb.in/…  or  eNrt…"><button id="wizPobBtn" class="primary gilded">Import</button></div><div class="note" id="wizPobMsg"></div>
-      ${state.game === 'poe1' ? '<p class="help">Path of Exile 1 items are judged by Path of Building only, so this step is what makes the popup work. You can also do it later on <b>My gear</b>.</p>'
+      ${state.pobOn ? '' : state.game === 'poe1' ? '<p class="help">Path of Exile 1 items are judged by Path of Building only, so this step is what makes the popup work. You can also do it later on <b>My gear</b>.</p>'
     : `<p class="help">No PoB? Pick the closest profile for a rough gear score instead, and save your gear in the next steps:</p>
       <div class="row"><select id="wizBuild">${(state.builds || []).map((b) => `<option value="${esc(b.id)}" ${b.id === (state.settings.build || state.defaultBuild) ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}<option value="off">None – score by my own stat weights</option></select></div>
       <p class="help" id="wizBuildHelp"></p>`}`,
@@ -816,16 +825,24 @@ const WIZ = [
   },
   {
     title: 'Your gear',
-    body: () => `<p>${Object.keys(state.equipped || {}).length ? `You have <b>${Object.keys(state.equipped).length}</b> items saved.` : 'Save what you\'re wearing so the app can compare.'} In game, hover each equipped item, press the hotkey and click <b>Set as …</b> in the popup. Items you copy in game replace Path of Building's, so the app uses exactly what you wear.</p>
+    body: () => `<p>${state.pobOn ? `<span class="ok-line">✓ Your build's gear is loaded (${Object.keys(state.equipped || {}).length} items).</span> If you wear something different now, hover it in game, press the hotkey and click <b>Set as …</b> in the popup: items you copy in game replace Path of Building's.` : `${Object.keys(state.equipped || {}).length ? `You have <b>${Object.keys(state.equipped).length}</b> items saved.` : 'Save what you\'re wearing so the app can compare.'} In game, hover each equipped item, press the hotkey and click <b>Set as …</b> in the popup.`}</p>
       <p class="help">The <b>My gear</b> tab shows a checklist.${state.pobOn ? '' : ' Without a Path of Building build, also type your resistances from the character sheet there.'}</p>`,
   },
   {
     title: "You're set",
-    body: () => `<p>Try it: hover an item in game and press <b>${esc((state.hotkeyStatus && state.hotkeyStatus.accelerator) || state.settings.hotkey || 'F2')}</b>.</p>
+    body: () => `<p>Try it now: hover an item in game and press <b>${esc((state.hotkeyStatus && state.hotkeyStatus.accelerator) || state.settings.hotkey || 'F2')}</b>.</p>
+      <div class="note" id="wizLive"><span class="spinner"></span> Waiting for your first item…</div>
       <ul><li><b>Find upgrades</b> searches the trade site and shows listings scored for your build.</li><li><b>What's it worth?</b> prices loot.</li><li>Set your price range and stats to ignore on the <b>Find upgrades</b> page.</li></ul>`,
   },
 ];
+// the last step waits for a real hotkey press and says it worked
+let wizLiveHooked = false;
+function hookWizLive() {
+  if (wizLiveHooked) return; wizLiveHooked = true;
+  window.api.onItemCopied((info) => { const el = document.getElementById('wizLive'); if (el) { el.className = 'ok-line'; el.textContent = `✓ It works: ${(info && info.name) || 'your item'} was checked. You're all set.`; } });
+}
 function renderWiz() {
+  hookWizLive();
   const st = WIZ[wizStep];
   $('#wizTitle').textContent = st.title;
   $('#wizBody').innerHTML = st.body();
@@ -948,10 +965,35 @@ $('#pobImport').addEventListener('click', async () => {
   $('#pobMsg').textContent = r.ok ? r.message : r.error;
   if (r.ok) { $('#pobInput').value = ''; await load(); renderPob(false); }
 });
+$('#pobLinkFile').addEventListener('click', async () => {
+  $('#pobMsg').textContent = 'Pick your build file…';
+  const r = await window.api.linkPobFile();
+  $('#pobMsg').textContent = r.canceled ? '' : r.ok ? r.message : r.error;
+  if (r.ok) { await load(); renderPob(false); }
+});
+// the linked build (pobb.in or a PoB file): read it again, or stop following it
+async function renderPobSource() {
+  const el = $('#pobSource');
+  const src = await window.api.pobSource();
+  if (!src) { el.innerHTML = ''; return; }
+  const when = src.at ? ` · read ${new Date(src.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : '';
+  el.innerHTML = (src.type === 'file'
+    ? `Following <b>${esc(src.name)}</b>: saving it in Path of Building updates this character${when}.`
+    : `From <b>${esc(src.name.replace(/^https?:\/\//, ''))}</b>${when}.`)
+    + ` <button class="link" id="pobSyncNow">Update now</button> <button class="link" id="pobUnlink">Unlink</button>`;
+  $('#pobSyncNow').addEventListener('click', async () => {
+    $('#pobMsg').textContent = 'Reading your build again…';
+    const r = await window.api.syncPob();
+    $('#pobMsg').textContent = r.ok ? r.message : r.error;
+    if (r.ok && !r.same) { await load(); renderPob(false); } else renderPobSource();
+  });
+  $('#pobUnlink').addEventListener('click', async () => { await window.api.unlinkPob(); $('#pobMsg').textContent = 'Unlinked: your build stays as it is.'; renderPobSource(); });
+}
 const kfmt = (v) => (v == null ? '–' : v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e4 ? Math.round(v / 1000) + 'k' : Math.round(v).toLocaleString('en'));
 async function renderPob(load) {
   const el = $('#pobStatus');
   renderPriorities();
+  renderPobSource();
   $('#pobUse').checked = state.settings.usePob !== false;
   // the slider goes from Damage (left) to Survivability (right): its value is the survivability share
   $('#pobBalance').value = Math.round((1 - (state.settings.pobDamageWeight == null ? 0.6 : state.settings.pobDamageWeight)) * 100);
@@ -986,6 +1028,14 @@ function renderModeHints() {
     fg.title = state.pobOn ? 'Path of Building builds the search from your build, then checks every listing with it' : 'Listings that score higher for your build (gear score)';
   }
   document.querySelectorAll('.gs-fallback-note').forEach((e) => e.classList.toggle('hidden', !state.pobOn));
+  // Path of Building knows your resistances: the boxes to type them in only matter without it
+  $('#resCard').classList.toggle('hidden', !!state.pobOn);
+  // with a build loaded, verdicts come from Path of Building: the gear score tools fold away (still there)
+  if (foldedFor !== !!state.pobOn) {
+    foldedFor = !!state.pobOn;
+    for (const id of ['gsEditorFold', 'weightsFold']) { const d = document.getElementById(id); if (d) d.open = !state.pobOn; }
+  }
+  document.querySelectorAll('.fold-why').forEach((e) => e.classList.toggle('hidden', !state.pobOn));
   // stat weights are only used when you score by your own weights
   const wc = $('#weightsCard'); if (wc) wc.classList.toggle('hidden', state.settings.build !== 'off');
   $('#gsExplain').innerHTML = window.gearExplainHtml({ where: 'gear score editor on this page', pobOn: state.pobOn, game: state.game });
@@ -1117,3 +1167,9 @@ window.showGearHelp = () => {
   setTimeout(() => $('#gsExplainCard').scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
 };
 document.querySelectorAll('.page-head .gs-help').forEach((b) => b.addEventListener('click', () => window.showGearHelp()));
+
+// Watchlist: saved searches and alerts, or recent searches
+document.querySelectorAll('[data-watch]').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-watch]').forEach((x) => x.classList.toggle('active', x === b));
+  document.querySelectorAll('.watch-pane').forEach((p) => p.classList.toggle('hidden', p.dataset.pane !== b.dataset.watch));
+}));

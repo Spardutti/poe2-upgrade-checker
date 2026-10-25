@@ -589,6 +589,8 @@ end
 -- (every group that uses it): what it changes. { name, level, quality } -> { before, hits = { {group, level, quality, after} } }
 local function gemCheck(req)
   local want = tostring(req.name or ""):lower()
+  -- the game calls supports "Impale Support"; Path of Building calls them "Impale"
+  local wantShort = want:gsub("%s+support$", "")
   if want == "" then return { ok = false, error = "no gem" } end
   local calcFunc, base = build.calcsTab:GetMiscCalculator()
   local hits = {}
@@ -597,7 +599,7 @@ local function gemCheck(req)
       for _, gem in ipairs(g.gemList or {}) do
         local ge = gem.grantedEffect or (gem.gemData and gem.gemData.grantedEffect)
         local nm = (gem.gemData and gem.gemData.name) or gem.nameSpec or (ge and ge.name)
-        if nm and tostring(nm):lower() == want and gem.enabled ~= false then
+        if nm and (tostring(nm):lower() == want or tostring(nm):lower() == wantShort) and gem.enabled ~= false then
           local oldL, oldQ = gem.level, gem.quality
           if req.level then gem.level = req.level end
           if req.quality then gem.quality = req.quality end
@@ -609,6 +611,51 @@ local function gemCheck(req)
     end
   end
   return { ok = true, before = pick(base), hits = hits }
+end
+
+-- anoint (PoE1) / instill (PoE2): every notable that can go on an amulet, tried in place of the amulet's
+-- current one (as Path of Building's own anoint list does). Notables already on your tree are skipped.
+--   { seconds = 40 } -> { before, now = { "Name" }, results = { {name, stats, recipe, after} }, checked, total }
+local function anointCheck(req)
+  local slot = build.itemsTab.slots["Amulet"]
+  local cur = slot and slot.selItemId and build.itemsTab.items[slot.selItemId]
+  -- no amulet in the build: a plain one, so the notables still compare
+  local raw = cur and cur:BuildRaw() or "Rarity: NORMAL\nGold Amulet\n"
+  if not cur then cur = makeItem(raw) end
+  if not cur then return { ok = false, error = "Your build has no amulet." } end
+  local function anointed(node)
+    local item = makeItem(raw)
+    if not item then return nil end
+    local keep = {}
+    for _, l in ipairs(item.enchantModLines or {}) do if not tostring(l.line or ""):match("^Allocates ") then keep[#keep + 1] = l end end
+    item.enchantModLines = keep
+    if node then table.insert(item.enchantModLines, 1, { enchant = true, line = "Allocates " .. node.dn }) end
+    item:BuildAndParseRaw()
+    return item
+  end
+  local now = {}
+  for _, l in ipairs(cur.enchantModLines or {}) do local n = tostring(l.line or ""):match("^Allocates (.+)$"); if n then now[#now + 1] = n end end
+  local calcFunc = build.calcsTab:GetMiscCalculator()
+  local bare = anointed(nil)
+  if not bare then return { ok = false, error = "Path of Building couldn't read your amulet." } end
+  local okb, base = pcall(calcFunc, { repSlotName = "Amulet", repItem = bare })
+  if not okb then return { ok = false, error = tostring(base) } end
+  local list, checked, total = {}, 0, 0
+  local deadline = os.clock() + (tonumber(req.seconds) or 40)
+  local alloc = build.spec.allocNodes or {}
+  for id, node in pairs(build.spec.tree.nodes or {}) do
+    if node.recipe and #node.recipe >= 1 and node.dn and node.modKey ~= "" and not alloc[id] then
+      total = total + 1
+      if os.clock() < deadline then
+        checked = checked + 1
+        local item = anointed(node)
+        local ok, o = false, nil
+        if item then ok, o = pcall(calcFunc, { repSlotName = "Amulet", repItem = item }) end
+        if ok then list[#list + 1] = { name = node.dn, stats = node.sd, recipe = node.recipe, after = pick(o) } end
+      end
+    end
+  end
+  return { ok = true, before = pick(base), now = now, results = list, checked = checked, total = total, noAmulet = not (slot and slot.selItemId and build.itemsTab.items[slot.selItemId]) }
 end
 
 -- PoE1 boss check: Path of Building's boss skill presets (Configuration → Boss Skill Preset) at the
@@ -799,6 +846,8 @@ while true do
       return summary()
     elseif req.cmd == "bosscheck" then
       return bossCheck(req)
+    elseif req.cmd == "anoints" then
+      return anointCheck(req)
     elseif req.cmd == "gemcheck" then
       return gemCheck(req)
     elseif req.cmd == "affixes" then

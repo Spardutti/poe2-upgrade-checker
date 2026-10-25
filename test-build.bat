@@ -23,7 +23,7 @@ if errorlevel 1 (
   call npm test >test-results.txt 2>&1 || (echo Some tests failed - see test-results.txt & pause & exit /b 1)
 )
 echo Building the test .exe...
-call npx --yes electron-builder@25.1.8 --win portable --publish never -c.portable.artifactName=PoE-Upgrade-Checker-TEST.exe || (echo Build failed - see the messages above. & pause & exit /b 1)
+call npx --yes electron-builder@26.18.0 --win portable --publish never -c.portable.artifactName=PoE-Upgrade-Checker-TEST.exe || (echo Build failed - see the messages above. & pause & exit /b 1)
 echo.
 echo Done: dist\PoE-Upgrade-Checker-TEST.exe - starting it now.
 start "" "dist\PoE-Upgrade-Checker-TEST.exe"

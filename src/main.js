@@ -21,6 +21,77 @@ const { Store } = require('./core/store');
 const { SLOTS, MAIN_SLOTS, SLOT_GROUPS, WEAKEST_OF, groupOf } = require('./core/slots');
 const { KeySender } = require('./keysender');
 
+// ---------- network: nothing waits forever ----------
+// Every request the app makes gives up after 20 seconds (unless it brings its own limit), so a server
+// that never answers can't leave a spinner up for good.
+{
+  const realFetch = net.fetch.bind(net);
+  net.fetch = async (url, opts = {}) => {
+    if (opts.signal) return realFetch(url, opts);
+    try { return await realFetch(url, { ...opts, signal: AbortSignal.timeout(20000) }); } catch (err) {
+      if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) { let host = ''; try { host = new URL(String(url)).hostname; } catch (_) { /* ignore */ } throw new Error(`${host || 'The server'} didn't answer within 20 seconds`); }
+      throw err;
+    }
+  };
+}
+// a page step (load or script) that might never finish
+const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} timed out`)), ms))]);
+
+// ---------- window safety ----------
+// The app's own windows only ever show its own pages (src/ui), and only those pages may talk to the
+// app (IPC): a link or file dropped on a window can't turn it into a website with the app's API.
+// The pathofexile.com windows (sign-in, the hidden trade page) stay on pathofexile.com and its sign-in
+// providers, and get no browser permissions (camera, clipboard, notifications...).
+const UI_DIR = path.join(__dirname, 'ui');
+function isAppPage(url) {
+  try {
+    if (!/^file:/i.test(String(url))) return false;
+    const f = path.normalize(require('url').fileURLToPath(String(url).split(/[?#]/)[0]));
+    return f.startsWith(UI_DIR + path.sep);
+  } catch (_) { return false; }
+}
+const POE_HOSTS = /(^|\.)(pathofexile\.com|steamcommunity\.com|steampowered\.com|epicgames\.com|live\.com|microsoftonline\.com|xbox\.com|playstation\.com|sony\.com|sonyentertainmentnetwork\.com|google\.com|apple\.com)$/i;
+function isPoeLoginUrl(url) {
+  try { const u = new URL(url); return u.protocol === 'https:' && POE_HOSTS.test(u.hostname); } catch (_) { return false; }
+}
+const PARTITION_POE = 'persist:poe'; // = POE_PARTITION below
+function guardContents(wc) {
+  const poe = () => { try { return wc.session === require('electron').session.fromPartition(PARTITION_POE); } catch (_) { return false; } };
+  wc.on('will-navigate', (e, url) => {
+    if (poe() ? isPoeLoginUrl(url) : isAppPage(url)) return;
+    e.preventDefault();
+    // a link the player clicked in the (visible) sign-in window: their browser, not this app
+    if (poe() && /^https:\/\//i.test(url)) { try { const w = BrowserWindow.fromWebContents(wc); if (w && w.isVisible()) shell.openExternal(url); } catch (_) { /* ignore */ } }
+  });
+  wc.on('will-redirect', (e, url) => { if (poe() ? !isPoeLoginUrl(url) && !/^https:\/\//i.test(url) : !isAppPage(url)) e.preventDefault(); });
+  wc.setWindowOpenHandler(({ url }) => {
+    if (poe() && isPoeLoginUrl(url)) wc.loadURL(url); // a sign-in provider opening in a new window: same window instead
+    return { action: 'deny' };
+  });
+  wc.on('will-attach-webview', (e) => e.preventDefault());
+}
+app.on('web-contents-created', (_e, wc) => guardContents(wc));
+app.whenReady().then(() => {
+  const { session } = require('electron');
+  for (const ses of [session.defaultSession, session.fromPartition(PARTITION_POE)]) {
+    ses.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+    ses.setPermissionCheckHandler(() => false);
+  }
+});
+// every IPC message must come from one of the app's own pages
+for (const k of ['handle', 'handleOnce', 'on', 'once']) {
+  const orig = ipcMain[k].bind(ipcMain);
+  ipcMain[k] = (channel, fn) => orig(channel, (e, ...args) => {
+    const url = e && e.senderFrame ? e.senderFrame.url : '';
+    if (!isAppPage(url)) {
+      try { log(`ipc ${channel}: refused, not from the app's own page`); } catch (_) { /* ignore */ }
+      if (k.startsWith('handle')) throw new Error('Not allowed.');
+      return undefined;
+    }
+    return fn(e, ...args);
+  });
+}
+
 // Linux: run through X11 (XWayland on Wayland desktops). Global hotkeys, putting the popup at the
 // mouse and sending Ctrl+C to the game (an X11 window under Proton) all need it.
 if (process.platform === 'linux') app.commandLine.appendSwitch('ozone-platform', 'x11');
@@ -153,7 +224,7 @@ function pobOverrides() {
 }
 function pobOn() { return store.settings.usePob !== false && pobEngine().available() && !!pobXml(); }
 let pobSheetGen = 0; // bumped whenever build or gear changes, so the Character page recalculates
-function pobSync() { pobQueries.clear(); pobSheetGen++; if (pobOn()) pobEngine().setBuild(pobXml(), pobOverrides()); }
+function pobSync() { pobQueries.clear(); pobSheetGen++; if (pobOn()) pobEngine().setBuild(pobXml(), pobOverrides()); else if (pobEngine().available()) pobEngine().setBuild(null); } // no build: never keep the last character's
 // each game has its own priorities (store GAME_KEYS); in PoE1 chaos resistance counts by default
 const pobPriorities = () => ({ ...pobVerdict.DEFAULT_PRIORITIES, ...(tg() === 'poe1' ? { chaos: true } : {}), ...(store.settings.priorities || {}) });
 // Chaos Inoculation (seen in your PoB build) makes chaos resistance irrelevant
@@ -176,6 +247,11 @@ async function pobJudge(list) {
     if (x.item.slot === 'Flask') { req.push({ slot: 'Flask', text }); idx.push([i, 'Flask']); return; }
     // PoE1: a third ring slot (The Unseen Hand) when your build has a ring there
     if (tg() === 'poe1' && x.item.slot === 'Ring' && (((pobEngine().info() || {}).gear) || {})['Ring 3']) { req.push({ slot: 'Ring 3', text }); idx.push([i, 'Ring 3']); }
+    // dual wielding: a one-hand weapon is also tried in place of the weapon in your other hand
+    if (x.item.slot === 'Weapon' && !x.item.twoHanded && !x.slot) {
+      const off = store.equipped.Offhand;
+      if (off && !off.twoHanded && require('./core/slots').slotForClass(off.itemClass) === 'Weapon') { req.push({ slot: 'Weapon 2', text }); idx.push([i, 'Offhand']); }
+    }
     const group = x.item.slot && SLOT_GROUPS[x.item.slot];
     const slots = group && group.every((g) => pobVerdict.SLOT_TO_POB[g]) ? group : [x.slot || x.item.slot];
     for (const sl of slots) { const ps = pobVerdict.SLOT_TO_POB[sl]; if (ps) { req.push({ slot: ps, text }); idx.push([i, sl]); } }
@@ -304,6 +380,7 @@ function poe1Unjudged(item, slot) {
 // can Path of Building judge this item? (charms and flasks use the gear score)
 function pobCanJudge(item, slot) {
   if (!item) return false;
+  if (item.unidentified) return false; // its mods are hidden: any verdict would only be about the base
   if (tg() === 'poe1' && (isClusterJewel(item) || isTimelessJewel(item))) return false;
   if (item.slot === 'Flask') return tg() === 'poe1';
   if (item.slot === 'Jewel' || /^Jewel \d$/.test(slot || '')) return true;
@@ -577,6 +654,8 @@ function evaluate(item) {
     const why = poe1Unjudged(item, r.targetSlot);
     if (why) { r.verdict = 'unjudged'; r.unjudged = why; r.delta = null; r.pct = null; }
   }
+  // unidentified: the mods are hidden, so there's nothing honest to say about it for your build yet
+  if (item.unidentified && !r.isEquipped) { r.verdict = 'unjudged'; r.delta = null; r.pct = null; r.unjudged = 'Unidentified: its mods are hidden. Identify it, then press the hotkey again.'; }
   return r;
 }
 
@@ -599,7 +678,7 @@ function createPopup() {
   popup = new BrowserWindow({
     width: 400, height: 300, show: false, frame: false, resizable: false,
     transparent: true, backgroundColor: '#00000000',
-    alwaysOnTop: true, skipTaskbar: true, focusable: false, hasShadow: false,
+    alwaysOnTop: true, skipTaskbar: true, focusable: false, hasShadow: false, roundedCorners: false,
     webPreferences: {
       preload, contextIsolation: true, nodeIntegration: false, sandbox: true,
       backgroundThrottling: false,
@@ -717,9 +796,11 @@ function revealPopup(height) {
 
 let popupItem = null;
 let popupSeq = 0; // bumped by every new render; a late PoB answer for an older one is dropped
+let popupResult = null; // the comparison on show (a refresh replaces it; its price carries over)
 function showResult(result) {
   const seq = ++popupSeq;
   popupItem = result && result.item ? recentItems.get(result.item.id) || result.item : null;
+  popupResult = result;
   if (!popup) createPopup();
   pendingShow = true; // every new copy re-positions the popup at the cursor
   const withPob = result && result.ok && result.kind !== 'price' && result.kind !== 'map' && !result.isEquipped && result.item && pobOn() && pobCanJudge(result.item, result.targetSlot);
@@ -740,9 +821,14 @@ function showResult(result) {
   // uniques: poe.ninja's price next to the verdict
   if (result && result.ok && result.kind !== 'price' && result.item && /unique/i.test(result.item.rarity || '')) {
     const item = popupItem;
-    ninjaPrice(result.item).then((p) => { if (p) { result.ninja = p; result.sellNote = ninjaLib.sellNote(p); } })
-      .catch((err) => log('poe.ninja: ' + err.message))
-      .then(() => { if (result.ninja && seq === popupSeq && popupItem === item && popup && !popup.isDestroyed() && popup.isVisible()) popup.webContents.send('popup:result', serialise(result)); });
+    ninjaPrice(result.item).then((p) => {
+      if (!p) return;
+      result.ninja = p; result.sellNote = ninjaLib.sellNote(p);
+      // a refresh (setting changed, gear set...) may have replaced the comparison meanwhile: price that one
+      const shown = popupItem === item ? popupResult : null;
+      if (shown && shown !== result) { shown.ninja = p; shown.sellNote = result.sellNote; }
+      if (shown && popup && !popup.isDestroyed() && popup.isVisible()) popup.webContents.send('popup:result', serialise(shown === result ? result : { ...shown, keepState: true }));
+    }).catch((err) => log('poe.ninja: ' + err.message));
   }
   // Renderer replies with its height via popup:resize; show anyway if it doesn't.
   clearTimeout(showFallback);
@@ -838,6 +924,7 @@ ipcMain.handle('game:choose', (_e, game) => {
 let shownGame = null;
 function gameChanged() {
   const game = tg();
+  watchBuildFile();
   if (game === shownGame) { pobSync(); refreshAll(); buildTrayMenu(); return; }
   const from = shownGame; shownGame = game;
   store.data.lastGame = game;
@@ -852,10 +939,16 @@ function gameChanged() {
   log(`now on ${G(game).short}${from ? ` (was ${G(from).short})` : ''}`);
 }
 
+// The clipboard is asynchronous from Electron 44 on (readText/writeText return Promises); these also
+// work with the older, synchronous one. Never throw: a busy clipboard reads as empty.
+async function clipRead() { try { return String((await clipboard.readText()) || ''); } catch (_) { return ''; } }
+let clipWrites = 0; // writes still landing: the poller mustn't mistake the old text for a new copy
+async function clipWrite(text) { clipWrites++; try { await clipboard.writeText(String(text)); return true; } catch (_) { return false; } finally { clipWrites--; } }
+
 function handleItemText(text, source, sent) {
   const item = parseItem(text);
   if (!item) {
-    log(`${source}: clipboard is not item text: ${JSON.stringify(String(text).slice(0, 80))}`);
+    log(`${source}: clipboard is not item text (${String(text).length} characters)`); // never log what you copied: it may be private
     return false;
   }
   const game = followGame(text, sent);
@@ -872,12 +965,11 @@ function handleItemText(text, source, sent) {
   if ((game || store.activeGame()) === 'poe1' && isFlaskClass(item)) item.slot = 'Flask';
   // Tag the clipboard so copying the same item again still counts as a change.
   // (Just a trailing line break; pasting into the trade site / PoB is unaffected.)
-  try { const tagged = text.endsWith(TAG) ? text : text + TAG; clipboard.writeText(tagged); lastClip = tagged; } catch (_) { lastClip = text; }
+  { const tagged = text.endsWith(TAG) ? text : text + TAG; lastClip = tagged; clipWrite(tagged).then((ok) => { if (!ok && lastClip === tagged) lastClip = text; }); }
   if (!item.slot && source === 'clipboard') {
     // you copied currency, a gem, a map... with plain Ctrl+C: no popup
     log(`clipboard: ${item.itemClass} "${item.name}" – not gear, no popup`);
-    lastClip = text;
-    return true;
+    return true; // (lastClip already holds the tagged text: the next poll mustn't see it as a new copy)
   }
   remember(item);
   store.noteStats(item);
@@ -892,11 +984,13 @@ function handleItemText(text, source, sent) {
 }
 
 // Passive mode: notice when you press Ctrl+C in game yourself.
-function pollClipboard() {
-  if (!store || hotkeyBusy || store.settings.paused || store.settings.watchClipboard === false) return;
+let polling = false; let clipReady = false;
+async function pollClipboard() {
+  if (!store || !clipReady || polling || clipWrites || hotkeyBusy || store.settings.paused || store.settings.watchClipboard === false) return;
+  polling = true;
   let text;
-  try { text = clipboard.readText(); } catch (_) { return; }
-  if (!text || text === lastClip) return;
+  try { text = await clipRead(); } finally { polling = false; }
+  if (hotkeyBusy || clipWrites || !text || text === lastClip) return; // the hotkey started while we were reading: it handles it
   lastClip = text;
   if (/^Item Class:/i.test(text.trim())) handleItemText(text, 'clipboard');
 }
@@ -915,7 +1009,7 @@ function noItemReason(sent, text) {
   if (/hotkey-held/.test(s) && !text) return `${hk} was still held down when the copy was sent, so the game didn't see it. Tap ${hk} (press and let go quickly) while hovering the item.`;
   if (isMe(over)) return `Your mouse was over this app's window, not the game. Hover the item in game, then press ${hk}.`;
   if (/refocus-failed/.test(s) || (fg && !isGame(fg) && fg !== '?')) {
-    return `${G(store.data.lastGame || tg()).name} wasn't the active window${fg && fg !== '?' ? ` (${isMe(fg) ? 'this app' : fg} was)` : ''}, so the copy went there. Click once in the game, then press ${hk} again.`;
+    return `${G(store.data.lastGame || tg()).name} wasn't the active window${fg && fg !== '?' ? ` (${isMe(fg) ? 'this app' : fg} was)` : ''}, so nothing was copied (the app only presses Ctrl+C in the game). Click once in the game, then press ${hk} again.`;
   }
   if (over && !isGame(over) && over !== '?') return `Your mouse wasn't over the game (it was over ${over}). Hover the item in game, then press ${hk}.`;
   if (text) return 'That wasn\'t an item (the game copied something else). Hover an item so its tooltip shows, then press the hotkey.';
@@ -929,14 +1023,13 @@ async function onHotkey() {
   hotkeyBusy = true;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let before = '';
-  try { before = clipboard.readText(); } catch (_) { /* ignore */ }
+  before = await clipRead();
   try {
-    clipboard.writeText('');
+    await clipWrite('');
     const waitForText = async (ms) => {
       for (let t = 0; t < ms; t += 25) {
         await sleep(25);
-        let v = '';
-        try { v = clipboard.readText(); } catch (_) { v = ''; }
+        const v = await clipRead();
         if (v) return v;
       }
       return '';
@@ -961,7 +1054,7 @@ async function onHotkey() {
     }
     if (text && handleItemText(text, 'hotkey', sent)) return;
     // Nothing copied: put the old clipboard back and say why.
-    try { clipboard.writeText(before || ''); } catch (_) { /* ignore */ }
+    await clipWrite(before || '');
     lastClip = before || '';
     log(`hotkey: no item text (${sent ? `sent: ${sent}` : 'not sent'}, got ${text ? 'non-item text' : 'nothing'})`);
     showResult({ ok: false, reason: noItemReason(sent, text) });
@@ -1046,6 +1139,9 @@ function refreshAll() {
   if (popupItem && popupItem.slot && popup && popup.isVisible()) {
     const r = evaluate(popupItem);
     const seq = ++popupSeq;
+    // the unique's poe.ninja price stays (it doesn't depend on your settings)
+    if (popupResult && popupResult.item && r && r.item && popupResult.item.id === r.item.id) { r.ninja = popupResult.ninja; r.sellNote = popupResult.sellNote; }
+    popupResult = r;
     const withPob = r && r.ok && !r.isEquipped && pobOn() && pobCanJudge(popupItem, r.targetSlot);
     if (withPob) r.pobPending = true;
     popup.webContents.send('popup:result', serialise({ ...r, keepState: true }));
@@ -1139,15 +1235,20 @@ ipcMain.handle('resists:set', (_e, r) => {
 
 // ---------- Path of Building import ----------
 const pobLib = require('./core/pob');
-ipcMain.handle('pob:import', async (_e, input) => {
+// opts.source: where the build came from, kept so it can be read again later
+// ({ type: 'pobbin', url } or { type: 'file', path }); opts.sync: an update of the same build
+async function importBuild(input, opts = {}) {
   try {
     let code = String(input || '').trim();
     if (!code) return { ok: false, error: 'Paste a PoB code or a pobb.in link first.' };
     const raw = pobLib.pobbinRawUrl(code);
+    let source = opts.source || null;
     if (raw) {
+      if (!source) source = { type: 'pobbin', url: code };
       const res = await net.fetch(raw, { headers: { 'User-Agent': UA } });
       if (!res.ok) return { ok: false, error: `pobb.in said ${res.status} – check the link.` };
       code = (await res.text()).trim();
+      if (code.length > 10 * 1024 * 1024) return { ok: false, error: "That pobb.in page is too big to be a build." };
     } else if (/^https?:/i.test(code)) {
       return { ok: false, error: 'Only pobb.in links can be read directly – for other sites, copy the export code instead.' };
     }
@@ -1156,6 +1257,7 @@ ipcMain.handle('pob:import', async (_e, input) => {
     // the build says which game this character is for. A build for the other game goes into a new
     // character, unless this one is still empty.
     const bg = gamesLib.gameFromPobXml(xml);
+    if (opts.sync && bg && bg !== tg()) return { ok: false, error: `That build is now for ${G(bg).short}: import it again to make a new character for it.` };
     // checked before anything changes: a build without gear mustn't leave you on a new, empty character
     if (!Object.keys(r.items).length) return { ok: false, error: 'No equipped items found in that build. Put your gear on the character in Path of Building (Items tab), export it again and paste it here.' };
     let newChar = null;
@@ -1211,11 +1313,77 @@ ipcMain.handle('pob:import', async (_e, input) => {
       } catch (err) { engine = { ok: false, error: err.message }; log('pob: ' + err.message); }
     }
     if (newChar) { notifySettings('settings:changed'); buildTrayMenu(); }
+    store.setBuildSource(source ? { ...source, at: Date.now() } : null);
+    watchBuildFile();
     return { ok: true, message, slots, engine, newCharacter: newChar };
   } catch (err) {
     log('pob import failed: ' + (err.stack || err));
     return { ok: false, error: err.message || String(err) };
   }
+}
+ipcMain.handle('pob:import', (_e, input) => importBuild(input));
+
+// ---------- keeping the build up to date ----------
+// A pobb.in link can be read again with one click. A build file you save from Path of Building
+// (your own file, picked by you) is watched: when PoB saves it, the app imports it again.
+const MAX_BUILD_FILE = 20 * 1024 * 1024;
+function readBuildFile(file) {
+  const st = fs.statSync(file);
+  if (!st.isFile()) throw new Error("That isn't a file.");
+  if (st.size > MAX_BUILD_FILE) throw new Error('That file is too big to be a Path of Building build.');
+  const xml = fs.readFileSync(file, 'utf8');
+  if (!/<PathOfBuilding2?[\s>]/.test(xml)) throw new Error("That file isn't a Path of Building build.");
+  return xml;
+}
+let buildWatch = null; let buildWatchTimer = null;
+function watchBuildFile() {
+  if (buildWatch) { try { buildWatch.close(); } catch (_) { /* ignore */ } buildWatch = null; }
+  const src = store.buildSource();
+  if (!src || src.type !== 'file' || !src.path) return;
+  const file = src.path;
+  try {
+    // the folder is watched, not the file: PoB saves by replacing it
+    buildWatch = fs.watch(path.dirname(file), (_ev, name) => {
+      if (name && path.basename(String(name)) !== path.basename(file)) return;
+      clearTimeout(buildWatchTimer);
+      buildWatchTimer = setTimeout(() => syncBuild('file changed').catch((err) => log('build sync: ' + err.message)), 1500);
+    });
+    buildWatch.on('error', (err) => log('build file watch: ' + err.message));
+  } catch (err) { log('build file watch: ' + err.message); }
+}
+async function syncBuild(why) {
+  const src = store.buildSource();
+  if (!src) return { ok: false, error: 'This character has no linked build.' };
+  const profile = store.data.activeProfile;
+  let input;
+  if (src.type === 'file') {
+    let xml;
+    try { xml = readBuildFile(src.path); } catch (err) { return { ok: false, error: `Couldn't read ${path.basename(src.path)}: ${err.code === 'ENOENT' ? 'the file is gone' : err.message}` }; }
+    if (xml.trim() === (pobXml() || '').trim()) return { ok: true, same: true, message: 'Your build is already up to date.' };
+    input = xml;
+  } else if (src.type === 'pobbin') input = src.url;
+  else return { ok: false, error: 'This character has no linked build.' };
+  const r = await importBuild(input, { source: src, sync: true });
+  if (store.data.activeProfile !== profile) return r;
+  log(`build sync (${why}): ${r.ok ? r.message : r.error}`);
+  if (r.ok) notifySettings('settings:changed');
+  return r;
+}
+ipcMain.handle('pob:sync', () => syncBuild('asked'));
+ipcMain.handle('pob:source', () => { const s = store.buildSource(); return s ? { type: s.type, name: s.type === 'file' ? path.basename(s.path) : s.url, at: s.at || null } : null; });
+ipcMain.handle('pob:unlink', () => { store.setBuildSource(null); watchBuildFile(); return true; });
+ipcMain.handle('pob:linkFile', async () => {
+  const { dialog } = require('electron');
+  const docs = path.join(app.getPath('documents'), 'Path of Building', 'Builds');
+  const pick = await dialog.showOpenDialog(settingsWin && !settingsWin.isDestroyed() ? settingsWin : undefined, {
+    title: 'Pick your build file from Path of Building', defaultPath: fs.existsSync(docs) ? docs : app.getPath('documents'),
+    filters: [{ name: 'Path of Building build', extensions: ['xml'] }], properties: ['openFile'],
+  });
+  if (pick.canceled || !pick.filePaths.length) return { ok: false, canceled: true };
+  const file = pick.filePaths[0];
+  let xml;
+  try { xml = readBuildFile(file); } catch (err) { return { ok: false, error: err.message }; }
+  return importBuild(xml, { source: { type: 'file', path: file } });
 });
 
 // PoE1: a PoB export doesn't say what kind of weapon an item is; PoB itself knows
@@ -1307,7 +1475,7 @@ ipcMain.handle('strings:get', () => ({ game: tg(), resShort: resShort(), mapAvoi
 ipcMain.handle('strings:vendor', (_e, opts) => searchStr.vendor({ ...(opts || {}), game: tg() }));
 ipcMain.handle('strings:mapAvoid', (_e, keys) => {
   const r = searchStr.mapAvoid(avoidKeys(keys));
-  if (r.text) { try { clipboard.writeText(r.text); lastClip = r.text; } catch (_) { /* ignore */ } }
+  if (r.text) { lastClip = r.text; clipWrite(r.text); }
   return r;
 });
 // PoE1: how many hits of each Path of Building boss preset your character takes (Pinnacle and Uber)
@@ -1319,6 +1487,22 @@ ipcMain.handle('pob:bosscheck', async () => {
     const r = await pobEngine().bossCheck({});
     return { ok: true, skills: (r.skills || []).filter((x) => x.damageType !== 'DamageOverTime') };
   } catch (err) { log('boss check: ' + (err.message || err)); return { ok: false, error: err.message || String(err) }; }
+});
+// the best notables to anoint (PoE1, with oils) or instil (PoE2, with distilled emotions) on your amulet
+ipcMain.handle('pob:anoints', async () => {
+  if (!pobOn()) return { ok: false, error: 'Add your Path of Building build on My gear first.' };
+  try {
+    await pobEngine().ensureLoaded();
+    const r = await pobEngine().anointCheck({});
+    const now = new Set((r.now || []).map((x) => String(x).toLowerCase()));
+    const list = (r.results || []).map((x) => {
+      const j = pobVerdict.judge(r.before, x.after, pobWeights());
+      return j && { name: x.name, stats: (x.stats || []).slice(0, 6).map(String), recipe: (x.recipe || []).map(String), current: now.has(String(x.name).toLowerCase()),
+        score: j.score, verdict: j.verdict, dps: j.dps && j.dps.pct, ehp: j.ehp && j.ehp.pct, dpsKey: j.dpsKey, res: j.resGain, breaks: j.breaks };
+    }).filter(Boolean).sort((a, b) => (a.breaks.length - b.breaks.length) || (b.score - a.score));
+    const current = list.filter((x) => x.current);
+    return { ok: true, game: tg(), now: r.now || [], noAmulet: !!r.noAmulet, current, top: list.slice(0, 12), checked: r.checked, total: r.total };
+  } catch (err) { log('anoint check: ' + (err.message || err)); return { ok: false, error: err.message || String(err) }; }
 });
 ipcMain.handle('pob:status', async (_e, load) => {
   const eng = pobEngine();
@@ -1395,7 +1579,6 @@ ipcMain.handle('evaluate:text', (_e, text) => {
 
 ipcMain.on('open:settings', () => openSettings());
 ipcMain.on('open:tab', (_e, tab) => openTab(tab));
-ipcMain.on('open:file', (_e, f) => { const dir = app.getPath('userData'); if (typeof f === 'string' && path.resolve(f).startsWith(dir)) shell.showItemInFolder(f); });
 function openTab(tab) {
   const fresh = !(settingsWin && !settingsWin.isDestroyed());
   openSettings();
@@ -1682,7 +1865,7 @@ async function postSearch(league, body, game) {
 }
 
 // Same search, but sent from inside a (hidden) page on pathofexile.com, like the
-// trade site itself does. Gets past checks that block plain app requests.
+// trade site itself does. Only used when you've signed in to pathofexile.com in the app.
 let tradeWin = null;
 async function postSearchViaPage(league, body, game) {
   if (!tradeWin || tradeWin.isDestroyed()) {
@@ -1725,8 +1908,10 @@ async function runSearch(league, body, label, o = {}) {
   if (statusBroken[game] && body.query.status && body.query.status.option === 'available') body.query.status.option = 'online';
   log(`search ${label || ''} ${G(game).short} league=${league} body=${JSON.stringify(body)}`);
   const errors = []; let complex = 0;
-  // signed in, the trade site allows bigger searches: send it from the signed-in page first
-  const order = (await signedIn()) ? [['page', postSearchViaPage], ['app', postSearch]] : [['app', postSearch], ['page', postSearchViaPage]];
+  // signed in, the trade site allows bigger searches: send it from your signed-in page first. Not signed
+  // in, only the app's own request: when the trade site refuses it, that's its answer (we don't retry the
+  // same request through a hidden page to get around it)
+  const order = (await signedIn()) ? [['page', postSearchViaPage], ['app', postSearch]] : [['app', postSearch]];
   for (const [name, fn] of order) {
     if (!(await searchSlot(o.maxWait == null ? 30000 : o.maxWait))) {
       const w = Math.ceil(searchWait() / 1000);
@@ -1766,6 +1951,8 @@ async function runSearch(league, body, label, o = {}) {
 async function deliver(r, ctx) {
   if (!r.url || (r.total != null && r.total <= 0)) return r;
   if (r.game && r.game !== store.activeGame()) return SWITCHED(); // finished after you changed game
+  // the trade site didn't answer: offer the pre-filled link, never open a browser over the game by itself
+  if (r.fallback) return r;
   try { savedFeature.record(r, ctx); } catch (err) { log('history: ' + err.message); }
   const inApp = r.searchId && r.ids && r.ids.length;
   if (inApp) {
@@ -1808,7 +1995,7 @@ async function fetchViaPage(league, searchId, ids, game) {
       new Promise((_, rej) => setTimeout(() => rej(new Error('page load timed out')), 15000))]);
   }
   const url = trade.fetchUrl(ids, searchId, game);
-  const r = await tradeWin.webContents.executeJavaScript(`fetch(${JSON.stringify(url)}, { credentials: 'include', headers: { Accept: 'application/json' } }).then(async (x) => ({ status: x.status, json: await x.json().catch(() => ({})) }))`, true);
+  const r = await withTimeout(tradeWin.webContents.executeJavaScript(`fetch(${JSON.stringify(url)}, { credentials: 'include', headers: { Accept: 'application/json' } }).then(async (x) => ({ status: x.status, json: await x.json().catch(() => ({})) }))`, true), 20000, 'the trade page');
   if (!r || r.status !== 200 || !Array.isArray(r.json.result)) throw new Error(`HTTP ${r && r.status}`);
   return r.json.result;
 }
@@ -1820,11 +2007,12 @@ async function fetchListings(league, searchId, ids, game = tg()) {
     let got = null; let lastErr = null;
     const wait = fetchNextAt - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 60000)));
-    for (const fn of [fetchViaApp, fetchViaPage]) {
+    // through your signed-in page only when you've signed in (see runSearch)
+    for (const fn of (await signedIn()) ? [fetchViaApp, fetchViaPage] : [fetchViaApp]) {
       try { got = await fn(league, searchId, chunk, game); break; } catch (err) { lastErr = err; log(`fetch via ${fn.name} failed: ${err.message || err}`); if (err.rateLimited) break; }
     }
     if (!got) throw lastErr || new Error('fetch failed');
-    if (!loggedSample && got[0]) { loggedSample = true; log('fetch sample: ' + JSON.stringify(got[0]).slice(0, 1500)); }
+    if (!loggedSample && got[0]) { loggedSample = true; log('fetch sample: ' + JSON.stringify({ item: got[0].item, price: got[0].listing && got[0].listing.price }).slice(0, 1500)); } // not the seller's account or character
     out.push(...got.filter(Boolean));
   }
   return out;
@@ -1907,8 +2095,7 @@ function resultsPayload() {
   }));
 }
 
-async function loadMoreListings(count) {
-  const st = resultsState;
+async function loadMoreListings(count, st = resultsState) {
   const ids = st.r.ids.slice(st.next, st.next + count);
   if (!ids.length) return;
   const raw = await fetchListings(st.r.league, st.r.searchId, ids, st.r.game);
@@ -1946,21 +2133,25 @@ function bringUpResults() {
   }
 }
 
+let pendingResults = null; // a search whose listings are still loading
 async function showResults(r, ctx) {
   // the search's own game and rates: an open window keeps them when you change game
   r.game = r.game || tg();
   if (r.game !== store.activeGame()) return false; // you changed game: these aren't for this character
   const rates = { ...(store.settings.currencyRates || {}), ...(store.settings.divineRate ? { divine: store.settings.divineRate } : {}) };
-  resultsState = { r, ctx, listings: [], next: 0, signedIn: await signedIn(), rates, divineRate: store.settings.divineRate || null };
+  // the window keeps showing (and acting on) the last search until this one's listings are in
+  const st = { r, ctx, listings: [], next: 0, signedIn: await signedIn(), rates, divineRate: store.settings.divineRate || null };
+  pendingResults = st;
   try {
-    await loadMoreListings(ctx.mode === 'price' ? 40 : 20); // a price needs more than one page
+    await loadMoreListings(ctx.mode === 'price' ? 40 : 20, st); // a price needs more than one page
   } catch (err) {
     log('could not load listings, opening the browser instead: ' + (err.message || err));
     // an open results window still shows the last search: say this one failed, don't leave it looking current
     if (resultsWin && !resultsWin.isDestroyed()) resultsWin.webContents.send('results:data', { ...resultsPayload(), listings: [], error: `Couldn't load the listings (${err.message || err}) – opened the search in your browser instead.` });
     return false;
   }
-  if (r.game !== store.activeGame() || resultsState.r !== r) return false; // changed game (or searched again) while it loaded
+  if (r.game !== store.activeGame() || pendingResults !== st) return false; // changed game (or searched again) while it loaded
+  resultsState = st; pendingResults = null;
   if (!resultsWin || resultsWin.isDestroyed()) createResultsWindow();
   const send = () => resultsWin.webContents.send('results:data', resultsPayload());
   if (resultsWin.webContents.isLoading()) resultsWin.webContents.once('did-finish-load', send); else send();
@@ -2004,10 +2195,7 @@ function registerResultsHotkey() {
 }
 ipcMain.on('clipboard:write', (_e, text) => {
   if (typeof text !== 'string' || !text) return;
-  try { clipboard.writeText(text); lastClip = text; } catch (_) { /* ignore */ }
-});
-ipcMain.on('results:open', (_e, url) => {
-  if (trade.isTradePage(url)) shell.openExternal(url);
+  lastClip = text; clipWrite(text);
 });
 
 // ---------- divine -> exalted rate (poe.ninja) ----------
@@ -2292,7 +2480,7 @@ ipcMain.handle('trade:price', inGame(async (_e, target, picks) => {
   for (let level = 0; level < (chosen ? 1 : 3); level++) {
     q = trade.buildSimilarQuery(item, { ...opts, level });
     if (chosen) {
-      const c = trade.buildQuery(chosen.map((p) => ({ key: p.key, min: p.min, max: p.max, source: p.source, id: p.id, idType: p.idType })), { itemClass: item.itemClass, statIndex: d.index, filtersData: d.filters, preferLocal: armourOrWeapon, status: 'available' });
+      const c = trade.buildQuery(chosen.map((p) => ({ key: p.key, min: p.min, max: p.max, source: p.source, ...(typeof p.id === 'string' && /^[a-z]+\.[a-z0-9_]{1,80}$/.test(p.id) ? { id: p.id, idType: ['pseudo', 'explicit', 'implicit', 'enchant', 'rune', 'fractured', 'crafted'].includes(p.idType) ? p.idType : undefined } : {}) })), { itemClass: item.itemClass, statIndex: d.index, filtersData: d.filters, preferLocal: armourOrWeapon, status: 'available' });
       q.body.query.stats = c.body.query.stats;
       const eq = c.body.query.filters && c.body.query.filters.equipment_filters;
       if (eq) q.body.query.filters.equipment_filters = eq; else delete q.body.query.filters.equipment_filters;
@@ -2307,7 +2495,7 @@ ipcMain.handle('trade:price', inGame(async (_e, target, picks) => {
   }
   if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'Search failed.' };
   // the search itself failed (only a pre-filled link came back): open that rather than saying "nothing listed"
-  if (r.total == null) { if (r.url) shell.openExternal(r.url); return { ok: true, mode: 'price', total: null, league, item: item.name, url: r.url, opened: true, levelLabel: q.levelLabel }; }
+  if (r.total == null) return { ok: true, mode: 'price', total: null, league, item: item.name, url: r.url, fallback: true, levelLabel: q.levelLabel }; // a button, never a browser by itself
   if (!r.total) return { ok: true, mode: 'price', total: 0, league, item: item.name, url: r.url, levelLabel: q.levelLabel };
   const ctx = { item, mode: 'price', title: `Price check: ${item.name}`, body: q.body, searchKey: searchKey(q.body),
     note: `Listings like this one (${q.levelLabel}, ${q.need} of ${q.total} stats), cheapest first.` };
@@ -2429,9 +2617,9 @@ ipcMain.handle('trade:hideout', async (_e, listingId) => {
       l.hideoutToken = tok;
     }
     if (!tradeWin || tradeWin.isDestroyed()) tradeWin = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, partition: POE_PARTITION } });
-    if (!tradeWin.webContents.getURL().startsWith(trade.BASE)) await tradeWin.loadURL(trade.pageUrl(resultsState.r.game, resultsState.r.league));
+    if (!tradeWin.webContents.getURL().startsWith(trade.BASE)) await withTimeout(tradeWin.loadURL(trade.pageUrl(resultsState.r.game, resultsState.r.league)), 15000, 'the trade page');
     const js = `fetch('/api/${G(resultsState.r.game).trade.api}/whisper', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body: ${JSON.stringify(JSON.stringify({ token: l.hideoutToken }))} }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => ({})) }))`;
-    const r = await tradeWin.webContents.executeJavaScript(js, true);
+    const r = await withTimeout(tradeWin.webContents.executeJavaScript(js, true), 20000, 'the trade site');
     log(`hideout travel: HTTP ${r.status} ${JSON.stringify(r.json).slice(0, 200)}`);
     if (r.status === 200 && !(r.json && r.json.error)) return { ok: true };
     return { ok: false, error: (r.json && r.json.error && r.json.error.message) || `The trade site said ${r.status}.` };
@@ -2523,7 +2711,7 @@ app.whenReady().then(() => {
   store.onError = (err) => log('could not save settings: ' + err.message);
   if (store.loadError) setTimeout(() => log(`settings file couldn't be read (${store.loadError}); a copy was kept as poe2-upgrade-checker.json.unreadable-*`), 0);
   // Don't pop up for whatever happened to be on the clipboard at launch.
-  try { lastClip = clipboard.readText(); } catch (_) { lastClip = ''; }
+  clipRead().then((t) => { lastClip = t; clipReady = true; });
 
   tray = new Tray(nativeImage.createFromPath(ICON));
   tray.on('click', openSettings);
@@ -2544,6 +2732,7 @@ app.whenReady().then(() => {
   // the gear-score profile used to default to the Djinn summoner: keep it for people already using it
   if (!store.settings.build) store.setSetting('build', store.settings.wizardDone || Object.keys(store.equipped || {}).length ? 'djinn-varashta' : gearLib.DEFAULT_BUILD);
   pobSync();
+  watchBuildFile();
   // start Path of Building for the game you're on a little after launch, so the first F2 doesn't
   // wait for it to load (it still stops by itself after a while unused)
   if (store.settings.warmPob !== false) setTimeout(() => { if (pobOn()) pobEngine().ensureLoaded().then(() => log('pob: ready before the first F2')).catch((err) => log('pob warm-up: ' + err.message)); }, 6000);

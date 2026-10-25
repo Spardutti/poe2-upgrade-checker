@@ -30,7 +30,7 @@ const DEFAULT_WEIGHTS = {
 // each trade site's data). The active game's values live in settings as usual; the other game's
 // are kept in data.gameSettings and swapped in when you change game.
 // priorities too: chaos resistance matters in PoE1 by default, not in PoE2
-const GAME_KEYS = ['league', 'budget', 'leveling', 'noCorrupted', 'divineRate', 'divineRateAt', 'divineRateLeague', 'currencyRates', 'autoRate', 'priorities', 'pobSearchSize', 'gearSearchSize', 'tradeSearchSize'];
+const GAME_KEYS = ['league', 'budget', 'leveling', 'noCorrupted', 'usePob', 'divineRate', 'divineRateAt', 'divineRateLeague', 'currencyRates', 'autoRate', 'priorities', 'pobSearchSize', 'gearSearchSize'];
 const isObj = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
 
 class Store {
@@ -38,7 +38,7 @@ class Store {
     this.dir = dir;
     fs.mkdirSync(dir, { recursive: true });
     this.file = path.join(dir, 'poe2-upgrade-checker.json');
-    this.data = { weights: { ...DEFAULT_WEIGHTS }, equipped: {}, seenStats: {}, settings: { autoHideSeconds: 12, paused: false, hotkey: 'F2', watchClipboard: true, advancedCopy: false, autoRate: true, status: 'available' } };
+    this.data = { weights: { ...DEFAULT_WEIGHTS }, equipped: {}, seenStats: {}, settings: { autoHideSeconds: 12, paused: false, hotkey: 'F2', watchClipboard: true, advancedCopy: true, autoRate: true, status: 'available' } };
     // never start from defaults over a file that's only temporarily unreadable (antivirus at login):
     // retry, then keep the broken file aside instead of overwriting everyone's gear and settings
     if (fs.existsSync(this.file)) {
@@ -59,7 +59,7 @@ class Store {
         if (!isObj(this.data.equipped)) this.data.equipped = {};
         if (!isObj(this.data.seenStats)) this.data.seenStats = {};
         if (isObj(this.data.gameSettings)) for (const g of Object.keys(this.data.gameSettings)) if (!isObj(this.data.gameSettings[g])) delete this.data.gameSettings[g];
-        if (isObj(this.data.profiles)) for (const id of Object.keys(this.data.profiles)) if (!isObj(this.data.profiles[id])) delete this.data.profiles[id];
+        if (isObj(this.data.profiles)) for (const id of Object.keys(this.data.profiles)) if (!isObj(this.profileOf(id))) delete this.data.profiles[id];
       } else {
         try { fs.copyFileSync(this.file, `${this.file}.unreadable-${Date.now()}`); } catch (_) { /* ignore */ }
         this.loadError = lastErr ? lastErr.message : 'unreadable';
@@ -123,7 +123,7 @@ class Store {
   profileForGame(game) {
     const by = this.data.activeByGame || {};
     if (by[game] && this.data.profiles[by[game]] && this.data.profiles[by[game]].game === game) return by[game];
-    return Object.keys(this.data.profiles).find((id) => this.data.profiles[id].game === game) || null;
+    return Object.keys(this.data.profiles).find((id) => this.profileOf(id).game === game) || null;
   }
 
   // keep this game's settings aside and bring in the other game's
@@ -140,7 +140,7 @@ class Store {
   }
 
   setProfileGame(id, game) {
-    const p = this.data.profiles[id];
+    const p = this.profileOf(id);
     if (!p || !games.isGame(game) || p.game === game) return false;
     if (id === this.data.activeProfile) this.swapGameSettings(p.game || games.DEFAULT_GAME, game);
     p.game = game;
@@ -163,11 +163,23 @@ class Store {
     return Object.entries(this.data.profiles).map(([id, p]) => ({ id, name: p.name, game: p.game || games.DEFAULT_GAME, active: id === this.data.activeProfile }));
   }
 
+  // a character by id: only the store's own entries (never e.g. "__proto__")
+  profileOf(id) { return typeof id === 'string' && Object.prototype.hasOwnProperty.call(this.data.profiles || {}, id) ? this.data.profiles[id] : undefined; }
+
+  // where this character's build was imported from (a pobb.in link or a build file), so it can be read again
+  buildSource() { const p = this.profileOf(this.data.activeProfile); return (p && p.buildSource) || null; }
+  setBuildSource(src) {
+    const p = this.profileOf(this.data.activeProfile);
+    if (!p) return;
+    if (src) p.buildSource = src; else delete p.buildSource;
+    this.save();
+  }
+
   switchProfile(id) {
-    if (!this.data.profiles[id] || id === this.data.activeProfile) return false;
+    if (!this.profileOf(id) || id === this.data.activeProfile) return false;
     const cur = this.data.profiles[this.data.activeProfile];
     Object.assign(cur, this.snapshot());
-    const next = this.data.profiles[id];
+    const next = this.profileOf(id);
     this.swapGameSettings(cur.game || games.DEFAULT_GAME, next.game || games.DEFAULT_GAME);
     this.data.activeProfile = id;
     (this.data.activeByGame = this.data.activeByGame || {})[next.game || games.DEFAULT_GAME] = id;
@@ -183,7 +195,7 @@ class Store {
   createProfile(name, copyCurrent, game) {
     // unique even when two are made in the same millisecond (a new game's character, then another)
     let id = 'p' + Date.now().toString(36);
-    for (let k = 1; this.data.profiles[id]; k++) id = 'p' + Date.now().toString(36) + k;
+    for (let k = 1; this.profileOf(id); k++) id = 'p' + Date.now().toString(36) + k;
     const g = games.isGame(game) ? game : this.activeGame();
     // the gear score is for PoE2 builds; a new PoE2 character never inherits a PoE1 character's 'off'
     const build = g === 'poe1' ? 'off' : g === this.activeGame() ? (this.data.settings.build || DEFAULT_BUILD) : DEFAULT_BUILD;
@@ -196,21 +208,21 @@ class Store {
 
   // a character nobody has set up yet: no gear, default name (the PoB file is checked by the caller)
   isUntouched(id) {
-    const p = this.data.profiles[id];
+    const p = this.profileOf(id);
     if (!p) return false;
     const eq = id === this.data.activeProfile ? this.data.equipped : p.equipped;
     return !Object.keys(eq || {}).length && /^(My character|My PoE[12] character|New character)$/.test(p.name || '');
   }
 
   renameProfile(id, name) {
-    if (this.data.profiles[id] && name) { this.data.profiles[id].name = String(name).slice(0, 60); this.save(); }
+    if (this.profileOf(id) && name) { this.profileOf(id).name = String(name).slice(0, 60); this.save(); }
   }
 
   deleteProfile(id) {
     const ids = Object.keys(this.data.profiles);
-    if (!this.data.profiles[id] || ids.length < 2) return false;
+    if (!this.profileOf(id) || ids.length < 2) return false;
     if (id === this.data.activeProfile) {
-      const g = this.data.profiles[id].game;
+      const g = this.profileOf(id).game;
       this.switchProfile(ids.find((x) => x !== id && this.data.profiles[x].game === g) || ids.find((x) => x !== id));
     }
     delete this.data.profiles[id];
@@ -291,7 +303,11 @@ class Store {
     if (changed) this.save();
   }
 
-  setSetting(key, value) { this.data.settings[key] = value; this.save(); }
+  setSetting(key, value) {
+    // keys come from the app's pages: never one that would change how objects themselves work
+    if (typeof key !== 'string' || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key)) return;
+    this.data.settings[key] = value; this.save();
+  }
 }
 
 module.exports = { Store, DEFAULT_WEIGHTS, GAME_KEYS };

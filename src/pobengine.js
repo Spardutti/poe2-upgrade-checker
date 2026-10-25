@@ -184,6 +184,13 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game =
     if (!r.ok) throw new Error(r.error || 'Path of Building could not check the gem.');
     return r;
   }
+  // every notable that can be anointed / instilled on your amulet, tried in place of its current one
+  async function anointCheck(req) {
+    if (!buildXml) throw new Error('No Path of Building build loaded.');
+    const r = await request({ cmd: 'anoints', seconds: 40, ...(req || {}) }, 120000);
+    if (!r.ok) throw new Error(r.error || 'Path of Building could not check anoints.');
+    return r;
+  }
   // PoE1: how many hits of each Path of Building boss preset you can take (Pinnacle and Uber)
   async function bossCheck(req) {
     const r = await request({ cmd: 'bosscheck', ...(req || {}) }, 120000);
@@ -213,7 +220,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game =
   }
 
   return {
-    available, start, stop, resetFailure, loadBuild, setBuild, evalItems, evalPairs, mapCheck, affixes, gemCheck, bossCheck, makeQuery,
+    available, start, stop, resetFailure, loadBuild, setBuild, evalItems, evalPairs, mapCheck, affixes, gemCheck, bossCheck, anointCheck, makeQuery,
     kill, sheet: async () => { if (!buildXml) return null; const r = await request({ cmd: "sheet" }, 60000); if (!r.ok) throw new Error(r.error || "Path of Building could not read the character."); return r; },
     ensureLoaded: async () => {
       if (!buildXml) return null;

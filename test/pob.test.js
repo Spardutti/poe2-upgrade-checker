@@ -91,3 +91,24 @@ test('raw XML and pobb.in links', () => {
   assert.equal(P.pobbinRawUrl('eNrtxyz'), null);
   assert.throws(() => P.decodeCode('not a code!!'));
 });
+
+test('a crafted item-set id can\'t hang the import, and a zip bomb is refused', () => {
+  const P = require('../src/core/pob');
+  const zlib = require('zlib');
+  const evil = '<PathOfBuilding2><Build level="1"/><Items activeItemSet="(.*)*(.*)*(.*)*(.*)*Z"><ItemSet id="1">' + 'a'.repeat(40) + '</ItemSet></Items></PathOfBuilding2>';
+  const t = Date.now();
+  try { P.parsePob(evil); } catch (_) { /* may refuse, must not hang */ }
+  assert.ok(Date.now() - t < 1000, 'took ' + (Date.now() - t) + ' ms');
+  const bomb = zlib.deflateSync(Buffer.alloc(25 * 1024 * 1024, 32)).toString('base64');
+  assert.throws(() => P.decodeCode(bomb), /too big/);
+});
+
+test('a unique with variants keeps only the selected variant', () => {
+  const { convertItem } = require('../src/core/pob');
+  const raw = 'Rarity: UNIQUE\nKaom\'s Heart\nGlorious Plate\nVariant: Pre 3.0.0\nVariant: Current\nSelected Variant: 2\nImplicits: 0\n{variant:1}+20% to Fire Resistance\n{variant:2}+500 to maximum Life\n{variant:1}+(800-1000) to maximum Life';
+  const t = convertItem(raw, 'Body Armour').text;
+  assert.match(t, /\+500 to maximum Life/);
+  assert.doesNotMatch(t, /Fire Resistance|900/);
+  // no "Selected Variant": PoB uses the last one
+  assert.doesNotMatch(convertItem(raw.replace('Selected Variant: 2\n', ''), 'Body Armour').text, /Fire Resistance/);
+});

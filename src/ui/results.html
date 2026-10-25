@@ -7,11 +7,14 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="results">
-  <header class="res-head">
+  <header class="res-top">
     <div class="res-title"><span id="title">Trade results</span> <span id="betaTag" class="beta-tag hidden" title="Path of Exile 1 support is new: if something looks wrong, send the log (Tray → Open log) to support@poe2upgrade.com">PoE1 BETA</span></div>
     <div class="dim" id="sub"></div>
     <div class="note" id="note"></div>
     <div class="price-banner hidden" id="priceBanner"></div>
+  </header>
+  <!-- only the controls stay on screen while you scroll; the title and notes scroll away -->
+  <div class="res-head">
     <div class="toolbar">
       <label>Sort <select id="sort">
         <option value="res">Resistances first</option>
@@ -23,6 +26,7 @@
       </select></label>
       <label><input type="checkbox" id="onlyUp"> Upgrades only</label>
       <label title="Hide corrupted listings"><input type="checkbox" id="noCorrupt"> Hide corrupted</label>
+      <label title="Show only each seller's first listing in this order (some sellers list many near-copies)"><input type="checkbox" id="onePerSeller"> One per seller</label>
       <label title="How many of each listing's stat changes to show on its card">Show <select id="modCount">
         <option value="3">3 mods</option><option value="4">4 mods</option><option value="5">5 mods</option>
         <option value="6">6 mods</option><option value="8">8 mods</option><option value="all">all mods</option>
@@ -34,7 +38,7 @@
       <span class="dim small" id="hideHint">Esc hides</span>
     </div>
     <div id="gsHelp" class="gs-panel hidden"></div>
-  </header>
+  </div>
   <main id="list" class="res-list"></main>
   <div class="row center"><button id="more">Load 10 more</button><span id="moreMsg" class="note"></span></div>
   <script src="../core/keepsell.js"></script>

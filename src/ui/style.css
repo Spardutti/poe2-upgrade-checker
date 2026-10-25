@@ -479,3 +479,65 @@ table.kv.boss th { text-align: left; font-weight: 600; color: var(--ash); paddin
 /* drag the popup by its name and subtitle */
 body.popup .card > .name, body.popup .card > .meta { -webkit-app-region: drag; cursor: move; }
 body.popup .card > .meta .beta-tag, body.popup .card button { -webkit-app-region: no-drag; }
+
+/* ---------- look and feel (audit round 3) ---------- */
+/* gold for the main action: red is kept for losses only */
+button.primary, button.find {
+  color: #1d1407; background: linear-gradient(#efd9a2, var(--gold) 55%, #9a7841); border: 1px solid var(--gold-hi);
+  box-shadow: inset 0 0 0 1px #4a3612, 0 0 10px rgba(201, 164, 99, .22); text-shadow: 0 1px 0 rgba(255, 244, 214, .45);
+}
+button.primary:hover:not(:disabled), button.find:hover:not(:disabled) { background: linear-gradient(#f8e7bb, #dbb878 55%, #a9874c); color: #000; border-color: #fff4d6; }
+/* readable over a game: nothing under 12 px except short uppercase labels */
+.kind, .adv, .gs-explain .gs { font-size: 12px; }
+.pob-tag, .vchip { font-size: 11px; }
+.beta-tag { font-size: 10.5px; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+/* the popup: one plain line for a loss the badge already names; a big price-check answer */
+.loss-line { margin: 4px 0 2px; color: #ffb7aa; font-size: 13.5px; }
+.loss-line b { color: #fff; }
+.price-answer { margin: 6px 0 1px; font: 600 21px/1.2 var(--f-text); color: var(--gold-hi); }
+.price-answer b { font-weight: 700; }
+.adv-inline { color: var(--stone, #b9b2a3); }
+.verdict.checking .badge { color: var(--ash); }
+.card > .note { padding-right: 34px; } /* room for the × */
+/* colour-blind mode: no red anywhere, borders and banners included */
+body.cb .res-loss-banner { color: #ffd6ae; border-color: rgba(255, 159, 64, .6); background: linear-gradient(90deg, rgba(150, 80, 10, .42), rgba(150, 80, 10, .12)); }
+body.cb .res-loss-banner span, body.cb .loss-line { color: #ffd6ae; }
+body.cb .card.res-loss, body.cb .listing.res-loss { border-color: #6a4a20; box-shadow: inset 0 0 0 1px #000, inset 0 0 0 2px rgba(255, 159, 64, .55), var(--frame-drop); }
+body.cb .charch .cc.warn { color: var(--down); }
+/* results window: title and notes scroll away, the controls stay */
+.res-top { padding: 12px 0 6px; }
+.res-head { padding: 6px 0 6px; }
+.listing.offline { opacity: .6; }
+.listing.offline:hover { opacity: .9; }
+.ribbons { display: flex; gap: 6px; margin: -4px 0 6px; }
+.ribbon { font: 700 11px/1 var(--f-carved); letter-spacing: .1em; text-transform: uppercase; padding: 4px 7px 3px; color: #1d1407; background: linear-gradient(#efd9a2, var(--gold)); border: 1px solid var(--gold-hi); }
+/* Find upgrades: the filter bar scrolls with the page (pinned, it covered the panels under it) */
+.filterbar { position: static; }
+.filterbar label, .filterbar .fb-group { white-space: nowrap; }
+details.fold > summary { font: 600 14px var(--f-carved); letter-spacing: .06em; color: var(--gold); margin: 10px 0 6px; cursor: pointer; }
+details.fold > summary .fold-why { font-family: var(--f-text); letter-spacing: 0; text-transform: none; margin-left: 6px; }
+.warnbox { margin: 10px 0; padding: 9px 12px; border: 1px solid #7d6128; background: rgba(224, 176, 78, .08); color: var(--bone); }
+.ok-line { color: var(--up); font-weight: 500; }
+.more-searches { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin: 8px 0 4px; }
+.seg { display: inline-flex; gap: 0; margin: 2px 0 10px; border: 1px solid var(--iron); }
+.seg-btn { border: none; padding: 6px 12px 5px; background: transparent; color: var(--ash); }
+.seg-btn.active { color: var(--gold-hi); background: rgba(201, 164, 99, .12); }
+/* My gear: one line of mods per item (click it for all) */
+.item-cell { max-width: 0; width: 100%; }
+.mods-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.mods-line.open { white-space: normal; }
+/* mid-size windows: a narrower sidebar (it took a quarter of a 900 px window) */
+@media (min-width: 821px) and (max-width: 1000px) {
+  body.app { grid-template-columns: 176px minmax(0, 1fr); }
+  .brand span { font-size: 13px; }
+  .side-nav button { padding-left: 8px; padding-right: 6px; font-size: 13px; }
+}
+.hidden-notgear { display: none !important; }
+.tier { display: inline-block; min-width: 24px; margin-right: 6px; padding: 1px 4px 0; font: 700 11px/1.3 var(--f-text); text-align: center; border: 1px solid currentColor; }
+.tier-top { color: var(--up); } .tier-mid { color: var(--warn); } .tier-low { color: var(--ash); }
+.mods-tiers { margin: 8px 0; }
+.pp-presets { margin: 4px 0; display: flex; gap: 8px; align-items: baseline; }
+/* best anoint / instil */
+.kv.anoint td:first-child { max-width: 260px; }
+.kv.anoint tr.cur td { background: var(--hl, rgba(214,170,80,.08)); }

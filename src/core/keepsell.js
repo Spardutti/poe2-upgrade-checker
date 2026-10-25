@@ -54,6 +54,7 @@
       // the verdict above already says why
       return { action: 'keep', text: '' };
     }
+    if (r.ninja && r.ninja.unsure && r.worthEx == null) return { action: 'check', text: 'several versions of this unique: check its price' };
     const v = valueOf(r, rate);
     const line = sellLine(rate, unit);
     if (v != null) {
