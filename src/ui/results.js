@@ -125,10 +125,12 @@ function render() {
     $('#priceBanner').classList.remove('hidden');
     const ps = data.priceSummary;
     $('#priceBanner').innerHTML = (ps.typical
-      ? `Typical <b>${esc(ps.typical)}</b>${ps.range ? ` · most <b>${esc(ps.range)}</b>` : ''} · cheapest <b>${esc(ps.cheapest)}</b>`
+      ? `Typical <b>${esc(ps.typical)}</b>${window.confHtml ? window.confHtml(ps.confidence) : ''}${ps.range ? ` · most <b>${esc(ps.range)}</b>` : ''} · cheapest <b>${esc(ps.cheapest)}</b>${ps.sell ? ` · list at <b>${esc(ps.sell.text)}</b> <button class="link" id="copyPriceNote" data-note="${esc(ps.sell.note)}">Copy price note</button>` : ''}`
       : `<b>${esc(ps.verdict || 'No price')}</b>`)
       + ` <span class="dim">(each seller's cheapest: ${ps.sellers} seller${ps.sellers === 1 ? '' : 's'} in ${ps.total} listings loaded)</span>`
       + (ps.notes && ps.notes.length ? `<div class="dim small">${esc(ps.notes.join(' · '))}</div>` : '');
+    const cpn = $('#copyPriceNote');
+    if (cpn) cpn.addEventListener('click', () => { window.api.copyText(cpn.dataset.note); cpn.textContent = 'Copied'; });
   } else $('#priceBanner').classList.add('hidden');
   $('#save').textContent = data.saved ? '★ Saved' : '☆ Save search';
   $('#save').disabled = !!data.saved;

@@ -7,8 +7,9 @@
 //   2. leave out listings older than STALE_DAYS when at least 3 fresh ones remain
 //   3. drop baits: while the cheapest is under half the 4th cheapest (or far under the
 //      middle of the market), drop it, at most a third of the listings
-//   4. cheapest = what's left at the bottom; typical = the median of the cheapest 8
-//   5. range = 2nd to 6th cheapest
+//   4. cheapest = what's left at the bottom; worth = the median of the cheapest 5 sellers
+//      (what it sells for is near the bottom of the market: dearer listings are what's still unsold)
+//   5. range = cheapest to 5th cheapest
 
 const DAY = 24 * 3600 * 1000;
 const STALE_DAYS = 14;
@@ -45,9 +46,9 @@ function priceStats(listings, opts = {}) {
   let baits = 0;
   while (p.length >= 4 && baits < maxDrop && (p[0] < 0.5 * p[Math.min(3, p.length - 1)] || p[0] < 0.35 * mid)) { p.shift(); baits++; }
   const n = p.length;
-  const typicalEx = medianOf(p.slice(0, Math.min(8, n)));
-  const lowEx = p[Math.min(1, n - 1)];
-  const highEx = p[Math.min(5, n - 1)];
+  const typicalEx = medianOf(p.slice(0, Math.min(5, n)));
+  const lowEx = p[0];
+  const highEx = p[Math.min(4, n - 1)];
   const priced = all.filter((x) => x.price).length;
   return {
     cheapestEx: p[0], typicalEx, lowEx, highEx,
@@ -59,4 +60,19 @@ function priceStats(listings, opts = {}) {
   };
 }
 
-module.exports = { priceStats, STALE_DAYS };
+// how far to trust a price: 'solid', 'rough' or 'guess', with the reason in words.
+// s: priceStats() output; level: how far the search had to be loosened (0 = the first, closest search)
+function confidence(s, level = 0) {
+  if (!s || !s.count) return null;
+  const ratio = s.lowEx > 0 ? s.highEx / s.lowEx : 1;
+  const why = [];
+  if (s.count < 4) why.push(`only ${s.count} seller${s.count === 1 ? '' : 's'}`);
+  else if (s.count < 8) why.push(`${s.count} sellers`);
+  if (ratio > 4) why.push('prices far apart'); else if (ratio > 2) why.push('prices spread out');
+  if (level >= 2) why.push('compared with looser matches'); else if (level === 1) why.push('somewhat looser matches');
+  const grade = s.count >= 8 && ratio <= 2 && level === 0 ? 'solid'
+    : s.count >= 4 && ratio <= 4 && level <= 1 ? 'rough' : 'guess';
+  return { grade, why: why.join(', ') };
+}
+
+module.exports = { priceStats, confidence, STALE_DAYS };

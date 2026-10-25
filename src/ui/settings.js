@@ -58,9 +58,10 @@ async function load() {
   $('#watchClipboard').checked = state.settings.watchClipboard !== false;
   const hs = state.hotkeyStatus || {};
   if (document.activeElement !== $('#hotkey')) $('#hotkey').value = state.settings.hotkey || 'F2';
+  if (document.activeElement !== $('#priceHotkey')) $('#priceHotkey').value = priceKeyNow() || '';
   $('#hotkeyMsg').textContent = hs.ok ? `Active: ${hs.accelerator}` : (hs.error || 'Hotkey not registered.');
   $('#hotkeyLine').innerHTML = hs.ok
-    ? `In game: hover an item and press <b>${esc(hs.accelerator)}</b>.<br>You can close this window; the app keeps running in the tray.`
+    ? `In game: hover an item and press <b>${esc(hs.accelerator)}</b>${priceKeyNow() ? ` (<b>${esc(priceKeyNow())}</b> for just its price)` : ''}.<br>You can close this window; the app keeps running in the tray.`
     : `<span class="note">Hotkey isn't working: ${esc(hs.error || 'not registered')} – change it in Settings.</span>`;
   renderPob(false);
   if (Date.now() - accountAt > 30000) renderAccount(); // not on every change: it asks the trade site
@@ -419,6 +420,20 @@ $('#hotkeySave').addEventListener('click', async () => {
   await load();
   $('#hotkeyMsg').textContent = res.ok ? `Saved. Active: ${res.accelerator}.${res.warning ? ' ' + res.warning : ''}` : res.error;
 });
+function priceKeyNow() { const k = state && state.settings.priceHotkey; return k === undefined ? 'F3' : k; }
+$('#priceHotkey').addEventListener('keydown', (e) => {
+  if (captureKeys(e, $('#priceHotkey'), priceKeyNow, $('#priceHotkeyMsg'))) return;
+  const acc = toAccelerator(e);
+  if (acc) { $('#priceHotkey').value = acc; $('#priceHotkeyMsg').textContent = 'Click Save to use it.'; }
+  else if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) $('#priceHotkeyMsg').textContent = 'Use a modifier (Ctrl/Alt) plus a key, or an F-key.';
+});
+const savePriceKey = async (k) => {
+  const res = await window.api.setPriceHotkey(k);
+  await load();
+  $('#priceHotkeyMsg').textContent = res.ok ? (res.accelerator ? `Saved. Active: ${res.accelerator}.` : 'Turned off.') : res.error;
+};
+$('#priceHotkeySave').addEventListener('click', () => savePriceKey($('#priceHotkey').value.trim()));
+$('#priceHotkeyOff').addEventListener('click', () => savePriceKey(''));
 $('#advancedCopy').addEventListener('change', () => window.api.setSetting('advancedCopy', $('#advancedCopy').checked));
 $('#watchClipboard').addEventListener('change', () => window.api.setSetting('watchClipboard', $('#watchClipboard').checked));
 $('#testPopup').addEventListener('click', () => window.api.testPopup());

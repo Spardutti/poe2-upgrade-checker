@@ -10,12 +10,12 @@ let n = 0;
 const L = (ex, extra = {}) => ({ id: 'l' + (++n), account: 'acc' + n, price: { amount: ex, currency: 'exalted' }, priceEx: ex, indexed: '2026-10-19T12:00:00Z', ...extra });
 const market = (from, k, step = 20) => Array.from({ length: k }, (_, i) => L(from + i * step));
 
-test('price: plain market gives the median of the cheapest 8', () => {
+test('price: plain market gives the median of the cheapest 5 sellers', () => {
   const s = priceStats(market(300, 20), { now: NOW });
   assert.strictEqual(s.cheapestEx, 300);
-  assert.strictEqual(s.typicalEx, 370); // median of 300..440
-  assert.strictEqual(s.lowEx, 320);
-  assert.strictEqual(s.highEx, 400);
+  assert.strictEqual(s.typicalEx, 340); // median of 300..380
+  assert.strictEqual(s.lowEx, 300);
+  assert.strictEqual(s.highEx, 380);
   assert.ok(!s.few && !s.unreliable && !s.baits);
 });
 
@@ -80,4 +80,18 @@ test('price query: same rarity, same corruption, available, every stat at first'
   assert.strictEqual(q0.status.option, 'available');
   assert.strictEqual(q0.filters.type_filters.filters.rarity.option, 'rare');
   assert.strictEqual(q0.filters.misc_filters.filters.corrupted.option, 'true');
+});
+
+test('price confidence: plenty of close prices is solid; few, spread or loosened is not', () => {
+  const { confidence } = require('../src/core/price');
+  const solid = priceStats(market(300, 12, 10), { now: NOW });
+  assert.strictEqual(confidence(solid, 0).grade, 'solid');
+  assert.strictEqual(confidence(solid, 1).grade, 'rough');
+  assert.strictEqual(confidence(solid, 2).grade, 'guess');
+  const spread = priceStats([L(100), L(150), L(200), L(300), L(450), L(600), L(800), L(900)], { now: NOW });
+  assert.strictEqual(confidence(spread, 0).grade, 'rough');
+  assert.match(confidence(spread, 0).why, /spread/);
+  const few = priceStats([L(100), L(110), L(120)], { now: NOW });
+  assert.strictEqual(confidence(few, 0).grade, 'guess');
+  assert.match(confidence(few, 0).why, /only 3 sellers/);
 });

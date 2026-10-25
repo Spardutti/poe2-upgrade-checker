@@ -1,6 +1,19 @@
 # Changelog
 
 ## Unreleased
+- **How sure is the price?** Trade-site prices now say *solid price*, *rough price* or *a guess* (hover for why: few sellers, prices far apart, or looser matches), in the popup, on F3 and in the results window.
+- **List it at… for rares, waystones and tablets too:** when the price isn't a guess, *What's it worth?* suggests a price just under the cheapest comparable listing, with *Copy price note* for your premium stash tab.
+- **F3 remembers:** pressing F3 on the same item within an hour answers at once from the last check ("checked 12 min ago"), without another trade search; *refresh* asks again.
+- **Faster first check:** the trade site's stat list is read at start-up, so the first F2 or F3 doesn't wait for it.
+- **Price-only hotkey (F3):** hover an item and press F3 for a small popup with just its price: poe.ninja's for currency, gems, uniques and the rest it lists, the trade site's for rare and magic gear, waystones, maps and tablets. F2 still does the full check. Change it (to Alt+E, say) or turn it off in Settings → Hotkeys.
+- **Waystones, maps and Precursor Tablets can be price checked:**
+  - Waystones and maps: *What's it worth?* on their card searches the same tier, rarity and corruption with similar numbers (item rarity, pack size, waystone drop chance, monster rarity; quantity, rarity and pack size on PoE1 maps). Their monster mods don't count, since buyers price on the numbers.
+  - Tablets: their kind (Expedition, Delirium…), uses left and mods.
+- **What's it worth? is much closer to what items sell for.** Rare and magic gear used to be compared only with items at least as good on every single line, so the few that matched were the dear end of the market (an item that sells for about 20 div could show hundreds). Now:
+  - it searches the way buyers do: total resistances, life, attributes and movement speed, the item's defences or a weapon's DPS, and its other worthwhile mods, each within a range of your values; filler mods (light radius, stun threshold, thorns…) no longer narrow the search;
+  - movement speed, +skill levels and Spirit are always kept, so boots aren't priced against boots without movement speed;
+  - only recent listings from online sellers count (the last 3 days, widening to a week and then 2 weeks if there are too few), so items that have sat unsold for weeks don't set the price;
+  - the price is the middle of the cheapest five sellers (it was the cheapest eight).
 - **Your build stays in sync:**
   - A pobb.in link is remembered for the character: *Update now* reads it again.
   - Or link the build file Path of Building saves (*Or link your PoB build file…*): each time you save in PoB, the app reads it again by itself. Only the file you pick is read.

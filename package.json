@@ -1,12 +1,12 @@
 {
   "name": "poe2-upgrade-checker",
-  "version": "0.5.1-beta.2",
+  "version": "0.5.1-beta.3",
   "description": "Free Path of Exile overlay (PoE2, and PoE1 in beta): press F2 on an item to see if it's really an upgrade for your build, judged by Path of Building's own calculations. Finds better gear on the trade site within your budget.",
   "main": "src/main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/core.test.js test/trade.test.js test/rates.test.js test/listing.test.js test/pob.test.js test/pobverdict.test.js test/price.test.js test/games.test.js test/pobengine.test.js test/poe1-parser.test.js test/ninja.test.js test/keepsell.test.js test/workflow.test.js test/searchstr.test.js test/credits.test.js",
+    "test": "node --test test/core.test.js test/trade.test.js test/rates.test.js test/listing.test.js test/pob.test.js test/pobverdict.test.js test/price.test.js test/pricequery.test.js test/games.test.js test/pobengine.test.js test/poe1-parser.test.js test/ninja.test.js test/keepsell.test.js test/workflow.test.js test/searchstr.test.js test/credits.test.js",
     "pob": "node tools/get-pob.js",
     "dist": "node tools/get-pob.js && npx electron-builder@26.18.0 --win nsis portable --publish never",
     "dist:linux": "node tools/get-pob.js && npx electron-builder@26.18.0 --linux AppImage --publish never"

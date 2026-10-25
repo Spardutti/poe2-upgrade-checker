@@ -298,7 +298,13 @@
         <button id="hotkeySave">Save</button>
         <span id="hotkeyMsg" class="note"></span>
       </div>
-      <div class="help">Hover an item in game and press the check-item hotkey. The app presses Ctrl+C for you (one keystroke per press). Pick a key the game doesn&rsquo;t use: an F-key like F2 works best. Letters such as D also reach the game (with WASD movement, D walks your character).</div>
+      <div class="row">
+        <label>Price only <input id="priceHotkey" class="hotkey" readonly placeholder="click, then press keys"></label>
+        <button id="priceHotkeySave">Save</button>
+        <button class="link" id="priceHotkeyOff" title="No price-only hotkey">Turn off</button>
+        <span id="priceHotkeyMsg" class="note"></span>
+      </div>
+      <div class="help">Hover an item in game and press the check-item hotkey for the full check, or the price-only hotkey (F3) for a small popup with just its price. The app presses Ctrl+C for you (one keystroke per press). Pick a key the game doesn&rsquo;t use: an F-key like F2 works best. Letters such as D also reach the game (with WASD movement, D walks your character).</div>
       <div class="row"><label><input type="checkbox" id="advancedCopy"> Use advanced copy (Ctrl+Alt+C) – needed to spot open prefixes/suffixes for crafting</label></div>
       </div>
       <div class="card-p">

@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('api', {
   recentItems: () => ipcRenderer.invoke('items:recent'),
   onItemCopied: (cb) => ipcRenderer.on('item:copied', (_e, info) => cb(info)),
   setHotkey: (accel) => ipcRenderer.invoke('hotkey:set', accel),
+  setPriceHotkey: (accel) => ipcRenderer.invoke('hotkey:setPrice', accel),
+  quickPriceRefresh: () => ipcRenderer.send('quickprice:refresh'),
   openLog: () => ipcRenderer.send('open:log'),
   testPopup: () => ipcRenderer.send('popup:test'),
   getRate: (force) => ipcRenderer.invoke('rate:get', force),

@@ -12,6 +12,7 @@ const catalogLib = require('./core/catalog');
 const listingLib = require('./core/listing');
 const gamesLib = require('./core/games');
 const priceLib = require('./core/price');
+const priceQuery = require('./core/pricequery');
 const { suggestWeights } = require('./core/autoweights');
 const gearLib = require('./core/gearscore');
 const characterLib = require('./core/character');
@@ -803,7 +804,7 @@ function showResult(result) {
   popupResult = result;
   if (!popup) createPopup();
   pendingShow = true; // every new copy re-positions the popup at the cursor
-  const withPob = result && result.ok && result.kind !== 'price' && result.kind !== 'map' && !result.isEquipped && result.item && pobOn() && pobCanJudge(result.item, result.targetSlot);
+  const withPob = result && result.ok && result.kind !== 'price' && result.kind !== 'map' && result.kind !== 'quickprice' && !result.isEquipped && result.item && pobOn() && pobCanJudge(result.item, result.targetSlot);
   if (withPob) result.pobPending = true;
   const send = () => popup && popup.webContents.send('popup:result', serialise(result));
   if (popup.webContents.isLoading()) popup.webContents.once('did-finish-load', send);
@@ -819,7 +820,7 @@ function showResult(result) {
       .then(() => { if (seq === popupSeq && popupItem === item && popup && !popup.isDestroyed() && popup.isVisible()) popup.webContents.send('popup:result', serialise(result)); });
   }
   // uniques: poe.ninja's price next to the verdict
-  if (result && result.ok && result.kind !== 'price' && result.item && /unique/i.test(result.item.rarity || '')) {
+  if (result && result.ok && result.kind !== 'price' && result.kind !== 'quickprice' && result.item && /unique/i.test(result.item.rarity || '')) {
     const item = popupItem;
     ninjaPrice(result.item).then((p) => {
       if (!p) return;
@@ -945,7 +946,7 @@ async function clipRead() { try { return String((await clipboard.readText()) || 
 let clipWrites = 0; // writes still landing: the poller mustn't mistake the old text for a new copy
 async function clipWrite(text) { clipWrites++; try { await clipboard.writeText(String(text)); return true; } catch (_) { return false; } finally { clipWrites--; } }
 
-function handleItemText(text, source, sent) {
+function handleItemText(text, source, sent, mode) {
   const item = parseItem(text);
   if (!item) {
     log(`${source}: clipboard is not item text (${String(text).length} characters)`); // never log what you copied: it may be private
@@ -975,6 +976,7 @@ function handleItemText(text, source, sent) {
   store.noteStats(item);
   log(`${source}: ${item.itemClass} "${item.name}" (${item.rarity}) -> slot ${item.slot}, ${Object.keys(item.stats).length} stats`);
   notifySettings('item:copied', { id: item.id, name: item.name });
+  if (mode === 'price') { showQuickPrice(item).catch((err) => log('quick price: ' + (err.stack || err))); return true; }
   // a map or waystone: what its mods mean for your build
   if (mapLib.isMap(item)) { try { showMapCard(item); } catch (err) { log('popup failed: ' + err.stack); } return true; }
   // not gear (currency, a gem, a divination card...): its price
@@ -1018,7 +1020,8 @@ function noItemReason(sent, text) {
 
 // Hotkey mode: press the hotkey over an item; we send Ctrl+C to the game for
 // you (one keystroke per press) and always show the popup, even for the same item.
-async function onHotkey() {
+// mode 'price': the price hotkey (F3), a popup with just the price
+async function onHotkey(mode) {
   if (hotkeyBusy || store.settings.paused) return;
   hotkeyBusy = true;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1052,7 +1055,7 @@ async function onHotkey() {
       showResult({ ok: false, loading: true, reason: 'Reading item…' });
       text = await waitForText(1250); // the game can be slow to fill the clipboard when it's busy
     }
-    if (text && handleItemText(text, 'hotkey', sent)) return;
+    if (text && handleItemText(text, 'hotkey', sent, mode)) return;
     // Nothing copied: put the old clipboard back and say why.
     await clipWrite(before || '');
     lastClip = before || '';
@@ -1062,6 +1065,71 @@ async function onHotkey() {
     hotkeyBusy = false;
   }
 }
+
+// ---------- the price hotkey (F3): a popup with just the price ----------
+// poe.ninja for what it prices (currency, gems, uniques...), the trade site for the rest (rare and
+// magic gear, waystones and maps, tablets). Nothing else on the popup.
+const DEFAULT_PRICE_HOTKEY = 'F3';
+let priceHotkey = null;
+// trade-site prices from the last hour, by item text: pressing F3 on the same item again answers at
+// once (and saves the trade site a search). "refresh" on the popup asks again.
+const QUICK_TTL = 60 * 60 * 1000;
+const quickCache = new Map();
+let quickLast = null;
+const quickKey = (item) => `${tg()}|${String(item.raw || '').replace(/\s+$/, '')}`;
+async function showQuickPrice(item, force) {
+  quickLast = item;
+  const r = { ok: true, kind: 'quickprice', item: { name: item.name, baseType: item.baseType, itemClass: item.itemClass, rarity: item.rarity, id: item.id }, pending: true };
+  const key = quickKey(item);
+  const hit = quickCache.get(key);
+  if (!force && hit && Date.now() - hit.at < QUICK_TTL) { Object.assign(r, hit.r, { pending: false, checkedAt: hit.at }); showResult(r); return; }
+  showResult(r);
+  const seq = popupSeq;
+  const send = () => { if (seq === popupSeq && popup && !popup.isDestroyed()) popup.webContents.send('popup:result', serialise(r)); };
+  const unique = /unique/i.test(item.rarity || '');
+  const tradeFirst = !unique && (priceQuery.usesPriceQuery(item) || priceQuery.usesMapPriceQuery(item));
+  try {
+    if (!tradeFirst) {
+      const p = await prices.ninjaPrice(item).catch((err) => { log('quick price, poe.ninja: ' + err.message); return null; });
+      if (p) { r.ninja = p; r.source = 'poe.ninja'; }
+    }
+    if (!r.ninja && (item.slot || tradeFirst || unique)) {
+      const t = await gameCtx.run({ game: store.activeGame() }, () => tradePrice(item, null, { window: false }));
+      if (!t.ok) r.error = t.error || 'The price search failed.';
+      else if (t.fallback || t.total == null) r.error = "The trade site didn't answer. Try again in a moment.";
+      else if (!t.total) r.error = 'Nothing like it is listed right now.';
+      else if (t.summary && t.summary.typical) {
+        r.trade = { typical: t.summary.typical, range: t.summary.range, sellers: t.summary.sellers, total: t.total, confidence: t.summary.confidence };
+        r.source = `trade site, ${t.league}`;
+        quickCache.set(key, { at: Date.now(), r: { trade: r.trade, source: r.source } });
+        if (quickCache.size > 300) quickCache.delete(quickCache.keys().next().value);
+      }
+      else r.error = (t.summary && t.summary.verdict) || 'Not enough listings to judge.';
+    } else if (!r.ninja) r.error = "poe.ninja doesn't list a price for this.";
+  } catch (err) { r.error = err.message || String(err); log('quick price: ' + (err.stack || err)); }
+  r.pending = false;
+  send();
+}
+ipcMain.on('quickprice:refresh', () => { if (quickLast) showQuickPrice(quickLast, true).catch((err) => log('quick price: ' + (err.stack || err))); });
+function registerPriceHotkey() {
+  if (priceHotkey) { try { globalShortcut.unregister(priceHotkey); } catch (_) { /* ignore */ } priceHotkey = null; }
+  const want = store.settings.priceHotkey === undefined ? DEFAULT_PRICE_HOTKEY : store.settings.priceHotkey;
+  if (!want) return { ok: true, accelerator: null };
+  if (sameKey(want, hotkeyStatus.accelerator || store.settings.hotkey || DEFAULT_HOTKEY) || sameKey(want, store.settings.resultsHotkey || 'Ctrl+Shift+D')) { log(`price hotkey ${want}: already used by another of the app's keys`); return { ok: false, error: `${want} is already one of the app's other keys.` }; }
+  let ok = false;
+  try { ok = globalShortcut.register(want, () => { onHotkey('price').catch((e) => log('price hotkey error: ' + e.stack)); }); } catch (_) { ok = false; }
+  if (ok) priceHotkey = want;
+  log(`price hotkey ${want}: ${ok ? 'registered' : 'FAILED'}`);
+  return ok ? { ok, accelerator: want } : { ok, error: `${want} is already used by another program. Pick a different key.` };
+}
+ipcMain.handle('hotkey:setPrice', (_e, accel) => {
+  const prev = store.settings.priceHotkey === undefined ? DEFAULT_PRICE_HOTKEY : store.settings.priceHotkey;
+  const want = typeof accel === 'string' ? accel.trim().slice(0, 40) : '';
+  store.setSetting('priceHotkey', want);
+  const st = registerPriceHotkey();
+  if (!st.ok) { store.setSetting('priceHotkey', prev); registerPriceHotkey(); }
+  return { ...st, accelerator: st.ok ? want : prev };
+});
 
 // F2: letters are game keys (with WASD movement, Ctrl+D also walked your character right).
 const DEFAULT_HOTKEY = 'F2';
@@ -1093,6 +1161,7 @@ const sameKey = (a, b) => String(a || '').toLowerCase().replace(/control/g, 'ctr
 ipcMain.handle('hotkey:set', (_e, accel) => {
   const prev = store.settings.hotkey || DEFAULT_HOTKEY;
   if (sameKey(accel, store.settings.resultsHotkey || 'Ctrl+Shift+D')) return { ok: false, accelerator: prev, error: `${accel} already opens the results window. Pick a different key.` };
+  if (priceHotkey && sameKey(accel, priceHotkey)) return { ok: false, accelerator: prev, error: `${accel} is your price-only hotkey. Pick a different key.` };
   const st = registerHotkey(accel);
   if (st.ok) store.setSetting('hotkey', accel);
   else registerHotkey(prev); // put the old one back
@@ -1136,7 +1205,7 @@ function resolveSlotOf(item) {
 
 function refreshAll() {
   // a price card (currency, gems...) or map check isn't a comparison: it stays as it is
-  if (popupItem && popupItem.slot && popup && popup.isVisible()) {
+  if (popupItem && popupItem.slot && popup && popup.isVisible() && !(popupResult && popupResult.kind === 'quickprice')) {
     const r = evaluate(popupItem);
     const seq = ++popupSeq;
     // the unique's poe.ninja price stays (it doesn't depend on your settings)
@@ -1620,7 +1689,7 @@ async function loadTradeData(force) {
   if (!force && tradeData && tradeData.stats && Date.now() - tradeData.fetchedAt <= DAY && Date.now() - (tradeData.leaguesAt || tradeData.fetchedAt) > 3600 * 1000) {
     try {
       const leagues = await getJson(trade.apiUrl(game, 'data/leagues'));
-      if (leagues && Array.isArray(leagues.result) && leagues.result.length) { tradeData.leagues = leagues; tradeData.leaguesAt = Date.now(); try { fs.writeFileSync(cacheFile, JSON.stringify({ ...tradeData, index: undefined })); } catch (_) { /* ignore */ } }
+      if (leagues && Array.isArray(leagues.result) && leagues.result.length) { tradeData.leagues = leagues; tradeData.leaguesAt = Date.now(); try { fs.writeFileSync(cacheFile, JSON.stringify({ ...tradeData, index: undefined, indexOf: undefined })); } catch (_) { /* ignore */ } }
     } catch (_) { tradeData.leaguesAt = Date.now(); /* offline: try again in an hour */ }
   }
   if (force || !tradeData || Date.now() - tradeData.fetchedAt > DAY) {
@@ -1637,7 +1706,7 @@ async function loadTradeData(force) {
       if (!tradeData || !tradeData.stats) throw err;
     }
   }
-  tradeData.index = trade.buildStatIndex(tradeData.stats);
+  if (!tradeData.index || tradeData.indexOf !== tradeData.stats) { tradeData.index = trade.buildStatIndex(tradeData.stats); tradeData.indexOf = tradeData.stats; }
   tradeDataBy[game] = tradeData;
   return tradeData;
 }
@@ -2165,7 +2234,7 @@ ipcMain.handle('results:more', async () => {
   if (!resultsState) return null;
   if (resultsOtherGame()) return { ...resultsPayload(), error: `Switch back to ${G(resultsState.r.game).short} to load more of these.` };
   try { await loadMoreListings(10); } catch (err) { return { error: err.message || String(err) }; }
-  if (resultsState.ctx.mode === 'price') resultsState.ctx.priceSummary = priceSummary(resultsState.listings, resultsState.ctx.priceLeague);
+  if (resultsState.ctx.mode === 'price') resultsState.ctx.priceSummary = priceSummary(resultsState.listings, resultsState.ctx.priceLeague, resultsState.ctx.priceLevel || 0);
   return resultsPayload();
 });
 ipcMain.handle('results:rescore', async () => {
@@ -2429,7 +2498,7 @@ function fmtEx(ex) {
 }
 
 // the price verdict, with everything that makes it less certain said out loud
-function priceSummary(listings, league) {
+function priceSummary(listings, league, level = 0) {
   const s = priceLib.priceStats(listings);
   if (!s) return null;
   const pl = (k, one, many) => `${k} ${k === 1 ? one : many}`;
@@ -2456,6 +2525,12 @@ function priceSummary(listings, league) {
     out.typicalEx = s.typicalEx; out.typical = fmtEx(s.typicalEx);
     out.range = s.lowEx !== s.highEx ? `${fmtEx(s.lowEx)} – ${fmtEx(s.highEx)}` : null;
     out.verdict = `Worth about ${out.typical}${out.range ? ` (most ${out.range})` : ''}.`;
+    out.confidence = priceLib.confidence(s, level);
+    // selling it: a little under the cheapest comparable listing (not when the price is a guess)
+    if (out.confidence && out.confidence.grade !== 'guess') {
+      const rate = store.settings.divineRate;
+      out.sell = ninjaLib.sellNote({ total: s.cheapestEx, totalDiv: rate ? s.cheapestEx / rate : null, unit: G().baseShort, stack: 1 });
+    }
   }
   return out;
 }
@@ -2464,6 +2539,11 @@ function priceSummary(listings, league) {
 ipcMain.handle('trade:price', inGame(async (_e, target, picks) => {
   const item = resolveItem(target);
   if (!item) return { ok: false, error: 'No item to price.' };
+  return tradePrice(item, picks, { window: true });
+}));
+// the trade site's price for an item. opts.window: show the listings in the results window;
+// without it (Alt+E's quick price) the listings are only read for the price
+async function tradePrice(item, picks, opts0 = {}) {
   let d;
   try { d = await loadTradeData(false); } catch (err) { return { ok: false, error: 'Could not load trade site data: ' + (err.message || err) }; }
   await refreshDivineRate(false);
@@ -2477,8 +2557,14 @@ ipcMain.handle('trade:price', inGame(async (_e, target, picks) => {
   // you chose the stats in the popup: exactly those, at your minimums (with the same rarity,
   // corruption, links and influences as the item), one search
   const chosen = Array.isArray(picks) ? picks.filter((p) => p && typeof p.key === 'string').slice(0, 20) : null;
-  for (let level = 0; level < (chosen ? 1 : 3); level++) {
-    q = trade.buildSimilarQuery(item, { ...opts, level });
+  // rare and magic gear: the market search (pricequery.js); uniques and the rest: the like-for-like one
+  // maps, waystones and tablets: their tier / kind and numbers (pricequery.js)
+  const mapish = !chosen && priceQuery.usesMapPriceQuery(item);
+  const market = !chosen && !mapish && priceQuery.usesPriceQuery(item);
+  const levels = chosen ? 1 : mapish ? priceQuery.MAP_LEVELS.length : market ? priceQuery.LEVELS.length : 3;
+  const enough = market || mapish ? priceQuery.ENOUGH : 3;
+  for (let level = 0; level < levels; level++) {
+    q = mapish ? priceQuery.buildMapPriceQuery(item, { ...opts, level }) : market ? priceQuery.buildPriceQuery(item, { ...opts, level }) : trade.buildSimilarQuery(item, { ...opts, level });
     if (chosen) {
       const c = trade.buildQuery(chosen.map((p) => ({ key: p.key, min: p.min, max: p.max, source: p.source, ...(typeof p.id === 'string' && /^[a-z]+\.[a-z0-9_]{1,80}$/.test(p.id) ? { id: p.id, idType: ['pseudo', 'explicit', 'implicit', 'enchant', 'rune', 'fractured', 'crafted'].includes(p.idType) ? p.idType : undefined } : {}) })), { itemClass: item.itemClass, statIndex: d.index, filtersData: d.filters, preferLocal: armourOrWeapon, status: 'available' });
       q.body.query.stats = c.body.query.stats;
@@ -2489,7 +2575,7 @@ ipcMain.handle('trade:price', inGame(async (_e, target, picks) => {
     }
     q.body.sort = { price: 'asc' };
     r = await runSearch(league, q.body, chosen ? 'price chosen' : `price L${level}`);
-    if (!r.ok || r.total == null || r.total >= 3) break;
+    if (!r.ok || r.total == null || r.total >= enough) break;
     if (r.near) break;
     await new Promise((res) => setTimeout(res, 700));
   }
@@ -2500,12 +2586,22 @@ ipcMain.handle('trade:price', inGame(async (_e, target, picks) => {
   const ctx = { item, mode: 'price', title: `Price check: ${item.name}`, body: q.body, searchKey: searchKey(q.body),
     note: `Listings like this one (${q.levelLabel}, ${q.need} of ${q.total} stats), cheapest first.` };
   if (!sameGame()) return SWITCHED();
+  if (!opts0.window) {
+    // just the price: the first 40 listings read, nothing shown, nothing judged
+    const rates = { ...(store.settings.currencyRates || {}), ...(store.settings.divineRate ? { divine: store.settings.divineRate } : {}) };
+    const raw = r.ids && r.ids.length ? await fetchListings(league, r.searchId, r.ids.slice(0, 40), tg()) : [];
+    const listings = raw.map((x) => listingLib.summarise(x, item.itemClass, rates, G().base));
+    const summary = priceSummary(listings, league, q.level || 0);
+    if (summary && summary.typicalEx != null && item.id) lastWorth.set(item.id, summary.typicalEx);
+    return { ok: true, mode: 'price', total: r.total, league, item: item.name, url: r.url, summary, levelLabel: q.levelLabel, level: q.level };
+  }
   const shown = r.ids && r.ids.length ? await showResults(r, ctx) : false;
   let summary = null;
   if (shown) {
-    summary = priceSummary(resultsState.listings, league);
+    summary = priceSummary(resultsState.listings, league, q.level || 0);
     resultsState.ctx.priceSummary = summary;
     resultsState.ctx.priceLeague = league;
+    resultsState.ctx.priceLevel = q.level || 0;
     if (summary && summary.typicalEx != null && item.id) lastWorth.set(item.id, summary.typicalEx);
     if (resultsWin && !resultsWin.isDestroyed()) resultsWin.webContents.send('results:data', resultsPayload());
   } else {
@@ -2513,7 +2609,7 @@ ipcMain.handle('trade:price', inGame(async (_e, target, picks) => {
   }
   return { ok: true, mode: 'price', total: r.total, league, item: item.name, url: r.url, inApp: shown, opened: true,
     summary, levelLabel: q.levelLabel, level: q.level, need: q.need, of: q.total };
-}));
+}
 
 // ---------- saved searches ----------
 
@@ -2740,6 +2836,7 @@ app.whenReady().then(() => {
   process.on('unhandledRejection', (err) => log('error (promise): ' + (err && err.stack || err)));
   registerHotkey();
   registerResultsHotkey();
+  registerPriceHotkey();
   buildTrayMenu();
   setInterval(pollClipboard, 250);
   setInterval(watchCursor, 200);
@@ -2747,6 +2844,8 @@ app.whenReady().then(() => {
   try { app.setAppUserModelId('local.poe2.upgradechecker'); } catch (_) { /* ignore */ }
   refreshDivineRate(false).catch(() => {});
   setInterval(() => refreshDivineRate(false).catch(() => {}), HOUR);
+  // the trade site's stat list, read before the first F2 / F3 needs it (it's cached on disk for a day)
+  setTimeout(() => gameCtx.run({ game: store.activeGame() }, () => loadTradeData(false)).then(() => log('trade data ready')).catch((err) => log('trade data warm-up: ' + (err.message || err))), 4000);
   applyLoginItem();
   updates.setupUpdater();
   usage.start();

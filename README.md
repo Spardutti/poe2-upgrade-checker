@@ -43,7 +43,9 @@
 - **Character page:** your whole character from Path of Building: DPS or minion DPS, effective HP, energy shield, resistances against the cap, the biggest hit you can take, Spirit, attributes, skills with supports, keystones and ascendancy.
 - **Upgrade popup:** the verdict, the change in every stat, each mod's tier and roll, open prefixes and suffixes for crafting, and *What's it worth?* (or **Price by chosen stats…** to pick exactly which stats and minimums the price check matches, with a total elemental resistance row and 80/90/100% minimum buttons). Links to the wiki and poedb.
 - **Where to spend:** every slot searched in your price range and checked with your build, ranked by how much better your build gets **per divine** ("Gloves: +14% for 3 div. Amulet: +6% for 20 div."). When resistances are short, it also looks for **two items that cap them together**. Without a Path of Building build (PoE2), it ranks by gear score instead.
+- **Price-only hotkey (F3):** a small popup with just the item's price (poe.ninja, or the trade site for rares, waystones, maps and tablets), and how sure it is (solid price, rough price or a guess). The same item again within an hour answers at once. F2 still does the full check.
 - **Map and waystone check:** F2 on a map or waystone. Path of Building works out what the player mods do to *your* character ("–12% max resistances: effective HP –14%"), monster mods are checked against your build (reflect against your damage types, no leech or no regeneration against what you rely on), and you can mark any mod dangerous, careful or fine.
+- **Waystones, maps and tablets:** *What's it worth?* prices them on the trade site by tier and their numbers (item rarity, pack size, waystone drop chance), or a tablet by its kind, uses left and mods.
 - **Prices for everything else:** F2 on currency, fragments, essences, runes, divination cards, gems (by level, quality and corruption), maps and uniques (by links) shows its poe.ninja price, the whole stack's, and the 7-day trend.
 - **Gem check:** F2 on a skill or support gem: if your build uses that gem, Path of Building swaps in this one's level and quality and shows the DPS and effective HP change.
 - **Selling helper:** for anything poe.ninja prices, a suggested listing price a little under poe.ninja and *Copy price note* (`~price 4 divine`) to paste into the item's note in a premium stash tab.
@@ -216,7 +218,11 @@ Searches show their listings in a **results window** (always on top) instead of 
 
 ## More
 
-- **What's it worth?** (popup) looks up listings like the copied item, ignoring your price range and ignored stats. It tells you the cheapest and typical price, e.g. "Worth about 2 div (cheapest 180 ex, 12 similar listed)", and shows them cheapest-first.
+- **What's it worth?** (popup) looks up listings like the copied item, ignoring your price range and ignored stats, and shows them cheapest-first with a price, e.g. "Worth about 2 div (most 1 – 3 div)".
+  - Rare and magic gear is searched the way buyers search: total resistances, life, attributes and movement speed as the trade site's totals, the item's Armour / Evasion / Energy Shield or a weapon's DPS, and its other worthwhile mods, each within a range of the item's values (filler like light radius or stun threshold is left out).
+  - Only listings from the last 3 days at first (then a week, then 2 weeks), from sellers who are online: items that have sat unsold for weeks don't set the price.
+  - The price is the middle of the cheapest five sellers, with price-fixing baits left out, since what an item sells for is near the bottom of the market.
+  - It says how sure it is: *solid price* (plenty of close, recent listings at similar prices), *rough price* or *a guess*. Unless it's a guess, it also suggests a price to list yours at (just under the cheapest) with *Copy price note*.
 - **Saved searches** (Find upgrades page): run a saved search again with one click. It shows how many are listed now, e.g. "31 listed (+6 since last time)".
 - **Alerts:** tick **Alert** on a saved search and choose how often to check. New listings give a Windows notification; click it to see them. Checks are spaced out to respect the trade site's rate limits.
 - **Results window:** Esc hides it, and **Ctrl+Shift+D** (changeable in Settings) shows it again. It remembers its size and position, and comes back to the front when you search from the app.

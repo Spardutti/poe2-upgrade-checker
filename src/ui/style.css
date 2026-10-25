@@ -541,3 +541,9 @@ details.fold > summary .fold-why { font-family: var(--f-text); letter-spacing: 0
 /* best anoint / instil */
 .kv.anoint td:first-child { max-width: 260px; }
 .kv.anoint tr.cur td { background: var(--hl, rgba(214,170,80,.08)); }
+
+/* how far to trust a price */
+.conf { display: inline-block; font-size: 12px; font-weight: 600; padding: 0 6px; margin-left: 6px; border-radius: 3px; vertical-align: middle; border: 1px solid currentColor; letter-spacing: .02em; }
+.conf-solid { color: var(--up, #7fbf6a); }
+.conf-rough { color: var(--warn, #d9a441); }
+.conf-guess { color: var(--dim, #9a9284); }

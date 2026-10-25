@@ -77,7 +77,9 @@
       if (res.mode === 'price' && res.summary && res.summary.typical) {
         // the answer first, big; the details small under it
         const sm = res.summary;
-        el.innerHTML = `<div class="price-answer">≈ <b>${esc(sm.typical)}</b></div><div class="dim small">${[sm.range ? `most ${esc(sm.range)}` : '', `${esc(res.total)} similar listed`, sm.cheapest ? `cheapest ${esc(sm.cheapest)}` : '', res.level > 0 ? `compared with ${esc(res.levelLabel)}` : ''].filter(Boolean).join(' · ')}${sm.notes && sm.notes.length ? `. ${esc(sm.notes.join('; '))}` : ''}</div>`;
+        el.innerHTML = `<div class="price-answer">≈ <b>${esc(sm.typical)}</b>${window.confHtml(sm.confidence)}</div>${sm.sell ? `<div class="sell-row"><span class="dim small">List it at</span> <b>${esc(sm.sell.text)}</b> <button class="link" data-note="${esc(sm.sell.note)}" title="Copies &quot;${esc(sm.sell.note)}&quot;: right-click the item in a premium stash tab and paste it into the note">Copy price note</button></div>` : ''}<div class="dim small">${[sm.range ? `most ${esc(sm.range)}` : '', `${esc(res.total)} similar listed`, sm.cheapest && !sm.range ? `cheapest ${esc(sm.cheapest)}` : '', res.level > 0 ? `compared with ${esc(res.levelLabel)}` : ''].filter(Boolean).join(' · ')}${sm.notes && sm.notes.length ? `. ${esc(sm.notes.join('; '))}` : ''}</div>`;
+        const cp = el.querySelector('[data-note]');
+        if (cp) cp.addEventListener('click', () => { window.api.copyText(cp.dataset.note); cp.textContent = 'Copied'; });
         return;
       }
       if (res.mode === 'price' && res.summary) {
@@ -378,12 +380,58 @@
         ${p ? window.adviceHtml(r) : ''}
         ${window.sellHtml(r)}
         ${r.priceNote ? `<div class="note">${esc(r.priceNote)}</div>` : ''}
+        ${/tablet/i.test(it.itemClass || '') ? '<div class="actions"><button class="find" id="tradeWorth" title="What tablets like this sell for on the trade site">What\'s it worth?</button></div><div class="note" id="findMsg"></div>' : ''}
         ${r.links && r.links.length ? `<div class="actions">${linksHtml(r.links)}</div>` : ''}
       </div>`;
     bindLinks(el);
+    window.bindTradeWorth(el, it, opts);
     window.bindSell(el, r);
     const c = el.querySelector('#closeBtn');
     if (c) c.addEventListener('click', () => window.api.close());
+  };
+  const ago = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m === 1 ? '1 min ago' : `${m} min ago`; };
+  // "What's it worth?" on a waystone, map or tablet card: the trade site's price
+  window.bindTradeWorth = function (el, it, opts) {
+    const b = el.querySelector('#tradeWorth');
+    if (!b) return;
+    b.addEventListener('click', async () => {
+      const msg = el.querySelector('#findMsg');
+      b.disabled = true; msg.innerHTML = '<span class="spinner"></span> Checking prices…';
+      if (opts && opts.onResize) opts.onResize();
+      const res = await window.api.priceCheck(it.id ? { itemId: it.id } : '__last');
+      b.disabled = false;
+      window.showSearchResult(msg, res);
+      if (opts && opts.onResize) opts.onResize();
+    });
+  };
+  // how far to trust a price: a small chip, the reason in its tooltip
+  const CONF = { solid: ['solid price', 'conf-solid'], rough: ['rough price', 'conf-rough'], guess: ['a guess', 'conf-guess'] };
+  window.confHtml = function (c) {
+    if (!c || !CONF[c.grade]) return '';
+    const [t, cls] = CONF[c.grade];
+    return ` <span class="conf ${cls}" title="${esc(c.grade === 'solid' ? 'Plenty of recent listings close to this item, at similar prices' : `Treat it as ${c.grade === 'rough' ? 'a rough figure' : 'a guess'}: ${c.why}`)}">${t}</span>`;
+  };
+  // the price hotkey (F3): the item's name and its price, nothing else
+  window.renderQuickPrice = function (el, r, opts) {
+    opts = opts || {};
+    const it = r.item || {};
+    const p = r.ninja; const t = r.trade;
+    const base = it.baseType && it.baseType !== it.name ? it.baseType : it.itemClass || '';
+    let body;
+    if (r.pending) body = '<div class="dim"><span class="spinner"></span> Checking the price…</div>';
+    else if (p) body = `<div class="price-answer"><b>${ninjaPrice(p)}</b></div><div class="dim small">${p.stack > 1 ? `stack: ${ninjaPrice(p, true)} · ` : ''}poe.ninja${p.league ? `, ${esc(p.league)}` : ''}</div>`;
+    else if (t) body = `<div class="price-answer">≈ <b>${esc(t.typical)}</b>${window.confHtml(t.confidence)}</div><div class="dim small">${t.range ? `most ${esc(t.range)} · ` : ''}${esc(t.sellers || t.total)} seller${(t.sellers || t.total) === 1 ? '' : 's'} · ${esc(r.source || 'trade site')}${r.checkedAt ? ` · checked ${esc(ago(r.checkedAt))} <button class="link" id="qpRefresh">refresh</button>` : ''}</div>`;
+    else body = `<div class="dim">${esc(r.error || 'No price found.')}</div>`;
+    el.innerHTML = `<div class="card price-card quick-price">
+        <div class="name ${esc((it.rarity || '').toLowerCase())}">${esc(it.name || '')}</div>
+        ${base ? `<div class="meta">${esc(base)}</div>` : ''}
+        ${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
+        ${body}
+      </div>`;
+    const c = el.querySelector('#closeBtn');
+    if (c) c.addEventListener('click', () => window.api.close());
+    const rf = el.querySelector('#qpRefresh');
+    if (rf) rf.addEventListener('click', () => { rf.disabled = true; window.api.quickPriceRefresh(); });
   };
   // a gem: what the same gem in your build would do at this level and quality
   const pct = (v) => (v == null || Math.abs(v) < 0.05 ? null : `${v > 0 ? '+' : ''}${v}%`);
@@ -424,10 +472,13 @@
             <span class="mi">${MAPICON[m.level] || '·'}</span><span class="mt">${esc(m.text)}${m.mark ? ' <small class="dim">(your mark)</small>' : ''}${m.note ? `<br><small class="${m.level === 'ok' ? 'dim' : ''}">${esc(m.note)}</small>` : ''}</span></div>`).join('') || '<div class="dim">No mods.</div>'}</div>
         ${r.ninja ? window.ninjaLine(r.ninja) : ''}
         <div class="dim small">${c.calculated ? `${c.calculated} mod${c.calculated === 1 ? '' : 's'} worked out by Path of Building; ` : ''}click a mod to mark it dangerous, careful or fine for all your ${r.game === 'poe1' ? 'maps' : 'waystones'}.</div>
+        <div class="actions"><button class="find" id="tradeWorth" title="What ${r.game === 'poe1' ? 'maps' : 'waystones'} like this sell for on the trade site">What's it worth?</button></div>
+        <div class="note" id="findMsg"></div>
         <div class="sell-row"><button class="link" id="avoidBtn" title="Copies a search for the map device or stash that leaves out ${r.game === 'poe1' ? 'maps' : 'waystones'} with your dangerous mods">Copy a search that avoids dangerous mods</button><span class="dim small" id="avoidOut"></span></div>
         ${r.links && r.links.length ? `<div class="actions">${linksHtml(r.links)}</div>` : ''}
       </div>`;
     bindLinks(el);
+    window.bindTradeWorth(el, it, opts);
     el.querySelectorAll('.map-mod').forEach((m) => m.addEventListener('click', () => window.api.mapMark(m.dataset.key, NEXT[m.dataset.mark || ''])));
     const av = el.querySelector('#avoidBtn');
     if (av) av.addEventListener('click', async () => {
@@ -447,6 +498,7 @@
     const ui = (r && r.ui) || {};
     document.body.classList.toggle('cb', !!ui.colorblind);
     if (r && r.kind === 'price') return window.renderPriceCard(el, r, opts);
+    if (r && r.kind === 'quickprice') return window.renderQuickPrice(el, r, opts);
     if (r && r.kind === 'map' && window.renderMapCard) return window.renderMapCard(el, r, opts);
     if (!r || !r.ok) {
       el.innerHTML = `<div class="card ${r && r.loading ? 'loading' : ''}">${opts.closable ? '<button class="x" id="closeBtn" title="Close">×</button>' : ''}
