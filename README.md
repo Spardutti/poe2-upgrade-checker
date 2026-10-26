@@ -9,18 +9,18 @@
 
 <p align="center"><b><a href="https://poe2upgrade.com">poe2upgrade.com</a></b></p>
 
-**PoE Upgrade Checker** is a small overlay that sits in your system tray while you play Path of Exile 2, or Path of Exile 1 ([beta: download it here](https://poe2upgrade.com/download), more [below](#path-of-exile-1-beta)). It answers two questions in game:
+**PoE Upgrade Checker** is a small overlay that sits in your system tray while you play Path of Exile 2, or Path of Exile 1 (new in 0.5.1 and still marked beta, more [below](#path-of-exile-1-beta)). It answers two questions in game:
 
 | | |
 |---|---|
-| **Is this an upgrade?** Hover an item and press **F2**. With your Path of Building export loaded, the app runs **Path of Building's own calculations** on your build: what the item does to your DPS (or minion DPS), effective HP, resistances and Spirit compared with what you wear. Items that would drop a resistance or cost you damage are flagged in red, never called an upgrade. | <img src="docs/popup.png" alt="The popup: Doom Vise is an UPGRADE, +26.8 points for your build, and caps your lightning resistance" width="380"> |
+| **Is this an upgrade?** Hover an item and press **F2**. With your Path of Building export loaded, the app runs **Path of Building's own calculations** on your build: what the item does to your DPS (or minion DPS), effective HP, resistances and Spirit compared with what you wear. Items that would drop a resistance or cost you damage are flagged in red, never called an upgrade. | <img src="docs/popup.png" alt="The popup: Doom Vise is an UPGRADE, +26.8 points for your build, and caps your lightning resistance" width="400"> |
 | **Where's a better one?** One click searches the official trade site for upgrades within your budget, weighted by what each stat is worth to your build. Results open in the app, judged against your gear, with *Travel to hideout* and a ready-made whisper. | |
 
 <sub>Screenshots of the app with a real Path of Building build (a Disciple of Varashta summoner). Trade listings in them are examples.</sub>
 
 ## Download
 
-1. Get **`PoE-Upgrade-Checker-Setup-x.y.z.exe`** from the [newest release](https://poe2upgrade.com/download) (the current beta, with PoE1 support) and run it. It installs for your Windows user only, so no admin rights are needed, and **updates itself**.
+1. Get **`PoE-Upgrade-Checker-Setup-x.y.z.exe`** from the [newest release](https://poe2upgrade.com/download) and run it. It installs for your Windows user only, so no admin rights are needed, and **updates itself**.
    - Prefer no install? Use the **Portable** .exe from the same page. It doesn't auto-update.
    - Windows may warn about an unrecognised app because the installer isn't code-signed. Click *More info → Run anyway*.
 2. In PoE2, go to **Options → Graphics** and set **Windowed Fullscreen**, so the overlay can draw over the game.
@@ -47,6 +47,7 @@
 - **Map, waystone and tablet check:** F2 on a map, waystone or precursor tablet. Path of Building works out what the player mods do to *your* character ("–12% max resistances: effective HP –14%") and what the monster mods do: extra damage, penetration, crits, speed and accuracy go on Path of Building's enemy, so each says how much smaller the biggest hit you survive gets and how much less long you last; tougher monsters (resistances, armour, more life) say what they do to your damage and kill time. The mods come in groups (acting on you, monsters hit harder, tougher monsters, more monsters, loot, league content), with a map boss group, the waystone's rewards, and what a tablet adds, what its mods are for and its uses left. Tablet wording is read as the waystone's, so Path of Building works out tablet mods too. Reflect, no leech and no regeneration are checked against what your build relies on, and you can mark any mod dangerous, careful or fine.
 - **Waystones, maps and tablets:** *What's it worth?* prices them on the trade site by tier and their numbers (item rarity, pack size, waystone drop chance), or a tablet by its kind, uses left and mods.
 - **Prices for everything else:** F2 on currency, fragments, essences, runes, divination cards, gems (by level, quality and corruption), maps and uniques (by links) shows its poe.ninja price, the whole stack's, and the 7-day trend.
+- **Prices in chaos too (PoE2):** every price also says what it is in chaos orbs, from poe.ninja's rate ("≈ 494 ex (0.7 div · 35 chaos)").
 - **Gem check:** F2 on a skill or support gem: if your build uses that gem, Path of Building swaps in this one's level and quality and shows the DPS and effective HP change.
 - **Selling helper:** for anything poe.ninja prices, a suggested listing price a little under poe.ninja and *Copy price note* (`~price 4 divine`) to paste into the item's note in a premium stash tab.
 - **Best runes and soul cores (PoE2):** on the Character page, Path of Building tries every rune, soul core and idol that fits each socket on your gear (the best tier your level can use), with an added socket where there's none yet (an Artificer's Orb). Runes the copied text doesn't name are worked out from their mod line (or it shows what yours gives now). It lists the best for each socket with what it does for your build and its poe.ninja price, what all of them do together, and which are the best value to buy first. The loot filter can highlight them.
@@ -67,6 +68,7 @@
   - Several characters, each with their own gear and build.
 - **Gear score fallback:** without a PoB build, a 0–100 gear score from build profiles (minion summoner, ES caster, life + res) and your own stat weights.
 - **Built for playing:**
+  - Looks like the games' own item tooltips: rarity-coloured names, mods in the games' blue, no clutter.
   - Compact popup.
   - Pin it to the cursor or a screen edge, or drag it anywhere and it stays there.
   - Text size and colour-blind options.
@@ -74,17 +76,17 @@
 
 ## In pictures
 
-<p align="center"><img src="docs/popup-warnings.png" alt="Two popups: Soul Vise LOSES RESISTANCE (lightning 75% to 38%), and a ring that caps lightning but LOSES DAMAGE (minion DPS down 20%)" width="100%"></p>
+<p align="center"><img src="docs/popup-warnings.png" alt="Two popups: LOSES RESISTANCE, lightning resistance 75% to 38%; and LOSES DAMAGE, minion DPS down 20%" width="100%"></p>
 <p align="center"><sub>Items that cost you a resistance or your damage are never called an upgrade.</sub></p>
 
 <table>
 <tr>
-<td width="42%"><img src="docs/results.png" alt="Trade results judged by Path of Building, resistances first"></td>
-<td><img src="docs/character.png" alt="The Character page: minion DPS, effective HP, defences, resistances, biggest hits"><br><br><img src="docs/my-gear.png" alt="My gear with the Path of Building build and priorities"></td>
+<td width="42%"><img src="docs/results.png" alt="Trade results judged by Path of Building, each listing with its verdict, resistances first"></td>
+<td><img src="docs/character.png" alt="The Character page: DPS, effective HP, resistances and skills calculated by Path of Building"><br><br><img src="docs/where-to-spend.png" alt="Where to spend: every gear slot searched in your price range, ranked by points per divine"></td>
 </tr>
 <tr>
 <td><sub>Trade results: every listing checked with your build, the ones that cap a resistance first.</sub></td>
-<td><sub>The Character page, and My gear with your build and priorities.</sub></td>
+<td><sub>The Character page, and Where to spend: what each divine buys you, slot by slot.</sub></td>
 </tr>
 </table>
 
@@ -118,7 +120,7 @@ The **setup guide** opens on first run. You can reopen it from **My gear → Set
 
 ## Path of Exile 1 (beta)
 
-PoE1 support is in the beta releases: [download the newest one](https://poe2upgrade.com/download).
+PoE1 support is part of the normal release since 0.5.1. It is still marked *beta* in the app while it gets more testing.
 
 The app works for **Path of Exile 1** too. It knows which game you're in on every F2 (from the game window), and each game has its own characters, league, prices and saved searches, so you can play both without changing anything.
 
@@ -250,7 +252,7 @@ Questions, bugs or ideas: email **[support@poe2upgrade.com](mailto:support@poe2u
 
 For PoE2 running through **Steam with Proton** (or Lutris/Heroic) on desktop Linux: Ubuntu, Fedora, Arch, Bazzite and so on, on X11 or Wayland.
 
-1. Download **`PoE-Upgrade-Checker.AppImage`** from the [newest release](https://poe2upgrade.com/download) (the current beta, with PoE1 support) and put it where you want to keep it (e.g. `~/Applications`).
+1. Download **`PoE-Upgrade-Checker.AppImage`** from the [newest release](https://poe2upgrade.com/download) and put it where you want to keep it (e.g. `~/Applications`).
 2. Make it executable and run it: right-click → Properties → *Allow executing as program*, or `chmod +x PoE-Upgrade-Checker.AppImage && ./PoE-Upgrade-Checker.AppImage`. It **updates itself** like the Windows installer, in place: the file keeps its name, so shortcuts and *Start with your desktop* keep working (a `PoE2-Upgrade-Checker.AppImage` from before the rename keeps that name too).
    - Had a version-named file from 0.4.1 or older (`PoE2-Upgrade-Checker-0.4.1.AppImage`)? Its next update renames it to `PoE-Upgrade-Checker.AppImage` once: start it from the new name (that also fixes the autostart entry) and update any shortcut you made.
    - Some distros need FUSE for AppImages (e.g. `sudo apt install libfuse2` on Ubuntu 22.04+).
