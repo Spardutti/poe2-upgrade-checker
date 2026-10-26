@@ -24,6 +24,12 @@ test('suggested weights leave out a weapon\'s own damage and attack speed mods',
   assert.deepStrictEqual(keys(equipped), ['[Weapon] Total DPS']);
 });
 
+test('suggested weights keep a weapon\'s own mods when weapon DPS is ignored', () => {
+  const equipped = { Weapon: mace('120% increased Physical Damage\n20% increased Attack Speed') };
+  const s = suggestWeights(equipped, (k) => k === '[Weapon] Total DPS');
+  assert.deepStrictEqual(s.map((w) => w.key).sort(), ['#% increased Attack Speed', '#% increased Physical Damage']);
+});
+
 test('suggested weights keep global attack mods on a weapon', () => {
   const equipped = { Weapon: mace('Allies in your Presence have 10% increased Attack Speed\n12% increased Attack Speed with Quarterstaves\nAdds 2 to 4 Physical Damage to Attacks') };
   assert.deepStrictEqual(keys(equipped), ['#% increased Attack Speed with Quarterstaves', 'Adds # to # Physical Damage to Attacks', 'Allies in your Presence have #% increased Attack Speed', '[Weapon] Total DPS']);

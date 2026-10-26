@@ -29,7 +29,7 @@ function suggestWeights(equipped, isIgnored) {
     for (const x of statSources(item)) {
       if (x.source === 'socket' || SKIP.test(x.key) || (isIgnored && isIgnored(x.key))) continue;
       if (hasBaseDef && LOCAL_DEFENCE.test(x.key)) continue;
-      if (st['[Weapon] Total DPS'] && LOCAL_DPS.test(x.key)) continue;
+      if (st['[Weapon] Total DPS'] && !(isIgnored && isIgnored('[Weapon] Total DPS')) && LOCAL_DPS.test(x.key)) continue;
       if (st['[Base] Spirit'] && x.key === '#% increased Spirit') continue;
       if (!(x.value > 0)) continue;
       const e = per.get(x.key) || { values: [], slots: new Set() };
