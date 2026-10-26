@@ -35,8 +35,14 @@ function gearMax(equipped) {
   const out = { fire: 0, cold: 0, lightning: 0, chaos: 0 };
   for (const [slot, it] of Object.entries(equipped || {})) {
     if (!it || !it.stats || !MAIN_SLOTS.includes(slot)) continue;
-    for (const [el, El] of ELS) {
-      out[el] += (Number(it.stats[`#% to Maximum ${El} Resistance`]) || 0) + (el !== 'chaos' ? Number(it.stats['#% to all Maximum Elemental Resistances']) || 0 : 0);
+    // PoE2 writes "Maximum", PoE1 "maximum"; PoE1 also has "+1% to all maximum Resistances" (chaos too)
+    for (const [k, v] of Object.entries(it.stats)) {
+      const n = Number(v) || 0;
+      if (!n) continue;
+      let m = k.match(/^#% to Maximum (Fire|Cold|Lightning|Chaos) Resistance$/i);
+      if (m) { out[m[1].toLowerCase()] += n; continue; }
+      if (/^#% to all Maximum Elemental Resistances$/i.test(k)) { for (const el of ['fire', 'cold', 'lightning']) out[el] += n; continue; }
+      if (/^#% to all Maximum Resistances$/i.test(k)) for (const el of ['fire', 'cold', 'lightning', 'chaos']) out[el] += n;
     }
   }
   return out;

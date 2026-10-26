@@ -287,10 +287,10 @@ local function slotGems()
   return r
 end
 
--- PoE1: what kind of weapon/offhand each weapon slot holds ("Two Handed Axe", "One Handed Sword"
--- + "Thrusting"), so imported items get their real item class (the export doesn't say)
+-- What kind of weapon/offhand each weapon slot holds ("Two Handed Axe", "One Handed Sword" +
+-- "Thrusting", "Staff" + "Warstaff"), so imported items get their real item class (the export doesn't
+-- say, and a base's name often doesn't either: a Smithing Hammer is a one-hand mace)
 local function gearTypes()
-  if GAME ~= "poe1" then return nil end
   local r = {}
   for _, name in ipairs({ "Weapon 1", "Weapon 2", "Weapon 1 Swap", "Weapon 2 Swap" }) do
     local slot = build.itemsTab.slots[name]
@@ -402,6 +402,24 @@ local function sheet()
   return r
 end
 
+-- Would wielding the two-hander `item` empty your offhand `offItem`? Asked of Path of Building's own
+-- rule for what the offhand can hold with a given weapon (a bow its quiver, a staff a focus with
+-- Instruments of Power, Giant's Blood and so on). Its calculation means to drop the offhand for
+-- two-handers itself, but in PoE2 that check looks at the offhand before it has read it, so it only
+-- ever happened for two-hand swords, axes and maces. One-handers are left alone.
+local function offhandDropped(item, offItem)
+  if not (item and item.base and offItem and offItem.base) then return false end
+  local info = data.weaponTypeInfo[item.base.type]
+  if not info or info.oneHand then return false end
+  local items = build.itemsTab.items
+  local tmp = -7331
+  items[tmp] = item
+  local set = { ["Weapon 1"] = { selItemId = tmp }, ["Weapon 1 Swap"] = { selItemId = tmp } }
+  local ok, fits = pcall(build.itemsTab.IsItemValidForSlot, build.itemsTab, offItem, "Weapon 2", set, build.itemsTab.lastWeaponFlagState)
+  items[tmp] = nil
+  return ok and not fits
+end
+
 local function evalItems(items)
   local calcFunc, base = build.calcsTab:GetMiscCalculator()
   local res = {}
@@ -451,15 +469,19 @@ local function evalItems(items)
           base = item.baseName, type = item.base and item.base.type, sub = item.base and item.base.subType }
       end
       local pslot = pobSlot(slot)
-      -- PoB empties the offhand itself for most two-handers, but not crossbows or quarterstaves
+      -- a two-hander takes the place of your offhand too: it's emptied for the calculation
       local off, offId
-      local info = item.base and data.weaponTypeInfo[item.base.type]
-      if pslot:match("^Weapon 1") and info and not info.oneHand and (item.base.type == "Crossbow" or item.base.type == "Warstaff" or item.base.type == "Fishing Rod" or item.base.type == "Bow") then
+      if pslot:match("^Weapon 1") then
         off = build.itemsTab.slots[pslot:gsub("^Weapon 1", "Weapon 2")]
         local offItem = off and off.selItemId and build.itemsTab.items[off.selItemId]
-        -- a bow keeps its quiver; anything else in the offhand goes
-        if item.base.type == "Bow" and offItem and offItem.base and offItem.base.type == "Quiver" then off = nil end
-        if off then offId = off.selItemId; off.selItemId = 0 end
+        if offItem and offhandDropped(item, offItem) then offId = off.selItemId; off.selItemId = 0 else off = nil end
+      elseif pslot:match("^Weapon 2") then
+        -- an offhand you couldn't hold with the two-hander you wield
+        local main = build.itemsTab.slots[pslot:gsub("^Weapon 2", "Weapon 1")]
+        local mainItem = main and main.selItemId and build.itemsTab.items[main.selItemId]
+        if mainItem and offhandDropped(mainItem, item) then
+          return { ok = false, twoHanded = true, error = "You can't use this with your two-handed weapon (" .. (mainItem.title or mainItem.name or mainItem.baseName or "your weapon") .. ")" }
+        end
       end
       local okc, new_ = pcall(calcFunc, { repSlotName = pslot, repItem = item })
       if off then off.selItemId = offId end
@@ -484,7 +506,10 @@ local function evalPairs(pairs)
       local slotA = build.itemsTab.slots[pobSlot(p.a.slot)]
       local itemA = makeItem(p.a.text)
       if not (slotA and itemA) then error("Path of Building couldn't read the first item") end
-      local orig = slotA.selItemId
+      -- every slot as it is now: putting a two-hander on empties your offhand for real
+      -- (PopulateSlots), so all of them go back afterwards, not just this one
+      local saved = {}
+      for name, s in pairs(build.itemsTab.slots) do if not s.nodeId then saved[name] = s.selItemId or 0 end end
       build.itemsTab:AddItem(itemA, true)
       slotA:SetSelItemId(itemA.id)
       build.itemsTab:PopulateSlots(); build.buildFlag = true; runCallback("OnFrame")
@@ -498,8 +523,9 @@ local function evalPairs(pairs)
           else res.results[k] = { ok = false, error = "Path of Building couldn't read this item" } end
         end
       end)
-      -- your gear back as it was, whatever happened
-      slotA:SetSelItemId(orig or 0)
+      -- your gear back as it was, whatever happened (main hand first, so the offhand fits again)
+      for _, name in ipairs({ "Weapon 1", "Weapon 1 Swap" }) do local s = build.itemsTab.slots[name]; if s and saved[name] then s:SetSelItemId(saved[name]) end end
+      for name, id in pairs(saved) do local s = build.itemsTab.slots[name]; if s and s.selItemId ~= id then s:SetSelItemId(id) end end
       if build.itemsTab.DeleteItem then pcall(build.itemsTab.DeleteItem, build.itemsTab, itemA) end
       build.itemsTab:PopulateSlots(); build.buildFlag = true; runCallback("OnFrame")
       if not okc then error(e2) end
@@ -544,32 +570,35 @@ end
 local function withMods(modsList, enemyList)
   local cfg = build.configTab
   local saved, savedEnemy = cfg.modList, cfg.enemyModList
-  local ml = new("ModList")
-  ml:AddList(saved)
-  for _, mods in ipairs(modsList or {}) do for _, m in ipairs(mods) do ml:AddMod(modLib.setSource(m, "Map")) end end
-  cfg.modList = ml
   local savedPen = {}
-  if enemyList and #enemyList > 0 and savedEnemy then
-    local el = new("ModList")
-    el:AddList(savedEnemy)
-    local pen = {}
-    for _, e in ipairs(enemyList) do
-      for _, m in ipairs(e.mods or {}) do
-        if m.name and m.type and tonumber(m.value) then el:NewMod(m.name, m.type, tonumber(m.value), "Map") end
+  -- the map's mods only for this one calculation: whatever goes wrong, your config goes back after
+  local ok, out = pcall(function()
+    local ml = new("ModList")
+    ml:AddList(saved)
+    for _, mods in ipairs(modsList or {}) do for _, m in ipairs(mods) do ml:AddMod(modLib.setSource(m, "Map")) end end
+    cfg.modList = ml
+    if enemyList and #enemyList > 0 and savedEnemy then
+      local el = new("ModList")
+      el:AddList(savedEnemy)
+      local pen = {}
+      for _, e in ipairs(enemyList) do
+        for _, m in ipairs(e.mods or {}) do
+          if m.name and m.type and tonumber(m.value) then el:NewMod(m.name, m.type, tonumber(m.value), "Map") end
+        end
+        for t, v in pairs(e.pen or {}) do pen[t] = (pen[t] or 0) + (tonumber(v) or 0) end
       end
-      for t, v in pairs(e.pen or {}) do pen[t] = (pen[t] or 0) + (tonumber(v) or 0) end
+      cfg.enemyModList = el
+      for t, v in pairs(pen) do
+        local k = "enemy" .. t .. "Pen"
+        savedPen[k] = { had = cfg.input[k] }
+        local ctrl = cfg.varControls and cfg.varControls[k]
+        local base = tonumber(cfg.input[k]) or tonumber(ctrl and ctrl.placeholder) or 0
+        cfg.input[k] = base + v
+      end
     end
-    cfg.enemyModList = el
-    for t, v in pairs(pen) do
-      local k = "enemy" .. t .. "Pen"
-      savedPen[k] = { had = cfg.input[k] }
-      local ctrl = cfg.varControls and cfg.varControls[k]
-      local base = tonumber(cfg.input[k]) or tonumber(ctrl and ctrl.placeholder) or 0
-      cfg.input[k] = base + v
-    end
-  end
-  local calcFunc = build.calcsTab:GetMiscCalculator()
-  local ok, out = pcall(calcFunc, {})
+    local calcFunc = build.calcsTab:GetMiscCalculator()
+    return calcFunc({})
+  end)
   cfg.modList, cfg.enemyModList = saved, savedEnemy
   for k, v in pairs(savedPen) do cfg.input[k] = v.had end
   if not ok then error(out) end
@@ -1003,6 +1032,8 @@ local function genQuery(req)
   return { ok = true, query = result, error = err, modWeights = mw, seconds = os.clock() - t0 }
 end
 
+local HEAVY = { load = true, equip = true, pairs = true, runeapply = true, skilldps = true, query = true, anoints = true, bosscheck = true }
+
 reply(enc({ ready = true, version = pobVersion() }))
 
 while true do
@@ -1010,6 +1041,7 @@ while true do
   if not line then break end
   local req = dkjson.decode(line)
   local id = req and req.id
+  if type(req) ~= "table" then req = {} end
   local ok, res = pcall(function()
     if req.cmd == "load" then
       local xml = tostring(req.xml or "")
@@ -1101,4 +1133,8 @@ while true do
   if not ok then res = { ok = false, error = tostring(res) } end
   res.id = id
   reply(enc(res))
+  -- full recalculations leave a lot of garbage, and LuaJIT doesn't give the memory back once the heap
+  -- has grown: collect after the heavy ones (after answering, so nobody waits for it). Measured: five
+  -- build loads left ~405 MB without this, ~325 MB with it.
+  if req and HEAVY[req.cmd] then collectgarbage("collect") end
 end

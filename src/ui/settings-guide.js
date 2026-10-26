@@ -144,7 +144,7 @@ async function renderProfiles() {
   $('#profileDelete').disabled = list.length < 2;
   // switched character (here, from the tray or by creating one): drop the last one's PoB code and message
   const act = (list.find((p) => p.active) || {}).id;
-  if (lastProfileId && act && act !== lastProfileId) clearPobBox();
+  if (lastProfileId && act && act !== lastProfileId) { clearPobBox(); refreshFindForCharacter(); }
   lastProfileId = act || lastProfileId;
 }
 let lastProfileId = null;

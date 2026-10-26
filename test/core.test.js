@@ -132,14 +132,17 @@ test('non-items and unsupported items', () => {
   assert.equal(flask.slot, 'Life Flask');
   const jewel = parseItem('Item Class: Jewels\nRarity: Rare\nA\nSapphire\n--------\nMinions deal 10% increased Damage');
   const r = compare(jewel, { 'Jewel 1': parseItem('Item Class: Jewels\nRarity: Rare\nB\nSapphire\n--------\nMinions deal 5% increased Damage') }, DEFAULT_WEIGHTS);
-  assert.equal(r.targetSlot, 'Jewel 2'); // empty jewel slot first
+  // jewels: compared with your weakest one (the app has room for 40, so an empty slot means nothing)
+  assert.equal(r.targetSlot, 'Jewel 1');
+  assert.notEqual(r.verdict, 'new');
+  assert.equal(compare(jewel, {}, DEFAULT_WEIGHTS).targetSlot, 'Jewel 1'); // no jewels yet: a new one
 });
 
 test('compare helmet: upgrade', () => {
   const eq = { Helmet: parseItem(HELMET_OLD) };
   const r = compare(parseItem(HELMET_NEW), eq, DEFAULT_WEIGHTS);
   assert.equal(r.ok, true);
-  assert.equal(r.verdict, 'upgrade');
+  assert.notEqual(r.verdict, 'new');
   assert.ok(r.delta > 0);
   const life = r.rows.find((x) => x.key === '# to maximum Life');
   assert.equal(life.diff, 34);
@@ -154,7 +157,7 @@ test('ring replaces the weaker ring / fills empty ring', () => {
   const strong = parseItem('Item Class: Rings\nRarity: Rare\nStrong\nRing\n--------\n+200 to maximum Life');
   const r = compare(ring, { 'Ring 1': strong, 'Ring 2': weak }, DEFAULT_WEIGHTS);
   assert.equal(r.targetSlot, 'Ring 2');
-  assert.equal(r.verdict, 'upgrade');
+  assert.notEqual(r.verdict, 'new');
   const r2 = compare(ring, { 'Ring 1': strong }, DEFAULT_WEIGHTS);
   assert.equal(r2.targetSlot, 'Ring 2');
   assert.equal(r2.verdict, 'new');

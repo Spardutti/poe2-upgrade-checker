@@ -7,20 +7,17 @@ const root = document.getElementById('root');
 const report = () => { const b = root.getBoundingClientRect(); const m = parseFloat(getComputedStyle(document.body).marginBottom) || 0; window.api.resize(Math.ceil(root.offsetTop + b.height + m) + 6); };
 
 // A re-render of the same item (settings changed, Path of Building answered) keeps
-// what you had open: More ▾ and any search message. A new item starts fresh.
+// what you had open: More ▾ and any search message (renderComparison shows it again, with
+// working buttons). A new item starts fresh.
 let shownId = null;
 let expanded = false;
 window.api.onResult((r) => {
   const id = r && r.item ? r.item.id || r.item.name : null;
   const same = id && id === shownId;
-  const msg = same ? root.querySelector('#findMsg') : null;
-  const msgHtml = msg ? msg.innerHTML : '';
   if (!same) expanded = false;
   shownId = id;
   try {
     window.renderComparison(root, r, { closable: true, onResize: report, expanded, onToggle: (open) => { expanded = open; } });
-    const m2 = root.querySelector('#findMsg');
-    if (m2 && msgHtml) m2.innerHTML = msgHtml;
   } catch (err) {
     root.innerHTML = '<div class="card"><div class="note"></div></div>';
     root.querySelector('.note').textContent = 'Popup error: ' + err.message;

@@ -25,6 +25,8 @@ function buildQuery(picks, opts) {
     const value = {};
     if (p.min !== '' && p.min != null && Number.isFinite(Number(p.min))) value.min = Number(p.min);
     if (p.max !== '' && p.max != null && Number.isFinite(Number(p.max))) value.max = Number(p.max);
+    // a "reduced" stat on the trade site: our -40 is its 40, so the range turns round
+    if (m.invert) { const { min, max } = value; delete value.min; delete value.max; if (max != null) value.min = -max; if (min != null) value.max = -min; }
     if (m.kind === 'equipment') {
       if (value.min != null && !(value.min > 0)) delete value.min; // "at least 0 DPS" means nothing
       if (Object.keys(value).length) equipment[m.id] = value;
@@ -75,7 +77,8 @@ function buildUpgradeQuery(item, weights, opts) {
     }
     const m = matchStat(key, opts.statIndex, { preferLocal: localFor(key, opts.itemClass || item.itemClass, opts.preferLocal) });
     if (!m) { if (item.stats[key]) unmatched.push(key); continue; }
-    weightFilters.push({ id: m.id, value: { weight: w }, disabled: false });
+    // a "reduced" stat on the trade site counts the other way round
+    weightFilters.push({ id: m.id, value: { weight: m.invert ? -w : w }, disabled: false });
     current += (natural[key] || 0) * w;
   }
   const filters = {};

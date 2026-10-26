@@ -73,7 +73,13 @@ function compare(item, equipped, weightsIn, opts) {
     // rings / charms / jewels: an empty slot first, otherwise your weakest one
     const group = SLOT_GROUPS[item.slot];
     const empty = group.find((s) => !equipped[s]);
-    if (empty && group.some((s) => equipped[s])) result = compareOne(item, [null], weights, empty, ignore);
+    const some = group.some((s) => equipped[s]);
+    if (item.slot === 'Jewel' && some) {
+      // jewels: the app keeps room for 40, so an "empty" one doesn't mean your tree has a free
+      // socket: compared with your weakest jewel (Path of Building knows your real sockets)
+      result = group.filter((s) => equipped[s]).map((s) => compareOne(item, [equipped[s]], weights, s, ignore)).sort((a, b) => b.delta - a.delta)[0];
+      notes.push('Compared with your weakest jewel. If your tree has a free jewel socket, it would be an addition instead.');
+    } else if (empty && some) result = compareOne(item, [null], weights, empty, ignore);
     else if (empty) result = compareOne(item, [null], weights, group[0], ignore);
     else result = group.map((s) => compareOne(item, [equipped[s]], weights, s, ignore)).sort((a, b) => b.delta - a.delta)[0];
   } else if (item.slot === 'Weapon' && item.twoHanded) {

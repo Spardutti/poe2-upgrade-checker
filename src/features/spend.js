@@ -99,7 +99,7 @@ module.exports = function (C) {
       } else ctx = { ...ctx, note: `${name} isn't listed any more (sold or taken down): here's the same search now.` };
     }
     const shown = await C.showResults(r, ctx);
-    return shown ? { ok: true, inApp: true } : { ok: false, error: 'Could not show the listings.' };
+    return shown === true ? { ok: true, inApp: true } : shown ? { ok: false, error: 'Another search took its place.' } : { ok: false, error: 'Could not show the listings.' };
   }));
   // a build-value alert from a slot: "tell me when a Gloves listing is +X% for my build under Y div".
   // It's a saved search (this slot's search, priced up to Y div) whose new listings are checked with

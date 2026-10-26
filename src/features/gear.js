@@ -69,11 +69,13 @@ module.exports = function (C) {
     else item = C.lastItem;
     if (!item || !SLOTS.includes(slot)) return false;
     C.log(`equip ${slot}: "${item.name}"`);
-    setTimeout(C.pobSync, 0);
     const before = C.store.equipped[slot];
     if (C.store.settings.resists) C.store.setSetting('resists', resLib.rebase(C.store.settings.resists, before, item));
     C.store.setEquipped(slot, item);
     C.store.noteStats(item);
+    // Path of Building gets the new gear before the popup is judged again (it was a tick later, so the
+    // refreshed verdict was still against your old item)
+    C.pobSync();
     refreshAll();
     return true;
   });

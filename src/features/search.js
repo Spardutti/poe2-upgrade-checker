@@ -24,7 +24,17 @@ module.exports = function (C) {
   }
 
   const tradeDataBy = {};
-  async function loadTradeData(force) {
+  // one load per game at a time: at start-up the warm-up, the settings window and an early F2 can all
+  // ask before the first has finished (each would parse the multi-MB cache, or download it all again)
+  const tradeLoads = {};
+  function loadTradeData(force) {
+    const key = C.tg() + (force ? ':force' : '');
+    if (tradeLoads[key]) return tradeLoads[key];
+    const p = loadTradeDataNow(force).finally(() => { if (tradeLoads[key] === p) delete tradeLoads[key]; });
+    tradeLoads[key] = p;
+    return p;
+  }
+  async function loadTradeDataNow(force) {
     const game = C.tg();
     let tradeData = tradeDataBy[game];
     const cacheFile = path.join(app.getPath('userData'), game === 'poe2' ? 'trade-cache.json' : `trade-cache-${game}.json`);
@@ -151,6 +161,22 @@ module.exports = function (C) {
       const parse = (v) => String(v || '').split(',').filter(Boolean).map((r) => r.split(':').map(Number)).filter((x) => x[0] > 0 && x[1] > 0).map((x) => [x[0], x[1]]);
       const rules = [...parse(get('x-rate-limit-ip')), ...parse(get('x-rate-limit-account'))];
       if (rules.length) searchRules = rules;
+      // the site's own count ("3:10:0" = 3 searches in the last 10 s): it includes searches made
+      // in your browser and before the app started, which the app's log doesn't know about, so the
+      // log is topped up to match (counted from now: a little more careful than the site)
+      const now = Date.now();
+      for (const [ruleH, stateH] of [['x-rate-limit-ip', 'x-rate-limit-ip-state'], ['x-rate-limit-account', 'x-rate-limit-account-state']]) {
+        const rs = parse(get(ruleH));
+        const st = String(get(stateH) || '').split(',').filter(Boolean).map((x) => x.split(':').map(Number));
+        rs.forEach(([, sec], i) => {
+          const [used, , penalty] = st[i] || [];
+          if (penalty > 0) searchBlockedUntil = Math.max(searchBlockedUntil, now + penalty * 1000);
+          const recent = searchLog.filter((t) => now - t < sec * 1000).length;
+          for (let k = recent; k < (used || 0); k++) searchLog.push(now);
+        });
+      }
+      searchLog.sort((x, y) => x - y);
+      while (searchLog.length > 200) searchLog.shift();
       const ra = Number(get('retry-after'));
       if (ra > 0) searchBlockedUntil = Math.max(searchBlockedUntil, Date.now() + ra * 1000);
     } catch (_) { /* keep the old rules */ }
@@ -292,7 +318,8 @@ module.exports = function (C) {
     const inApp = r.searchId && r.ids && r.ids.length;
     if (inApp) {
       const shown = await C.showResults(r, ctx || {});
-      if (shown) { r.inApp = true; r.opened = true; return r; }
+      if (shown === true) { r.inApp = true; r.opened = true; return r; }
+      if (shown === 'superseded') return r; // a newer search (or the other game) took its place
     }
     await shell.openExternal(r.url); r.opened = true;
     return r;

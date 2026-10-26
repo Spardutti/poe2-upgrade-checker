@@ -128,7 +128,9 @@ module.exports = function (C) {
     }
     const shown = r.ids && r.ids.length ? await C.showResults(r, ctx) : false;
     let summary = null;
-    if (shown) {
+    if (shown === 'superseded') {
+      // you searched again or changed game while this loaded: nothing to show, no browser either
+    } else if (shown) {
       summary = priceSummary(C.resultsState.listings, league, q.level || 0);
       C.resultsState.ctx.priceSummary = summary;
       C.resultsState.ctx.priceLeague = league;
@@ -138,7 +140,7 @@ module.exports = function (C) {
     } else {
       await shell.openExternal(r.url);
     }
-    return { ok: true, mode: 'price', total: r.total, league, item: item.name, url: r.url, inApp: shown, opened: true,
+    return { ok: true, mode: 'price', total: r.total, league, item: item.name, url: r.url, inApp: shown === true, opened: shown !== 'superseded',
       summary, levelLabel: q.levelLabel, level: q.level, need: q.need, of: q.total };
   }
 

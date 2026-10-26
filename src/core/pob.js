@@ -144,18 +144,21 @@ function parsePob(xml) {
   }
   const itemsTag = (xml.match(/<Items\b[^>]*>/) || [''])[0];
   const activeSet = attr(itemsTag, 'activeItemSet');
-  let setXml = xml;
+  let setXml = xml; let setTag = '';
   if (activeSet) {
     // the id comes from the build file: escape it, so a crafted one can't hang the app
     const id = String(activeSet).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const sm = xml.match(new RegExp(`<ItemSet\\b[^>]*\\bid="${id}"[^>]*>([\\s\\S]*?)<\\/ItemSet>`));
-    if (sm) setXml = sm[1];
+    const sm = xml.match(new RegExp(`(<ItemSet\\b[^>]*\\bid="${id}"[^>]*>)([\\s\\S]*?)<\\/ItemSet>`));
+    if (sm) { setTag = sm[1]; setXml = sm[2]; }
   }
+  // a build on weapon set II: Path of Building calculates with that set, so it's your Weapon and Offhand
+  const swap = attr(setTag || itemsTag, 'useSecondWeaponSet') === 'true';
+  const SWAP = { 'Weapon 1': 'Weapon 1 Swap', 'Weapon 2': 'Weapon 2 Swap', 'Weapon 1 Swap': 'Weapon 1', 'Weapon 2 Swap': 'Weapon 2' };
   const slots = {};
   for (const m of setXml.matchAll(/<Slot\b[^>]*>/g)) {
     const name = attr(m[0], 'name'); const itemId = attr(m[0], 'itemId');
     if (!name || !itemId || itemId === '0' || !items[itemId]) continue;
-    const ours = SLOT_MAP[name];
+    const ours = SLOT_MAP[swap && SWAP[name] ? SWAP[name] : name];
     // PoE1 flasks aren't judged yet, and its five flask slots aren't PoE2's life and mana flask
     if (root === 'PathOfBuilding' && /^Flask \d/.test(name)) continue;
     if (ours) slots[ours] = items[itemId];

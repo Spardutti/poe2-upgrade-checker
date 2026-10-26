@@ -80,7 +80,11 @@ function priceStats(item, opts = {}) {
     if (/^# to maximum Energy Shield$/i.test(s.key) && !local) { add(PSEUDO_ES.id, PSEUDO_ES.label, s.value); continue; }
     if (local) continue; // in the item's defences or DPS, searched as those
     if (s.source === 'implicit') continue; // comes with the base
-    if (FILLER.test(s.key) || trade.LOWER_BETTER.test(s.key) || !(s.value > 0)) continue;
+    if (FILLER.test(s.key)) continue;
+    // a downside isn't what the item is priced on, but "40% reduced Freeze Duration on you" or
+    // "reduced Mana Cost" (read as a negative "increased") is a real mod: kept when the trade site
+    // has it in that wording (matchStat's invert)
+    if (!(s.value > 0) || trade.LOWER_BETTER.test(s.key)) { if (s.value < 0) mods.push(s); continue; }
     mods.push(s);
   }
   const stats = [];
@@ -88,8 +92,10 @@ function priceStats(item, opts = {}) {
   for (const s of mods) {
     const m = trade.matchStat(s.key, opts.statIndex, { preferLocal: false, type: 'explicit' }) || trade.matchStat(s.key, opts.statIndex, {});
     if (!m || m.kind !== 'stat') continue;
+    const value = m.invert ? -s.value : s.value;
+    if (!(value > 0)) continue; // a downside, or a "reduced" mod the trade site counts as negative
     if (stats.some((x) => x.id === m.id)) continue;
-    stats.push({ id: m.id, value: s.value, label: s.key, kind: 'mod' });
+    stats.push({ id: m.id, value, label: s.key, kind: 'mod' });
   }
   // the item's own numbers: defences on armour, DPS on weapons
   const equip = [];
@@ -210,13 +216,15 @@ function buildMapPriceQuery(item, opts = {}) {
     if (uses) filters.push({ id: 'pseudo.pseudo_number_of_uses_remaining', value: { min: Number(uses) }, disabled: false });
     if (L.props && !unique) {
       // its mods, within a range, all of them at first and then most
-      const mods = (item.lines || []).filter((l) => l.tag === 'explicit' && l.key && l.value > 0);
+      const mods = (item.lines || []).filter((l) => l.tag === 'explicit' && l.key && l.value);
       const mf = [];
       for (const l of mods) {
         const m = trade.matchStat(l.key, opts.statIndex, { type: 'explicit' }) || trade.matchStat(l.key, opts.statIndex, {});
         if (!m || m.kind !== 'stat' || mf.some((x) => x.id === m.id)) continue;
-        const value = { min: round(l.value * L.lo) || 1 };
-        if (L.hi) value.max = Math.ceil(l.value * L.hi);
+        const tv = m.invert ? -l.value : l.value; // a "reduced" mod, as the trade site counts it
+        if (!(tv > 0)) continue;
+        const value = { min: round(tv * L.lo) || 1 };
+        if (L.hi) value.max = Math.ceil(tv * L.hi);
         mf.push({ id: m.id, value, disabled: false });
         labels.push(l.key);
       }

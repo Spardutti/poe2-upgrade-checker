@@ -184,7 +184,7 @@ module.exports = function (C) {
       let nudge = false;
       if (C.popup && !C.popup.isDestroyed() && C.popup.isVisible()) {
         const c = screen.getCursorScreenPoint(); const b = C.popup.getBounds();
-        if (c.x >= b.x - 4 && c.x <= b.x + b.width + 4 && c.y >= b.y - 4 && c.y <= b.y + b.height + 4) { C.popup.hide(); nudge = true; }
+        if (c.x >= b.x - 4 && c.x <= b.x + b.width + 4 && c.y >= b.y - 4 && c.y <= b.y + b.height + 4) { C.popup.hide(); C.popupHovered = false; nudge = true; } // hidden from under the mouse: no mouse-leave comes
       }
       // send the copy before anything appears on screen: a window popping up first can make
       // the game drop its tooltip (then nothing gets copied). One Ctrl+C per press, never more.

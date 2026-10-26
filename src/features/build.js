@@ -44,8 +44,9 @@ module.exports = function (C) {
         for (const [slot, it] of Object.entries(C.store.equipped || {})) if (it && !it.fromPob) have[slot] = true;
         plan = planner.toPob(b, { level, have, skills: source && source.skills });
         plan.stages = stages;
-        // the .build itself is kept next to the PoB build, so a pasted guide can change stage or skills too
-        try { fs.mkdirSync(path.dirname(C.pobFile()), { recursive: true }); fs.writeFileSync(C.guideFile(), code); } catch (err) { C.log('guide: could not keep the .build: ' + err.message); }
+        // the .build itself is kept next to the PoB build (once we know which character it's for), so a
+        // pasted guide can change stage or skills too
+        plan.code = code;
         code = plan.xml;
         if (!source) source = { type: 'build' };
         source = { ...source, planner: true, stages: stages.map((x) => ({ from: x.from, to: x.to, label: x.label })), stage: source.stage != null ? source.stage : follow ? 'level' : 100, title: plan.report.name, skillList: plan.report.skills, uniques: (plan.report.uniques || []).slice(0, 20) };
@@ -74,7 +75,10 @@ module.exports = function (C) {
       const slots = Object.keys(r.items);
       let kept = 0;
       // a guide's gear from an earlier import (another stage) that this one doesn't have: taken off
-      if (plan) for (const [slot, it] of Object.entries(C.store.equipped || {})) if (it && it.fromGuide && !r.items[slot]) C.store.setEquipped(slot, null);
+      // and items from an earlier Path of Building import that this build doesn't have (a two-hander
+      // build after a sword-and-shield one): taken off too, so the old shield isn't your offhand. Items
+      // you copied from the game stay.
+      for (const [slot, it] of Object.entries(C.store.equipped || {})) if (it && (it.fromGuide || it.fromPob) && !r.items[slot]) C.store.setEquipped(slot, null);
       for (const [slot, text] of Object.entries(r.items)) {
         const item = parseItem(text);
         if (!item) continue;
@@ -91,6 +95,7 @@ module.exports = function (C) {
       if (r.resists && !typed) C.store.setSetting('resists', resLib.snapshot({ ...r.resists, cap: (C.store.settings.resists && C.store.settings.resists.cap) || 75 }, C.store.equipped, 'pob', C.store.settings.resists));
       // keep the build itself for the Path of Building engine
       try { fs.mkdirSync(path.dirname(C.pobFile()), { recursive: true }); fs.writeFileSync(C.pobFile(), xml); } catch (err) { C.log('pob: could not save the build: ' + err.message); }
+      if (plan) try { fs.writeFileSync(C.guideFile(), plan.code); } catch (err) { C.log('guide: could not keep the .build: ' + err.message); }
       C.pobSync();
       C.refreshAll();
       const who = [r.character.ascendancy || r.character.className, r.character.level ? `level ${r.character.level}` : ''].filter(Boolean).join(', ');
@@ -112,7 +117,7 @@ module.exports = function (C) {
       if (C.pobOn()) {
         try {
           const info = await C.pobEngine().ensureLoaded();
-          fixPoe1Weapons(info);
+          fixPobWeapons(info);
           engine = pobSummary(info);
           // the gear score (used when PoB can't judge something) gets a profile that fits this build
           if (!C.store.settings.buildPicked && engine && C.tg() === 'poe2') {
@@ -265,21 +270,35 @@ module.exports = function (C) {
     Bow: 'Bows', Claw: 'Claws', Dagger: 'Daggers', Wand: 'Wands', Sceptre: 'Sceptres', Staff: 'Staves',
     Shield: 'Shields', Quiver: 'Quivers', 'Fishing Rod': 'Fishing Rods',
   };
-  function fixPoe1Weapons(info) {
-    if (C.tg() !== 'poe1' || !info || !info.gearTypes) return;
+  const POE2_WEAPON_CLASS = {
+    'One Hand Mace': 'One Hand Maces', 'Two Hand Mace': 'Two Hand Maces', 'One Hand Sword': 'One Hand Swords', 'Two Hand Sword': 'Two Hand Swords',
+    'One Hand Axe': 'One Hand Axes', 'Two Hand Axe': 'Two Hand Axes', Sceptre: 'Sceptres', Wand: 'Wands', Staff: 'Staves', Bow: 'Bows',
+    Crossbow: 'Crossbows', Spear: 'Spears', Flail: 'Flails', Dagger: 'Daggers', Claw: 'Claws', Talisman: 'Talismans', Focus: 'Foci',
+    Quiver: 'Quivers', Shield: 'Shields', 'Fishing Rod': 'Fishing Rods',
+  };
+  // the item class of each imported weapon and offhand, from what Path of Building says it is (the
+  // import guesses from the base's name: a PoE2 Smithing Hammer or Morning Star would be a sceptre)
+  function fixPobWeapons(info) {
+    if (!info || !info.gearTypes) return;
+    const poe1 = C.tg() === 'poe1';
     const ours = { 'Weapon 1': 'Weapon', 'Weapon 2': 'Offhand', 'Weapon 1 Swap': 'Weapon 2', 'Weapon 2 Swap': 'Offhand 2' };
     const { isTwoHanded } = require('../core/slots');
+    const swapped = { 'Weapon 1': 'Weapon 2', 'Weapon 2': 'Offhand 2', 'Weapon 1 Swap': 'Weapon', 'Weapon 2 Swap': 'Offhand' }; // a build on weapon set II
     for (const [ps, t] of Object.entries(info.gearTypes)) {
-      const it = C.store.equipped[ours[ps]];
+      let slot = ours[ps];
+      const named = (sl) => { const x = C.store.equipped[sl]; return x && t && t.name && x.name === t.name; };
+      if (!named(slot) && named(swapped[ps])) slot = swapped[ps];
+      const it = C.store.equipped[slot];
       if (!it || !it.fromPob || !t || !t.type) continue;
-      let cls = POE1_WEAPON_CLASS[t.type];
-      if (t.type === 'One Handed Sword' && /thrust/i.test(t.subType || '')) cls = 'Thrusting One Hand Swords';
-      if (t.type === 'Dagger' && /rune/i.test(t.subType || '')) cls = 'Rune Daggers';
-      if (t.type === 'Staff' && /warstaff/i.test(t.subType || '')) cls = 'Warstaves';
+      let cls = (poe1 ? POE1_WEAPON_CLASS : POE2_WEAPON_CLASS)[t.type];
+      if (poe1 && t.type === 'One Handed Sword' && /thrust/i.test(t.subType || '')) cls = 'Thrusting One Hand Swords';
+      if (poe1 && t.type === 'Dagger' && /rune/i.test(t.subType || '')) cls = 'Rune Daggers';
+      if (t.type === 'Staff' && /warstaff/i.test(t.subType || '')) cls = poe1 ? 'Warstaves' : 'Quarterstaves';
+      if (!poe1 && cls === 'Shields' && it.itemClass === 'Bucklers') continue; // PoB calls bucklers shields
       if (!cls || cls === it.itemClass) continue;
       it.itemClass = cls; it.twoHanded = isTwoHanded(cls);
       if (it.raw) it.raw = it.raw.replace(/^Item Class:.*$/m, `Item Class: ${cls}`);
-      C.store.setEquipped(ours[ps], it);
+      C.store.setEquipped(slot, it);
     }
   }
 

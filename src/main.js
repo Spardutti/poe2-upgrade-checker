@@ -48,12 +48,16 @@ const ICON = path.join(__dirname, '..', 'assets', 'icon.png');
 
 // ---------- log file (Tray -> Open log) ----------
 let logFile = null;
+let logSize = -1; // known size of the log, so each line doesn't need to ask the disk
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
   try {
     if (!logFile) logFile = path.join(app.getPath('userData'), 'poe2-upgrade-checker.log');
-    if (fs.existsSync(logFile) && fs.statSync(logFile).size > 1024 * 1024) fs.writeFileSync(logFile, '');
+    if (logSize < 0) { try { logSize = fs.statSync(logFile).size; } catch (_) { logSize = 0; } }
+    // over 1 MB: the old log is kept as .log.1 (the last one before a problem is often what's needed)
+    if (logSize > 1024 * 1024) { try { fs.renameSync(logFile, logFile + '.1'); } catch (_) { fs.writeFileSync(logFile, ''); } logSize = 0; }
     fs.appendFileSync(logFile, line);
+    logSize += Buffer.byteLength(line);
   } catch (_) { /* ignore */ }
 }
 const preload = path.join(__dirname, 'preload.js');
@@ -390,4 +394,4 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', (e) => { /* keep running in the tray */ });
-app.on('will-quit', () => { globalShortcut.unregisterAll(); if (C.keys) C.keys.stop(); for (const e of Object.values(C.pobEngs)) e.kill(); });
+app.on('will-quit', () => { if (store && store.soonTimer) store.save(); globalShortcut.unregisterAll(); if (C.keys) C.keys.stop(); for (const e of Object.values(C.pobEngs)) e.kill(); });

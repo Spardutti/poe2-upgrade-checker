@@ -36,9 +36,27 @@ module.exports = function (C) {
         new Promise((_, rej) => setTimeout(() => rej(new Error('page load timed out')), 15000))]);
     }
     const url = trade.fetchUrl(ids, searchId, game);
-    const r = await C.withTimeout(C.tradeWin.webContents.executeJavaScript(`fetch(${JSON.stringify(url)}, { credentials: 'include', headers: { Accept: 'application/json' } }).then(async (x) => ({ status: x.status, json: await x.json().catch(() => ({})) }))`, true), 20000, 'the trade page');
+    const r = await C.withTimeout(C.tradeWin.webContents.executeJavaScript(`fetch(${JSON.stringify(url)}, { credentials: 'include', headers: { Accept: 'application/json' } }).then(async (x) => ({ status: x.status, ra: x.headers.get('retry-after'), json: await x.json().catch(() => ({})) }))`, true), 20000, 'the trade page');
+    if (r && r.status === 429) {
+      const ra = Number(r.ra);
+      fetchNextAt = Date.now() + (ra > 0 ? ra * 1000 : 10000);
+      const e = new Error(`The trade site says too many requests – wait ${Math.ceil((fetchNextAt - Date.now()) / 1000)} seconds.`); e.rateLimited = true; throw e;
+    }
+    fetchNextAt = Math.max(fetchNextAt, Date.now() + 350);
     if (!r || r.status !== 200 || !Array.isArray(r.json.result)) throw new Error(`HTTP ${r && r.status}`);
     return r.json.result;
+  }
+  // one listing fetch at a time across the whole app (a price check, "Load more", alerts and Where to
+  // spend can all be fetching at once): each waits its turn and the gap after the one before
+  let fetchChain = Promise.resolve();
+  function fetchTurn(task) {
+    const run = fetchChain.then(async () => {
+      const wait = fetchNextAt - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 60000)));
+      return task();
+    });
+    fetchChain = run.catch(() => {});
+    return run;
   }
   let loggedSample = false;
   async function fetchListings(league, searchId, ids, game = C.tg()) {
@@ -46,12 +64,13 @@ module.exports = function (C) {
     for (let i = 0; i < ids.length; i += 10) {
       const chunk = ids.slice(i, i + 10);
       let got = null; let lastErr = null;
-      const wait = fetchNextAt - Date.now();
-      if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 60000)));
       // through your signed-in page only when you've signed in (see runSearch)
-      for (const fn of (await C.signedIn()) ? [fetchViaApp, fetchViaPage] : [fetchViaApp]) {
-        try { got = await fn(league, searchId, chunk, game); break; } catch (err) { lastErr = err; C.log(`fetch via ${fn.name} failed: ${err.message || err}`); if (err.rateLimited) break; }
-      }
+      const ways = (await C.signedIn()) ? [fetchViaApp, fetchViaPage] : [fetchViaApp];
+      await fetchTurn(async () => {
+        for (const fn of ways) {
+          try { got = await fn(league, searchId, chunk, game); break; } catch (err) { lastErr = err; C.log(`fetch via ${fn.name} failed: ${err.message || err}`); if (err.rateLimited) break; }
+        }
+      });
       if (!got) throw lastErr || new Error('fetch failed');
       if (!loggedSample && got[0]) { loggedSample = true; C.log('fetch sample: ' + JSON.stringify({ item: got[0].item, price: got[0].listing && got[0].listing.price }).slice(0, 1500)); } // not the seller's account or character
       out.push(...got.filter(Boolean));
@@ -175,10 +194,12 @@ module.exports = function (C) {
   }
 
   let pendingResults = null; // a search whose listings are still loading
+  // true: shown; false: the listings couldn't be loaded (the caller opens the browser instead);
+  // 'superseded': you changed game or searched again meanwhile, so nothing is shown and nothing opens
   async function showResults(r, ctx) {
     // the search's own game and rates: an open window keeps them when you change game
     r.game = r.game || C.tg();
-    if (r.game !== C.store.activeGame()) return false; // you changed game: these aren't for this character
+    if (r.game !== C.store.activeGame()) return 'superseded'; // you changed game: these aren't for this character
     const rates = { ...(C.store.settings.currencyRates || {}), ...(C.store.settings.divineRate ? { divine: C.store.settings.divineRate } : {}) };
     // the window keeps showing (and acting on) the last search until this one's listings are in
     const st = { r, ctx, listings: [], next: 0, signedIn: await C.signedIn(), rates, divineRate: C.store.settings.divineRate || null };
@@ -186,12 +207,13 @@ module.exports = function (C) {
     try {
       await loadMoreListings(ctx.mode === 'price' ? 40 : 20, st); // a price needs more than one page
     } catch (err) {
+      if (r.game !== C.store.activeGame() || pendingResults !== st) return 'superseded';
       C.log('could not load listings, opening the browser instead: ' + (err.message || err));
       // an open results window still shows the last search: say this one failed, don't leave it looking current
       if (resultsWin && !resultsWin.isDestroyed()) resultsWin.webContents.send('results:data', { ...resultsPayload(), listings: [], error: `Couldn't load the listings (${err.message || err}) – opened the search in your browser instead.` });
       return false;
     }
-    if (r.game !== C.store.activeGame() || pendingResults !== st) return false; // changed game (or searched again) while it loaded
+    if (r.game !== C.store.activeGame() || pendingResults !== st) return 'superseded'; // changed game (or searched again) while it loaded
     resultsState = st; pendingResults = null;
     if (!resultsWin || resultsWin.isDestroyed()) createResultsWindow();
     const send = () => resultsWin.webContents.send('results:data', resultsPayload());

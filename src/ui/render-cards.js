@@ -51,6 +51,8 @@
   // changes and two buttons; "More" shows everything else.
   window.renderComparison = function (el, r, opts) {
     opts = opts || {};
+    // which item is shown (a search answer for an item shown before it is dropped: see run below)
+    el.dataset.shown = String((r && r.item && (r.item.id || r.item.name)) || '');
     const ui = (r && r.ui) || {};
     document.body.classList.toggle('cb', !!ui.colorblind);
     if (r && r.kind === 'price') return window.renderPriceCard(el, r, opts);
@@ -174,12 +176,22 @@
 
     const resize = () => opts.onResize && opts.onResize();
     const msgEl = () => el.querySelector('#findMsg');
+    // a search's answer belongs to the item it was asked for: a redraw of the same item (Path of
+    // Building answered, a setting changed) shows it again, working buttons and all; another item
+    // shown meanwhile never gets it
+    const shownKey = String(it.id || it.name || '');
+    el.dataset.shown = shownKey;
     const run = (btn, fn, busy) => btn && btn.addEventListener('click', async () => {
+      el.__search = { key: shownKey, busy, btn: btn.id };
       btn.disabled = true; msgEl().innerHTML = `<span class="spinner"></span> ${busy}`;
       resize();
-      const res = await fn();
-      btn.disabled = false;
-      window.showSearchResult(msgEl(), res);
+      let res;
+      try { res = await fn(); } catch (err) { res = { ok: false, error: (err && err.message) || String(err) }; }
+      if (el.dataset.shown !== shownKey) return; // another item is shown now
+      el.__search = { key: shownKey, res };
+      const b = (btn.id && el.querySelector('#' + btn.id)) || btn;
+      b.disabled = false;
+      if (msgEl()) window.showSearchResult(msgEl(), res);
       resize();
     });
     const ref = it.id ? { itemId: it.id } : '__last';
@@ -191,7 +203,7 @@
     run(el.querySelector('#craftFind'), () => window.api.quickFind(ref, 'craft'), 'Looking for craftable bases…');
     // a price check also answers keep / sell / vendor
     const withWorth = (p) => p.then((res) => {
-      if (res && res.ok && res.summary && res.summary.typicalEx != null) { r.worthEx = res.summary.typicalEx; const a = el.querySelector('#advice'); if (a) a.outerHTML = window.adviceHtml(r); }
+      if (el.dataset.shown === shownKey && res && res.ok && res.summary && res.summary.typicalEx != null) { r.worthEx = res.summary.typicalEx; const a = el.querySelector('#advice'); if (a) a.outerHTML = window.adviceHtml(r); }
       return res;
     });
     run(el.querySelector('#priceFind'), () => withWorth(window.api.priceCheck(ref)), 'Checking prices…');
@@ -273,5 +285,11 @@
     if (c) c.addEventListener('click', () => window.api.close());
     const s = el.querySelector('#settingsBtn');
     if (s) s.addEventListener('click', () => window.api.openSettings());
+    // this item's search from before the redraw: still running (spinner, button off) or its answer
+    const prev = el.__search;
+    if (prev && prev.key === shownKey && msgEl()) {
+      if (prev.res) window.showSearchResult(msgEl(), prev.res);
+      else { msgEl().innerHTML = `<span class="spinner"></span> ${prev.busy}`; const pb = prev.btn && el.querySelector('#' + prev.btn); if (pb) pb.disabled = true; }
+    } else el.__search = null;
   };
 })();

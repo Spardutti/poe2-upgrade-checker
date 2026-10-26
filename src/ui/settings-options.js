@@ -42,7 +42,7 @@ if (window.api.onGameChanged) window.api.onGameChanged(async () => {
   tradeInfo = null; budgetGame = null;
   if (window.__pickerRefresh) window.__pickerRefresh();
   await load();
-  if ($('#tab-find') && $('#tab-find').classList.contains('active')) { try { await ensureTradeInfo(false); await fillFindSlots(); } catch (_) { /* shown on the page */ } }
+  await refreshFindForCharacter();
 });
 
 // ---------- hotkey capture ----------

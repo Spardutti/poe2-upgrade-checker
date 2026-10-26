@@ -100,19 +100,22 @@ function buildSimilarQuery(item, opts) {
     const typed = matchStat(key, opts.statIndex, { preferLocal, type: source === 'implicit' ? 'implicit' : 'explicit' }) || m;
     const existing = filters.find((f) => f.id === typed.id);
     if (existing) { existing._v += value; continue; }
-    filters.push({ id: typed.id, _v: value, key });
+    // inv: the trade site only has the stat the way it rolls ("#% reduced Freeze Duration on you"),
+    // so its value is ours turned round, and the good direction is the trade site's positive one
+    filters.push({ id: typed.id, _v: value, key, inv: !!typed.invert });
   }
   for (const [id, v] of pseudoTotals) filters.push({ id, _v: v, key: id });
   const round = (x) => Math.round(x * 100) / 100;
   // A downside (-10% to Chaos Resistance, +attribute requirements) isn't something a better item
   // needs to have: only keep a stat in the direction that is good for it.
-  const wanted = filters.filter((f) => (LOWER_BETTER.test(f.key) ? f._v < 0 : f._v > 0));
+  const wanted = filters.filter((f) => (f.inv ? f._v < 0 : LOWER_BETTER.test(f.key) ? f._v < 0 : f._v > 0));
   const statFilters = wanted.map((f) => {
     const v = {};
-    if (f._v > 0) v.min = round(f._v >= 3 ? Math.floor(f._v * level.tol) : f._v * level.tol);
-    else if (f._v < 0) v.max = round(f._v * level.tol);
+    const tv = f.inv ? -f._v : f._v; // the value as the trade site counts it
+    if (tv > 0) v.min = round(tv >= 3 ? Math.floor(tv * level.tol) : tv * level.tol);
+    else if (tv < 0) v.max = round(tv * level.tol);
     // tiny values like "+1 to Level of all Skills" must not round down to 0
-    if (v.min != null && f._v >= 1 && v.min < 1) v.min = 1;
+    if (v.min != null && tv >= 1 && v.min < 1) v.min = 1;
     return { id: f.id, value: v, disabled: false };
   });
 

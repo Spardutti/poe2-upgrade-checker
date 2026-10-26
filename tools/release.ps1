@@ -121,7 +121,9 @@ if ($remoteMain) {
       if ($wip) { Run-Git -Soft reset --soft HEAD~1 | Out-Null }
       Fail ("Couldn't merge the changes made on GitHub with yours:`n" + ($r -join "`n") + "`nNothing was published.")
     }
-    if ($wip) { Run-Git reset --soft HEAD~1 | Out-Null } # keep it one release commit
+    # keep it one release commit. If GitHub already had all of those changes (pushed from elsewhere),
+    # the rebase dropped the empty "Work in progress" commit: then there's nothing to undo.
+    if ($wip -and ((@(Run-Git log -1 --pretty=%s) -join '') -eq 'Work in progress')) { Run-Git reset --soft HEAD~1 | Out-Null }
   }
 }
 

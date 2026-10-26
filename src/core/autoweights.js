@@ -6,7 +6,8 @@
 
 const { statSources } = require('./trade');
 
-const SKIP = /Attacks per Second|Critical Hit Chance|Runic Ward|Block Chance|Physical DPS|Elemental DPS|Chaos DPS/;
+// a weapon's or shield's own numbers (not mods: "#% increased Critical Hit Chance" is a real stat to weigh)
+const SKIP = /^\[(Base|Weapon)\] (Attacks per Second|Critical Hit Chance|Runic Ward|Block Chance|Physical DPS|Elemental DPS|Chaos DPS)$/;
 
 function roundSig(x) {
   if (!x) return 0;

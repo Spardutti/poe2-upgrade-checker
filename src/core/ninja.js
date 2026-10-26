@@ -123,7 +123,8 @@ function pickLine(lines, item, game) {
     const n = String(l.name || '').toLowerCase();
     if (unique) return n === name;
     if (/gems?$/i.test(item.itemClass || '')) return n === name;
-    if (/^maps$/i.test(item.itemClass || '')) return n === base || n === name || String(l.baseType || '').toLowerCase() === base;
+    // a magic map has no base line, only its name with the affixes ("Fecund Strand Map of Toughness")
+    if (/^maps$/i.test(item.itemClass || '')) return base ? n === base || n === name || String(l.baseType || '').toLowerCase() === base : n === name || (/ map$/.test(n) && ` ${name} `.includes(` ${n} `));
     return n === name || n === base;
   });
   if (!c.length) return null;

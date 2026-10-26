@@ -241,7 +241,16 @@ class Store {
     return true;
   }
 
+  // soon: for bookkeeping nobody waits for (the stats you've seen), so a new item's F2 doesn't write
+  // the whole settings file before its popup shows. Any save() in the meantime writes it anyway.
+  saveSoon() {
+    if (this.soonTimer) return;
+    this.soonTimer = setTimeout(() => { this.soonTimer = null; this.save(); }, 1500);
+    if (this.soonTimer.unref) this.soonTimer.unref();
+  }
+
   save() {
+    if (this.soonTimer) { clearTimeout(this.soonTimer); this.soonTimer = null; }
     // keep the active character's stored copy in step (cheap: same objects)
     if (this.data.profiles && this.data.profiles[this.data.activeProfile]) {
       Object.assign(this.data.profiles[this.data.activeProfile], this.snapshot());
@@ -309,7 +318,7 @@ class Store {
         changed = true;
       }
     }
-    if (changed) this.save();
+    if (changed) this.saveSoon();
   }
 
   setSetting(key, value) {

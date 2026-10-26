@@ -52,7 +52,7 @@ module.exports = function (C) {
       }, 250);
     });
     C.popup.on('closed', () => { C.popup = null; });
-    C.popup.webContents.on('render-process-gone', () => { try { C.popup.destroy(); } catch (_) {} C.popup = null; });
+    C.popup.webContents.on('render-process-gone', () => { try { C.popup.destroy(); } catch (_) {} C.popup = null; C.popupHovered = false; });
   }
 
   function uiScale() { const v = Number(C.store && C.store.settings.uiScale); return v >= 0.8 && v <= 1.6 ? v : 1; }

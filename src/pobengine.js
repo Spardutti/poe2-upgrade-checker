@@ -42,9 +42,13 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game =
     return null;
   }
 
+  // (asked before every judgement: once the files are there, they stay)
+  let isAvailable = false;
   function available() {
+    if (isAvailable) return true;
     const h = hostCommand();
-    return !!(h && fs.existsSync(h.cmd) && fs.existsSync(path.join(srcDir, 'HeadlessWrapper.lua')) && fs.existsSync(serverLua));
+    isAvailable = !!(h && fs.existsSync(h.cmd) && fs.existsSync(path.join(srcDir, 'HeadlessWrapper.lua')) && fs.existsSync(serverLua));
+    return isAvailable;
   }
 
   function failAll(err) {
@@ -69,7 +73,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game =
       proc = me;
       proc.stdin.on('error', (err) => log('pob: ' + err.message));
       let started = false;
-      const startTimer = setTimeout(() => { if (!started) { lastError = 'Path of Building took too long to start' + (errTail ? ': ' + errTail.trim().split('\n').slice(-4).join(' | ') : ''); log('pob: ' + lastError); reject(new Error(lastError)); stop(); } }, 90000);
+      const startTimer = setTimeout(() => { if (!started) { lastError = 'Path of Building took too long to start' + (errTail ? ': ' + errTail.trim().split('\n').slice(-4).join(' | ') : ''); log('pob: ' + lastError); reject(new Error(lastError)); if (proc === me) stop(); else try { me.kill(); } catch (_) {} } }, 90000);
       proc.stdout.setEncoding('utf8');
       proc.stdout.on('data', (chunk) => {
         if (proc !== me) return;
@@ -89,16 +93,20 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game =
       proc.stderr.setEncoding('utf8');
       proc.stderr.on('data', (d) => { errTail = (errTail + d).slice(-2000); });
       proc.on('error', (err) => { lastError = err.message; log('pob: could not start: ' + err.message); if (!started) reject(err); });
-      proc.on('exit', (code) => {
-        log(`pob: engine stopped (${code})${code || !started ? ': ' + errTail.trim().split('\n').slice(-6).join(' | ') : ''}`);
-        if (code && !started) { lastError = errTail.trim().split('\n').slice(-1)[0] || `exit ${code}`; reject(new Error('Path of Building failed to start: ' + lastError)); }
+      proc.on('exit', (code, signal) => {
+        clearTimeout(startTimer);
+        log(`pob: engine stopped (${code == null ? signal : code})${code || !started ? ': ' + errTail.trim().split('\n').slice(-6).join(' | ') : ''}`);
+        // before it said it was ready, any exit is a failed start (a crash or a kill has no exit code)
+        if (!started) { lastError = errTail.trim().split('\n').slice(-1)[0] || `exit ${code == null ? signal : code}`; reject(new Error('Path of Building failed to start: ' + lastError)); }
         if (proc !== me) return; // an engine we already stopped; a new one may be running
         failAll(new Error('The Path of Building engine stopped.'));
         proc = null; ready = null; buf = ''; buildInfo = null;
       });
     });
-    ready.catch(() => { ready = null; failedAt = Date.now(); });
-    return ready;
+    const mine = ready;
+    // only this start's failure counts: a newer engine may be running by the time it comes
+    mine.catch(() => { failedAt = Date.now(); if (ready === mine) ready = null; });
+    return mine;
   }
 
   // forget the engine straight away, so a request right after starts a new one instead of
@@ -130,7 +138,14 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game =
     if (!proc) throw new Error('The Path of Building engine stopped.');
     return new Promise((resolve, reject) => {
       const id = nextId++;
-      const timer = setTimeout(() => { waiting.delete(id); reject(new Error('Path of Building did not answer in time.')); }, timeoutMs);
+      const timer = setTimeout(() => {
+        waiting.delete(id);
+        reject(new Error('Path of Building did not answer in time.'));
+        // it's still busy with that request and answers one at a time, so everything after it would
+        // wait (and time out) too: start a fresh engine for the next one instead
+        log(`pob: no answer to ${obj.cmd} in ${Math.round(timeoutMs / 1000)} s, restarting the engine`);
+        stop();
+      }, timeoutMs);
       waiting.set(id, { resolve, reject, timer });
       proc.stdin.write(JSON.stringify({ ...obj, id }) + '\n');
     });

@@ -35,15 +35,26 @@ async function exchangeAll(game, league, ctx) {
   const hit = await caches.default.match(key);
   if (hit) return hit;
   const types = {};
-  // a few at a time, so poe.ninja never sees a burst from us
+  const one = async (t) => {
+    try { const d = await cachedJson(game, 'exchange/current/overview', `league=${encodeURIComponent(league)}&type=${encodeURIComponent(t)}`, ctx); if (d && Array.isArray(d.lines)) types[t] = d; } catch (_) { /* that list is missing this time */ }
+  };
   const list = EXCHANGE_TYPES[game];
-  for (let i = 0; i < list.length; i += 4) {
-    await Promise.all(list.slice(i, i + 4).map(async (t) => {
-      try { const d = await cachedJson(game, 'exchange/current/overview', `league=${encodeURIComponent(league)}&type=${encodeURIComponent(t)}`, ctx); if (d && Array.isArray(d.lines)) types[t] = d; } catch (_) { /* that list is missing this time */ }
-    }));
+  // the first list first: a league poe.ninja doesn't know (anyone can type one) costs it one call,
+  // not one per list, and the "no such league" answer is remembered for a while
+  await one(list[0]);
+  if (!types[list[0]] || !types[list[0]].lines.length) {
+    const none = new Response(JSON.stringify({ league, types: {}, error: 'poe.ninja has no prices for that league' }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=600', 'Access-Control-Allow-Origin': '*' } });
+    ctx.waitUntil(caches.default.put(key, none.clone()));
+    return none;
   }
-  const out = new Response(JSON.stringify({ league, types }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${TTL[game]}`, 'Access-Control-Allow-Origin': '*' } });
-  if (Object.keys(types).length) ctx.waitUntil(caches.default.put(key, out.clone()));
+  // the rest a few at a time, so poe.ninja never sees a burst from us
+  const rest = list.slice(1);
+  for (let i = 0; i < rest.length; i += 4) await Promise.all(rest.slice(i, i + 4).map(one));
+  // every list: kept as long as poe.ninja's own refresh; some missing (poe.ninja busy): a minute,
+  // so the missing prices come back soon
+  const ttl = Object.keys(types).length === list.length ? TTL[game] : 60;
+  const out = new Response(JSON.stringify({ league, types }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${ttl}`, 'Access-Control-Allow-Origin': '*' } });
+  ctx.waitUntil(caches.default.put(key, out.clone()));
   return out;
 }
 

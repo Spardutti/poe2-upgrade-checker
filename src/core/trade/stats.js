@@ -72,7 +72,20 @@ function matchStat(key, statIndex, opts) {
   opts = opts || {};
   if (EQUIPMENT_FILTERS[key]) return { kind: 'equipment', id: EQUIPMENT_FILTERS[key], text: key };
   let cands = statIndex.index.get(norm(key));
-  if (!cands || !cands.length) return null;
+  if (!cands || !cands.length) {
+    // The parser turns "40% reduced Freeze Duration on you" into "#% increased …: -40" (so the two
+    // wordings net out), but many stats only exist on the trade site the way they roll: "#% reduced
+    // Freeze Duration on you", "#% reduced Mana Cost of Skills". Then that one is used, with
+    // invert: the caller flips the sign of the value (and the trade site's value is the good way round).
+    if (!opts.noInvert) {
+      for (const [re, to] of [[/\bincreased\b/i, 'reduced'], [/\bmore\b/i, 'less']]) {
+        if (!re.test(key)) continue;
+        const r = matchStat(key.replace(re, to), statIndex, { ...opts, noInvert: true });
+        if (r && r.kind === 'stat') return { ...r, invert: true };
+      }
+    }
+    return null;
+  }
   if (opts.type) {
     // Only stats of one kind (e.g. 'implicit'), or explicit-style ones without pseudo.
     const want = opts.type;
@@ -97,8 +110,10 @@ function matchStat(key, statIndex, opts) {
 // anything else (gloves accuracy/attack speed, quivers, jewellery) the mod is global.
 const ARMOUR_CLASSES = ['helmets', 'body armours', 'gloves', 'boots', 'shields', 'foci', 'bucklers'];
 const WEAPON_CLASS = /\b(mace|sword|axe|bow|crossbow|quarterstaff|quarterstaves|staff|staves|warstaff|warstaves|wand|sceptre|spear|flail|dagger|claw|talisman)s?\b/i;
-const WEAPON_LOCAL = /Accuracy Rating|Attack Speed|Critical (Hit|Strike) Chance|Culling Strike|^Adds # to # \w+ Damage$|Physical Damage$|Reload Time/i;
-const DEFENCE_LOCAL = /Armour|Evasion|Energy Shield|Runic Ward|\bWard\b|Block/i;
+// whole mods, not words: "Critical Hit Chance for Spells", "Global Physical Damage", "#% of Armour also
+// applies to Elemental Damage" or "Chance to Block Spell Damage" are global wherever they are
+const WEAPON_LOCAL = /^(#% increased Attack Speed|# to Accuracy Rating|#% increased Accuracy Rating|#% (to|increased) Critical (Hit|Strike) Chance|Culling Strike|Adds # to # \w+ Damage|#% increased Physical Damage|#% increased Reload Time)$/i;
+const DEFENCE_LOCAL = /^(# to (Armour|Evasion Rating|maximum Energy Shield|Ward|Runic Ward|Armour and Evasion Rating|Armour and Energy Shield|Evasion Rating and Energy Shield|maximum Runic Ward)|#% increased (Armour|Evasion Rating|Evasion|Energy Shield|Ward|Runic Ward|Armour and Evasion|Armour and Energy Shield|Evasion and Energy Shield|Armour, Evasion and Energy Shield|Armour and Evasion Rating|Evasion Rating and Energy Shield)|#% increased Block chance|#% to Block chance|# to Block chance|#% Chance to Block)$/i;
 function itemKind(itemClass) {
   const c = String(itemClass || '').toLowerCase().trim();
   if (!c) return null;

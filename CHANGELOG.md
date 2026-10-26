@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+- **Two-handed weapons judged without your offhand (PoE2):** staves, quarterstaves and talismans were judged with your focus or shield still counted, so they looked better than they are. Now every two-hander empties the offhand it can't be used with (Path of Building's own rules: a bow keeps its quiver, Giant's Blood and the like are respected). An offhand you couldn't hold with your two-hander says so instead of getting a verdict.
+- **"Where to spend" no longer drops your offhand:** checking two items together with a two-hander in them took the offhand out of Path of Building's copy of your build for good, so every later verdict was off until a restart.
+- **"Reduced" mods are searched:** mods the trade site only lists the way they roll ("40% reduced Freeze Duration on you", "15% reduced Mana Cost of Skills") were left out of searches and price checks. They're matched now, the right way round.
+- **Price checks keep global mods on weapons and armour:** "Critical Hit Chance for Spells" on a wand or "35% of Armour also applies to Elemental Damage" on a body armour were mistaken for the item's own (local) numbers and left out of *What's it worth?*.
+- **Jewels are compared with your weakest one** instead of always counting as a new jewel (and always "keep"), now that there's room for 40.
+- **PoE1 maximum resistances count:** "+5% to maximum Fire Resistance" and "+1% to all maximum Resistances" raise your caps.
+- **Imported weapons get their real kind (PoE2):** a Smithing Hammer or Morning Star from a Path of Building import was taken for a sceptre (and greataxes for maces); the app now asks Path of Building. Builds on weapon set II show that set as your weapon and offhand, and importing a new build takes off old imported items it doesn't have.
+- **Safer with the trade site's limits:** the app now counts searches the site already saw (your browser, before the app started), and listing loads from several places at once go one at a time, so a burst of F3 presses can't get you rate-limited.
+- **A search you replaced doesn't open your browser:** clicking Find upgrades on another slot (or changing game) while one was loading opened the first in your browser over the game.
+- **Popup fixes:** a slow answer (a price, a search) no longer shows up on the next item; when the popup redraws, its "Copy price note" and "Open anyway" buttons keep working; a failed search no longer leaves the spinner going.
+- **Settings fixes:** Find upgrades rebuilds its stats when you switch character or game (it could search with the last character's item); typing weights and pressing Tab keeps your place.
+- **Path of Building engine:** uses about a fifth less memory after a few build loads; restarts by itself when it stops answering, instead of making everything after it wait; a crash while starting fails at once instead of after 90 seconds.
+- **Faster:** the build file is read once instead of many times per item judged, a new item's F2 no longer writes the whole settings file before the popup shows, and the trade site's data is loaded once at start-up. The log keeps the previous one as `.log.1` when it gets big.
+
 ## 0.5.1 - 2026-10-26
 - **New look, built like the games' own UI:** popups are item tooltips (a centred header tinted by the item's rarity, thin separators, grey labels with white values, mods in the games' blue), headings and buttons use real small caps (Alegreya Sans SC) instead of spaced capitals, and the gold corner ornaments, gradients and glow are gone. Better is shown in the games' blue and worse in red (colour-blind mode: light blue and orange). Item names on My gear show in their rarity colour. The website has the same look.
 - **Prices in chaos orbs too (PoE2):** every price also says what it is in chaos, from poe.ninja's rate: the F3 popup, *What's it worth?*, poe.ninja prices and the trade results ("≈ 494 ex (0.7 div · 35 chaos)").

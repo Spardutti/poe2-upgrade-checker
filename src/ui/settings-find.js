@@ -56,10 +56,13 @@ async function fillFindSlots(selected) {
   if (want && [...$('#findSlot').options].some((o) => o.value === want)) $('#findSlot').value = want;
 }
 
+let findSeq = 0; // a newer pick (or another character) wins over a slower answer for the one before
 async function buildFindRows() {
+  const seq = ++findSeq;
+  const { item: it, rows } = await window.api.findRows(toTarget($('#findSlot').value));
+  if (seq !== findSeq) return;
   rowsEdited = false;
   $('#findNotice').textContent = '';
-  const { item: it, rows } = await window.api.findRows(toTarget($('#findSlot').value));
   if (!it) {
     $('#findItem').textContent = 'No item here yet. Save your equipped gear first (My gear page), or copy an item in game.';
     findRows = [];
@@ -106,6 +109,13 @@ function renderFindRows() {
     rowsEdited = true;
     if (inp.dataset.f === 'keep') r.keep = inp.checked; else r[inp.dataset.f] = inp.value;
   }));
+}
+
+// another character or game: the page's item and stat rows were the last one's, so they're read again
+// (only when the page is open: opening it reads them anyway)
+async function refreshFindForCharacter() {
+  if (!($('#tab-find') && $('#tab-find').classList.contains('active'))) return;
+  try { await ensureTradeInfo(false); await fillFindSlots($('#findSlot').value); await buildFindRows(); } catch (_) { /* shown on the page */ }
 }
 
 async function openFind(target) {
@@ -181,6 +191,11 @@ window.api.onItemCopied(async (info) => {
 });
 
 function renderWeights() {
+  // the page redraws whenever a setting changes (including the weight you just typed): the box you
+  // were in (Tab took you to the next one) keeps focus and what you'd typed so far
+  const fe = document.activeElement;
+  const focusKey = fe && fe.closest && fe.closest('#weights') && fe.dataset ? fe.dataset.key : null;
+  const focusVal = focusKey != null ? fe.value : null;
   const filter = $('#filter').value.trim().toLowerCase();
   const only = $('#onlyWeighted').checked;
   const keys = Array.from(new Set([...Object.keys(state.weights), ...state.seenStats]));
@@ -197,6 +212,10 @@ function renderWeights() {
     state = await window.api.getState();
     $('#weightsJson').value = JSON.stringify(state.weights, null, 2);
   }));
+  if (focusKey != null) {
+    const back = [...document.querySelectorAll('#weights input')].find((x) => x.dataset.key === focusKey);
+    if (back) { back.value = focusVal; back.focus(); }
+  }
 }
 
 $('#filter').addEventListener('input', renderWeights);

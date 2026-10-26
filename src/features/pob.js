@@ -48,7 +48,19 @@ module.exports = function (C) {
   }
   function pobFile(id) { return path.join(app.getPath('userData'), 'pob', `${id || C.store.data.activeProfile || 'main'}.xml`); }
   function guideFile(id) { return pobFile(id).replace(/\.xml$/, '.build'); }
-  function pobXml() { try { return fs.readFileSync(pobFile(), 'utf8'); } catch (_) { return null; } }
+  // the build text, read again only when the file changed: it's asked for many times per item
+  // judged (every pobOn()), and builds can be a few MB
+  let xmlCache = { file: null, mtime: 0, size: -1, text: null };
+  function pobXml() {
+    const f = pobFile();
+    try {
+      const st = fs.statSync(f);
+      if (xmlCache.file === f && xmlCache.mtime === st.mtimeMs && xmlCache.size === st.size) return xmlCache.text;
+      const text = fs.readFileSync(f, 'utf8');
+      xmlCache = { file: f, mtime: st.mtimeMs, size: st.size, text };
+      return text;
+    } catch (_) { return null; }
+  }
   // an item's text as copied in game; items saved by older versions kept only their parsed lines, so
   // their text is put back together from those (sections in the game's order)
   function itemText(it) {
