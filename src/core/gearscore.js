@@ -60,7 +60,7 @@ const BUILDS = {
 };
 
 const LOCAL_DEFENCE = /^#% increased (Armour|Evasion Rating|Evasion|Energy Shield|Armour and Evasion|Armour and Energy Shield|Evasion and Energy Shield|Armour, Evasion and Energy Shield)$|^# to (maximum Energy Shield|Armour|Evasion Rating)$/;
-const LOCAL_DPS = /^#% increased (Attack Speed|Physical Damage)$|^Adds # to # \w+ Damage$/;
+const LOCAL_DPS = /^#% increased (Attack Speed|Physical Damage)$|Adds # to # \w+ Damage$/;
 // Two general-purpose profiles for other characters.
 const ES = { test: /^\[Base\] Energy Shield$/, label: 'Energy Shield', imp: { 'Body Armour': 10, Helmet: 9, Gloves: 8, Boots: 7, Offhand: 7, default: 0 }, cap: { 'Body Armour': 1000, Helmet: 550, Gloves: 350, Boots: 400, Offhand: 350, default: 1 } };
 const AR = { test: /^\[Base\] (Armour|Evasion Rating)$/, label: 'Armour / Evasion', imp: { 'Body Armour': 10, Helmet: 8, Gloves: 7, Boots: 6, Offhand: 7, default: 0 }, cap: { 'Body Armour': 1200, Helmet: 600, Gloves: 400, Boots: 450, Offhand: 450, default: 1 } };
@@ -150,6 +150,7 @@ function gearScore(item, opts) {
 
   const st = item.stats || {};
   const hasBaseDef = st['[Base] Armour'] || st['[Base] Evasion Rating'] || st['[Base] Energy Shield'];
+  const dpsScored = !ignore('[Weapon] Total DPS') && usable.some((e) => e.test.test('[Weapon] Total DPS'));
   const contributions = [];
   const wasted = [];
   const used = new Set();
@@ -160,7 +161,7 @@ function gearScore(item, opts) {
     if (!Number.isFinite(x.value) || x.value === 0) continue;
     if (ignore(x.key)) continue;
     // a weapon's own damage and attack speed mods are already in its DPS
-    if (st['[Weapon] Total DPS'] && LOCAL_DPS.test(x.key)) continue;
+    if (dpsScored && LOCAL_DPS.test(x.key)) continue;
     if (x.value < 0) {
       // a downside on a stat the build wants ("-20% to Chaos Resistance") costs points
       const e = usable.find((en) => en.test.test(x.key));
