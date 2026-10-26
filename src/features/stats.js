@@ -7,7 +7,7 @@
 // Nothing else: no account, character, items, builds or searches; the site doesn't keep IP
 // addresses. Settings → "Send anonymous usage statistics" turns it off (nothing is sent then).
 const crypto = require('crypto');
-const { app, ipcMain, net } = require('electron');
+const { app, net } = require('electron');
 
 const URL = 'https://poe2upgrade.com/api/ping';
 const EVERY = 3 * 3600 * 1000;

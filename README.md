@@ -278,7 +278,11 @@ How it works on Linux, and what to check if F2 doesn't:
 ## Dev
 
 - `test-build.bat` builds a local portable test .exe (no release) and checks the PoB engine starts (`tools/pob-smoke.js`).
-- The look is **Wraeclast Iron**; colours, type, components and rules are in [DESIGN.md](DESIGN.md).
+- The look is **Game-native**; colours, type, components and rules are in [DESIGN.md](DESIGN.md).
+- **Code layout:**
+  - `src/main.js` keeps the shared state (store, windows, log) and starts everything. Each part of the app is a module in `src/features` (or `src/app/guard.js`, which runs first) that reaches the rest through one context object, `C`.
+  - `src/core` holds the pure logic (parsing items, trade searches in `core/trade/`, scoring), with the unit tests in `test/`.
+  - `src/ui` holds the windows: `settings.js` and `settings-*.js` for the settings window, `render*.js` (shared by every window) and the styles in `src/ui/css/`, loaded in order.
 - `npm test` runs the parser, scorer, trade-query, listing, PoB import and PoB verdict tests.
 - `node tools/get-pob.js` downloads the pinned Path of Building into `vendor/pob` and builds `pobhost.exe` (a small host for PoB's LuaJIT, compiled with the C# compiler that ships with Windows). The build scripts run it for you.
 - `build-exe.bat` (or `npm run dist`) builds the installer and the portable .exe locally, without publishing. On Linux, `npm run dist:linux` builds the AppImage (needs git, gcc and make for the Path of Building engine).

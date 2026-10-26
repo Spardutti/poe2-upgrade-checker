@@ -5,7 +5,7 @@
 // Moved out of main.js: it reaches the app's shared state and helpers through C (see main.js).
 const fs = require('fs');
 const path = require('path');
-const { app, ipcMain, shell } = require('electron');
+const { app, ipcMain } = require('electron');
 
 module.exports = function (C) {
   // For every slot: Path of Building's weighted search within your budget, the first listings

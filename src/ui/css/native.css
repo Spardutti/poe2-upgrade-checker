@@ -1,0 +1,99 @@
+/* ==========================================================================
+   Game-native layer (Draft 2): takes the ornament out of everything above.
+   ========================================================================== */
+/* headings: small caps in title gold, no gradient text, no tracking */
+h2, h3, .page-head h2, .res-title, .modal-head h2, .brand span, .char-hero .who {
+  font-family: var(--f-carved); font-weight: 700; letter-spacing: 0; background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--gold); -webkit-text-fill-color: currentColor; filter: none; text-shadow: none;
+}
+h3 { font-size: 17px; }
+.page-head h2 { font-size: 26px; }
+.char-hero .who small { -webkit-text-fill-color: var(--ash); }
+/* buttons: plain leather; the main action a darker, warmer leather */
+button { font: 700 14.5px/1.1 var(--f-carved); letter-spacing: 0; text-transform: none; color: #d8cfbd; background: #1e1a16; border: 1px solid var(--iron-hi); box-shadow: none; text-shadow: none; padding: 7px 12px 6px; }
+button:hover:not(:disabled) { border-color: #8a6a3c; color: #fff; background: #241f1a; }
+button.primary, button.find { color: var(--gold-hi); background: #3b2a17; border: 1px solid #8a6a3c; box-shadow: inset 0 1px 0 #5a4126; text-shadow: none; }
+button.primary:hover:not(:disabled), button.find:hover:not(:disabled) { color: #fff; background: #47331c; border-color: #b08a52; }
+button.primary.gilded { color: var(--gold-hi); background: #2a2016; border: 1px solid #8a6a3c; box-shadow: none; }
+button.primary.gilded:hover:not(:disabled) { background: #352819; border-color: #b08a52; }
+button.link { font: 400 inherit/inherit var(--f-text); font-size: inherit; color: #c8b48a; }
+button.link:hover:not(:disabled) { color: #e7d5ad; background: none; }
+input, textarea, select { background: #15120f; border: 1px solid #3a2f24; box-shadow: none; }
+input[type=checkbox], input[type=radio], input[type=range] { accent-color: #b08a52; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #b08a52; outline-offset: 2px; }
+/* panels: flat, a thin double line, no corner diamonds */
+.card, .card-p, .listing, .modal-box, .gs-panel { background: rgba(8, 6, 5, .94); border: 1px solid var(--iron-hi); box-shadow: var(--frame), var(--frame-drop); }
+.card::before, .card::after, .card-p::before, .card-p::after, .listing::before, .listing::after, .modal-box::before, .modal-box::after { display: none; }
+.card-p { background: var(--abyss); box-shadow: var(--frame); }
+body.popup .card { background: rgba(8, 6, 5, .95); padding-top: 0; }
+/* the popup: the games' tooltip header, tinted by rarity, centred */
+.name { font: 700 21px/1.15 var(--f-carved); letter-spacing: 0; text-shadow: none; }
+body.popup .card > .name { margin: 0 -16px 0; padding: 9px 36px 2px; background: #2a2622; border-bottom: none; }
+body.popup .card > .name.normal { color: #c8c8c8; }
+body.popup .card > .name.rare { background: #3a3216; }
+body.popup .card > .name.unique { background: #3a2412; }
+body.popup .card > .name.magic { background: #23233c; }
+body.popup .card > .meta { margin: 0 -16px 8px; padding: 0 36px 8px; background: #2a2622; border-bottom: 1px solid #4a3c2c; color: #a8a298; }
+body.popup .card > .name.rare + .meta { background: #3a3216; border-bottom-color: #6b5a22; }
+body.popup .card > .name.unique + .meta { background: #3a2412; border-bottom-color: #7a4520; }
+body.popup .card > .name.magic + .meta { background: #23233c; border-bottom-color: #4b4b7a; }
+.x { top: 6px; right: 6px; color: #8a7a62; font-family: var(--f-text); background: none; border: 0; }
+/* verdicts: a small-caps word in its colour, the number beside it; no seal box, no glow */
+.badge { font: 700 18px/1.1 var(--f-carved); letter-spacing: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.verdict.up .badge, .verdict.down .badge, .verdict.risky .badge, .verdict.new .badge { box-shadow: none; }
+.score { font: 700 19px/1 var(--f-carved); }
+body.popup .card > .verdict { justify-content: center; text-align: center; }
+body.popup .card > .verdict .vs { margin-left: 0; width: 100%; text-align: center; }
+.vchip, .pob-tag, .beta-tag, .ribbon { font-family: var(--f-carved); letter-spacing: 0; text-transform: none; font-size: 13px; background: none; box-shadow: none; }
+.ribbon { color: var(--gold-hi); background: #3b2a17; border: 1px solid #8a6a3c; padding: 3px 8px 2px; }
+.ribbon.pick { color: #fff; background: #23233c; border-color: #6b6bc0; }
+.pob-tag { color: #c8b48a; border-color: #5a4a30; }
+/* tables: small-caps headers in currency tan, thin rules */
+table.rows th, table.list th, table.gs-table th, h4.small, .char-group, .side-char, .map-group, details.fold > summary {
+  font-family: var(--f-carved); font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--bronze-text);
+}
+table.rows th, table.list th, table.gs-table th { font-size: 14px; }
+h4.small, .map-group, .char-group { font-size: 15px; }
+details.fold > summary { color: var(--gold); font-size: 15px; }
+.char-group::after { background: var(--iron); }
+.side-char { font-size: 13px; color: var(--ash); }
+/* mods and gains in the games' colours */
+.mod { color: var(--mod); } .mod.implicit { color: #8888ff; } .mod.rune, .mod.enchant { color: var(--rune); }
+/* results window and app shell: flat ground, no washes */
+body.results { background: var(--void); }
+.res-head { background: var(--void); box-shadow: none; }
+.price-banner, .suggest, .setup:not(:empty) { border: 1px solid var(--iron-hi); background: var(--abyss); box-shadow: var(--frame); }
+.price { font: 700 21px/1.1 var(--f-carved); color: #fff; }
+.price-answer { font: 700 23px/1.2 var(--f-text); color: #fff; }
+.side { background: #0a0908; box-shadow: none; }
+.brand img { filter: none; }
+.side-nav button { font: 500 16px/1 var(--f-carved); letter-spacing: 0; color: var(--bronze-text); border-left: 2px solid transparent; }
+.side-nav button i { border: 0; background: none; box-shadow: none; color: #6f675b; }
+.side-nav button:hover:not(.active):not(:disabled) { color: var(--gold-hi); background: #15120f; }
+.side-nav button.active { color: var(--gold-hi); background: #1d1813; border-color: transparent; border-left-color: var(--gold); font-weight: 700; }
+.side-nav button.active i { border: 0; box-shadow: none; color: var(--gold); }
+.main { background: var(--void); }
+.page-head { box-shadow: none; border-bottom-color: var(--iron); }
+.page-head .sub { text-shadow: none; }
+/* chips, tiles and bars: flat */
+.chip, .char-tag, .chips span, .charch .cc, .kind { background: #15120f; border-color: #3a2f24; }
+.chips.key span { border-color: #8a6a3c; color: var(--gold-hi); box-shadow: none; }
+.char-big .tile { background: var(--abyss); box-shadow: none; }
+.char-big .tile b { font: 700 23px/1.1 var(--f-carved); color: #fff; }
+.gs { font-family: var(--f-carved); letter-spacing: 0; box-shadow: none; }
+.g-S { background: #e0a84a; } .g-A { background: #8f8fff; } .g-B { background: #a9b8e8; } .g-C { background: #c8b48a; } .g-D { background: #c97a6a; }
+.progress span { background: #8a6a3c; }
+.resbar .track { background: #15120f; box-shadow: none; }
+.resbar .track::after { background: var(--gold); box-shadow: none; }
+.resbar.fire .fill { background: #b8432a; } .resbar.cold .fill { background: #4a7fb5; } .resbar.lightning .fill { background: #cfb13a; } .resbar.chaos .fill { background: #a0449a; }
+.spiritbar .fill { background: #6f8fbf; }
+.dot.on { box-shadow: none; }
+.res-loss-banner { background: rgba(142, 26, 26, .28); box-shadow: none; }
+body.cb .res-loss-banner { background: rgba(150, 80, 10, .28); }
+.seg-btn.active { background: #1d1813; }
+.spinner { border-top-color: var(--gold); }
+::selection { background: rgba(231, 180, 120, .3); }
+/* colour-blind: blue better, orange worse (no red) */
+body.cb { --up: #8fc8f2; --down: #ff9f40; }
+/* item names in their rarity colour, as in game */
+b.rar-rare { color: var(--rare); } b.rar-unique { color: #c87a3c; } b.rar-magic { color: var(--magic); } b.rar-normal { color: #c8c8c8; }
+.listing .name { font-size: 19px; }

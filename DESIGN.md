@@ -4,7 +4,7 @@ The design language of PoE Upgrade Checker. It's built the way Path of Exile's o
 
 It replaced "Wraeclast Iron" (gold corner diamonds, gradient gold text and buttons, glow), which players said looked generic. The research behind it: the games' tooltip anatomy and colours (loot-filter colour tables), and what players like in other PoE tools (one-line prices, small windows, game-like item cards, dense tables).
 
-All of it lives in [`src/ui/style.css`](src/ui/style.css), which the popup, the results window and the app pages share; the website (`site/site.css`) uses the same tokens. Use the tokens; don't add new hex values in components.
+All of it lives in [`src/ui/css/`](src/ui/css) (base.css first, then windows, pages, polish and native), which the popup, the results window and the app pages share; the website (`site/site.css`) uses the same tokens. Use the tokens; don't add new hex values in components.
 
 ## Colour
 

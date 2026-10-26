@@ -2,9 +2,7 @@
 
 // Auto-update: the installed app and the AppImage update themselves from GitHub releases (betas: pre-releases).
 // Moved out of main.js: it reaches the app's shared state and helpers through C (see main.js).
-const fs = require('fs');
-const path = require('path');
-const { app, ipcMain, shell, net, dialog, Notification, BrowserWindow, session } = require('electron');
+const { app, ipcMain, Notification } = require('electron');
 
 module.exports = function (C) {
   const upd = { state: 'idle', version: null, error: null, progress: null, checked: null };

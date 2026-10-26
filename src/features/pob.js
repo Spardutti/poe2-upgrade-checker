@@ -1,0 +1,460 @@
+'use strict';
+
+// Path of Building: the engines (one per game), judging items on your build (pobJudge), the checks on
+// top (flasks, links, broken builds), Path of Building's trade search and your resistances.
+const path = require('path');
+const fs = require('fs');
+const { app } = require('electron');
+const trade = require('../core/trade');
+const gamesLib = require('../core/games');
+const { SLOT_GROUPS } = require('../core/slots');
+const resLib = require('../core/resists');
+const ROOT = path.join(__dirname, '..'); // src
+
+module.exports = function (C) {
+  // ---------- Path of Building engine ----------
+  // Your PoB export is the reference build; every item is judged by what it really changes on it
+  // (minion DPS, effective HP, resistances against the cap, Spirit, attributes). Items you've
+  // copied in game replace PoB's, so it calculates with what you're actually wearing.
+  const { createEngine } = require('../pobengine');
+  const pobVerdict = require('../core/pobverdict');
+  // the game you're playing (your active character's): decides the trade site, prices and Path of Building
+  // The game a piece of work is for. A trade search or price check keeps the game it started in
+  // (AsyncLocalStorage follows it through every await), so pressing F2 in the other game halfway
+  // through can't mix the two games' leagues, stat ids, budgets and characters.
+  const { AsyncLocalStorage } = require('async_hooks');
+  const gameCtx = new AsyncLocalStorage();
+  const tg = () => { const c = gameCtx.getStore(); return (c && c.game) || C.store.activeGame(); };
+  const inGame = (fn) => (...args) => gameCtx.run({ game: C.store.activeGame() }, () => fn(...args));
+  // still on the game this work started in?
+  const sameGame = () => tg() === C.store.activeGame();
+  const SWITCHED = () => ({ ok: false, switched: true, error: `You changed game while this was running, so it was stopped. Try again in ${G(C.store.activeGame()).short}.` });
+  // game settings (league, budget, search sizes, rates) are only written for the game you're on
+  const setGameSetting = (k, v) => { if (sameGame()) C.store.setSetting(k, v); };
+  const G = (g) => gamesLib.gameOf(g || tg());
+  // one Path of Building per game, started when needed; only the game you're playing keeps one
+  // running (each holds ~250 MB once a build is loaded).
+  const pobEngs = {};
+  function pobEngine() {
+    return pobEngineFor(tg());
+  }
+  function pobEngineFor(game) {
+    if (!pobEngs[game]) pobEngs[game] = createEngine({ log: C.log, appPath: path.join(ROOT, '..'), resourcesPath: process.resourcesPath, packaged: app.isPackaged, game });
+    return pobEngs[game];
+  }
+  // you changed game: give the other game's engine's memory back now, not after its idle time
+  function stopOtherEngines(game) {
+    for (const [g, e] of Object.entries(pobEngs)) if (g !== game) { try { e.stop(); } catch (_) { /* ignore */ } }
+  }
+  function pobFile(id) { return path.join(app.getPath('userData'), 'pob', `${id || C.store.data.activeProfile || 'main'}.xml`); }
+  function guideFile(id) { return pobFile(id).replace(/\.xml$/, '.build'); }
+  function pobXml() { try { return fs.readFileSync(pobFile(), 'utf8'); } catch (_) { return null; } }
+  // an item's text as copied in game; items saved by older versions kept only their parsed lines, so
+  // their text is put back together from those (sections in the game's order)
+  function itemText(it) {
+    if (!it) return null;
+    if (it.raw) return it.raw;
+    if (!Array.isArray(it.lines) || !it.lines.length || !it.name) return null;
+    const tagged = (tags) => it.lines.filter((l) => tags.includes(l.tag)).map((l) => (l.tag === 'implicit' && !/\(implicit\)$/.test(l.text) ? `${l.text} (implicit)` : l.tag === 'rune' && !/\((rune|augmented)\)$/.test(l.text) ? `${l.text} (rune)` : l.text));
+    const parts = [[`Item Class: ${it.itemClass || ''}`, `Rarity: ${it.rarity || 'Rare'}`, it.name, ...(it.baseType && it.baseType !== it.name ? [it.baseType] : [])].join('\n')];
+    const props = tagged(['base', 'info']);
+    if (props.length) parts.push(props.join('\n'));
+    if (it.itemLevel) parts.push(`Item Level: ${it.itemLevel}`);
+    for (const sect of [['rune'], ['implicit'], ['explicit', 'crafted', 'fractured', 'desecrated', undefined, null]]) { const l = tagged(sect); if (l.length) parts.push(l.join('\n')); }
+    if (it.corrupted) parts.push('Corrupted');
+    return parts.join('\n--------\n');
+  }
+  function pobOverrides() {
+    const out = [];
+    for (const [slot, pobSlot] of Object.entries(pobVerdict.SLOT_TO_POB)) {
+      const it = C.store.equipped[slot];
+      const text = it && !it.fromPob ? itemText(it) : null;
+      if (text) out.push({ slot: pobSlot, text });
+    }
+    return out;
+  }
+  function pobOn() { return C.store.settings.usePob !== false && pobEngine().available() && !!pobXml(); }
+  let pobSheetGen = 0; // bumped whenever build or gear changes, so the Character page recalculates
+  function pobSync() { pobQueries.clear(); pobSheetGen++; if (pobOn()) pobEngine().setBuild(pobXml(), pobOverrides()); else if (pobEngine().available()) pobEngine().setBuild(null); } // no build: never keep the last character's
+  // each game has its own priorities (store GAME_KEYS); in PoE1 chaos resistance counts by default
+  const pobPriorities = () => ({ ...pobVerdict.DEFAULT_PRIORITIES, ...(tg() === 'poe1' ? { chaos: true } : {}), ...(C.store.settings.priorities || {}) });
+  // Chaos Inoculation (seen in your PoB build) makes chaos resistance irrelevant
+  // (remembered per character from the last time PoB loaded the build, so it doesn't flip when the engine idles)
+  const pobCI = () => {
+    const i = pobEngs[tg()] && pobEngs[tg()].info();
+    if (i && i.stats && pobOn()) { const ci = pobVerdict.hasCI(i.stats); const m = C.store.settings.pobCI || {}; if (m[C.store.data.activeProfile] !== ci) C.store.setSetting('pobCI', { ...m, [C.store.data.activeProfile]: ci }); return ci; }
+    return pobOn() && !!(C.store.settings.pobCI || {})[C.store.data.activeProfile];
+  };
+  const pobWeights = () => ({ damageWeight: C.store.settings.pobDamageWeight == null ? 0.6 : Number(C.store.settings.pobDamageWeight), priorities: pobPriorities(), ignoreChaos: pobCI() });
+  // list: [{ item, slot }] -> a PoB verdict for each (or null)
+  async function pobJudge(list) {
+    if (!pobOn() || !list.length) return list.map(() => null);
+    const req = []; const idx = [];
+    list.forEach((x, i) => {
+      const text = x.item && (x.item.raw || x.item.listingText);
+      if (!text) return;
+      // jewels: PoB tries it in every jewel socket you've allocated on the tree
+      if (x.item.slot === 'Jewel' || /^Jewel \d+$/.test(x.slot || '')) { req.push({ slot: 'Jewel', text }); idx.push([i, 'Jewel']); return; }
+      if (x.item.slot === 'Flask') { req.push({ slot: 'Flask', text }); idx.push([i, 'Flask']); return; }
+      // PoE1: a third ring slot (The Unseen Hand) when your build has a ring there
+      if (tg() === 'poe1' && x.item.slot === 'Ring' && (((pobEngine().info() || {}).gear) || {})['Ring 3']) { req.push({ slot: 'Ring 3', text }); idx.push([i, 'Ring 3']); }
+      // dual wielding: a one-hand weapon is also tried in place of the weapon in your other hand
+      if (x.item.slot === 'Weapon' && !x.item.twoHanded && !x.slot) {
+        const off = C.store.equipped.Offhand;
+        if (off && !off.twoHanded && require('../core/slots').slotForClass(off.itemClass) === 'Weapon') { req.push({ slot: 'Weapon 2', text }); idx.push([i, 'Offhand']); }
+      }
+      const group = x.item.slot && SLOT_GROUPS[x.item.slot];
+      const slots = group && group.every((g) => pobVerdict.SLOT_TO_POB[g]) ? group : [x.slot || x.item.slot];
+      for (const sl of slots) { const ps = pobVerdict.SLOT_TO_POB[sl]; if (ps) { req.push({ slot: ps, text }); idx.push([i, sl]); } }
+    });
+    const per = list.map(() => []);
+    const errs = list.map(() => null);
+    if (req.length) {
+      const res = await pobEngine().evalItems(req);
+      res.forEach((r, k) => {
+        if (!r || !r.ok) { if (r && r.error && !errs[idx[k][0]]) errs[idx[k][0]] = String(r.error); return; }
+        if (r.multi && idx[k][1] === 'Flask') {
+          for (const m of flaskSlots(r)) {
+            const j = pobVerdict.judge(m.before || r.before, m.after, pobWeights());
+            if (!j) continue;
+            j.slot = 'Flask'; j.socket = { kind: 'flask', slot: m.slot, label: m.label, replacing: m.replacing || null, active: m.active };
+            const note = flaskNote(r, m);
+            if (note) j.flaskNote = note;
+            // a life / mana flask in place of the same kind: its recovery isn't in Path of Building's
+            // damage and effective HP, so clearly more (or less) recovery decides when PoB sees no change
+            const rec = flaskRecovery(r, m);
+            if (rec && ['same', 'small'].includes(j.verdict)) {
+              if (rec.ratio >= 1.15) { j.byRecovery = true; j.verdict = rec.ratio >= 1.4 ? 'upgrade' : 'small'; j.flaskNote = `Judged on recovery (Path of Building's damage and effective HP don't count it): ${Math.round((rec.ratio - 1) * 100)}% more ${rec.what} than yours. ${j.flaskNote || ''}`.trim(); }
+              else if (rec.ratio <= 0.87) { j.byRecovery = true; j.verdict = 'downgrade'; j.flaskNote = `Judged on recovery (Path of Building's damage and effective HP don't count it): ${Math.round((1 - rec.ratio) * 100)}% less ${rec.what} than yours. ${j.flaskNote || ''}`.trim(); }
+            }
+            if (!m.active && m.replacing) j.breaks.push(`Your ${m.label} is switched off in your Path of Building build, so it was switched on for this check`);
+            per[idx[k][0]].push(j);
+          }
+          if (!per[idx[k][0]].length) errs[idx[k][0]] = errs[idx[k][0]] || 'Path of Building has no flask slot this fits.';
+          return;
+        }
+        if (r.multi) {
+          // a jewel that's already in one of your sockets is only compared with itself there
+          const nm = list[idx[k][0]].item && list[idx[k][0]].item.name;
+          const own = r.multi.filter((m) => nm && m.replacing === nm);
+          // PoE1: taking out a cluster jewel would remove its passives, which PoB's quick calculation
+          // keeps: a result in a cluster jewel's socket would overstate, so those sockets aren't tried
+          const usable = own.length ? own : r.multi.filter((m) => !m.replacingCluster);
+          // "Limited to: 1" (Watcher's Eye...): PoB ignores a second copy, so one you have is only swapped for itself
+          const lim = list[idx[k][0]].item && list[idx[k][0]].item.limitedTo;
+          if (!usable.length) { errs[idx[k][0]] = errs[idx[k][0]] || 'Your only jewel sockets this fits hold cluster jewels, which the app can\'t judge a swap for yet.'; return; }
+          for (const m of usable) {
+            const j = pobVerdict.judge(r.before, m.after, pobWeights());
+            if (j) { j.slot = idx[k][1]; j.socket = { slot: m.slot, label: m.label, replacing: m.replacing || null }; if (lim && own.length) j.limitNote = `Limited to ${lim}: compared in place of the one in your tree`; per[idx[k][0]].push(j); }
+          }
+          return;
+        }
+        const j = pobVerdict.judge(r.before, r.after, pobWeights());
+        if (j) { j.slot = idx[k][1]; gearBreaks(j, list[idx[k][0]].item, req[k].slot); per[idx[k][0]].push(j); }
+      });
+    }
+    const out = per.map((arr) => pobVerdict.best(arr));
+    out.errors = errs; // why PoB couldn't judge an item, when it said
+    return out;
+  }
+  // which flask slots a flask is compared in: the one with the same flask (base) first, else the
+  // same kind (life with life, mana with mana), else your utility flasks / tinctures and empty slots
+  function flaskSlots(r) {
+    const m = r.multi || [];
+    const same = m.filter((x) => x.replacingBase && x.replacingBase === r.base);
+    if (same.length) return same;
+    const life = (x) => /^(Life|Mana|Hybrid)$/.test(x || '');
+    if (life(r.sub)) { const k = m.filter((x) => x.replacingSub === r.sub); if (k.length) return k; }
+    const other = m.filter((x) => !x.replacing || (!life(x.replacingSub) && (x.replacingType === r.type || !r.type)));
+    return other.length ? other : m;
+  }
+  // how a life / mana flask's recovery compares with the one it replaces (same kind only)
+  function flaskRecovery(r, m) {
+    const a = r.flask; const b = m.replacingFlask;
+    if (!a || !b || !m.replacing || m.replacingSub !== r.sub) return null;
+    for (const [k, what] of [['life', 'life'], ['mana', 'mana']]) if (a[k] > 0 && b[k] > 0) return { ratio: a[k] / b[k], what };
+    return null;
+  }
+  // life / mana flasks: their recovery isn't in the damage / effective HP numbers, so it's said
+  function flaskNote(r, m) {
+    const a = r.flask; const b = m.replacingFlask;
+    if (!a) return null;
+    const n = (v) => Math.round(v).toLocaleString('en');
+    const part = (k, word) => (a[k] > 0 ? `${n(a[k])} ${word}${b && b[k] > 0 ? ` (yours: ${n(b[k])})` : ''}` : null);
+    const rec = [part('life', 'life'), part('mana', 'mana')].filter(Boolean);
+    if (!rec.length) return null;
+    return `Recovers ${rec.join(' and ')}${a.duration ? ` over ${a.duration}s` : ''}`;
+  }
+  // PoE1 checks Path of Building's quick calculation can't make: it keeps your gems linked whatever
+  // the new item's sockets are, and judges a quiver as if any weapon could use it
+  function gearBreaks(j, item, pobSlot) {
+    if (!item) return;
+    // amulets: the anoint (PoE1) or instill (PoE2) is part of the item, so Path of Building counts yours as
+    // lost on one without it (and adds the new one's); say so, since it can be put on again
+    if (pobSlot === 'Amulet') {
+      const anoint = (it) => { const m = String((it && (it.raw || it.listingText)) || '').match(/^Allocates (.+?)(?: \(enchant\))?\s*$/m); return m ? m[1].trim() : null; };
+      const mine = anoint(C.store.equipped.Amulet); const theirs = anoint(item);
+      const p1 = tg() === 'poe1';
+      if (mine && mine !== theirs) j.breaks.push(`Your amulet's ${p1 ? 'anoint' : 'instilled passive'} (${mine}) isn't on this one${theirs ? ` (it has ${theirs})` : ''}: the verdict counts that. ${p1 ? 'Anointing it again costs oils' : 'Instilling it again costs Distilled Emotions'}`);
+    }
+    if (tg() !== 'poe1') return;
+    const add = (msg, bad) => {
+      j.breaks.push(msg);
+      if (bad || !(j.score > 0)) { if (!['resloss', 'dmgloss'].includes(j.verdict)) j.verdict = 'downgrade'; } else if (['upgrade', 'small', 'same'].includes(j.verdict)) j.verdict = 'risky';
+    };
+    const g = ((pobEngine().info() || {}).slotGems || {})[pobSlot];
+    if (g && g.gems >= 2 && /^(Weapon [12]|Helmet|Body Armour|Gloves|Boots)$/.test(pobSlot)) {
+      const links = item.links || (item.socketCount ? 1 : 0);
+      if (links < g.gems) {
+        const what = links ? `It has a ${links}-link` : 'It has no sockets';
+        add(`${what}: your ${g.label || 'gems'} in this slot use${g.gems === 1 ? 's' : ''} ${g.gems} linked gems${item.corrupted || links === 0 ? '' : ' (link it first)'}`, !!item.corrupted || links === 0);
+      }
+    }
+    const wep = C.store.equipped.Weapon;
+    if (/^Quivers?$/i.test(item.itemClass || '') && wep && !/^Bows?$/i.test(wep.itemClass || '')) add('Quivers only work with a bow, and your weapon isn\'t one', true);
+  }
+  // PoE1 flasks and tinctures: Path of Building tries them in each of your five flask slots
+  const isFlaskClass = (item) => !!item && /flask|tincture/i.test(item.itemClass || '');
+  // cluster and timeless jewels change the passive tree itself, which the quick calculation doesn't redo
+  const isClusterJewel = (item) => !!item && (!!item.cluster || / Cluster Jewel$/i.test(item.baseType || ''));
+  const isTimelessJewel = (item) => !!item && (/^Timeless Jewel$/i.test(item.baseType || '') || /^Timeless Jewel$/i.test(item.name || ''));
+  // PoE1 items Path of Building isn't asked about, and why (shown instead of a verdict)
+  function poe1Unjudged(item, slot) {
+    if (!item) return null;
+    if (isClusterJewel(item)) return "Cluster jewels aren't judged yet: they add passives, which the app's Path of Building check doesn't redo.";
+    if (isTimelessJewel(item)) return "Timeless jewels aren't judged yet: their passive changes need data that doesn't come with the app.";
+
+    if (!pobCanJudge(item, slot)) return null;
+    if (!pobOn()) return pobEngine().available() ? 'Not judged: PoE1 items are judged by Path of Building only. Paste your Path of Building Community build on My gear.' : "Not judged: Path of Building for PoE1 isn't installed with this copy of the app.";
+    return null;
+  }
+  // can Path of Building judge this item? (charms and flasks use the gear score)
+  function pobCanJudge(item, slot) {
+    if (!item) return false;
+    if (item.unidentified) return false; // its mods are hidden: any verdict would only be about the base
+    if (tg() === 'poe1' && (isClusterJewel(item) || isTimelessJewel(item))) return false;
+    if (item.slot === 'Flask') return tg() === 'poe1';
+    if (item.slot === 'Jewel' || /^Jewel \d+$/.test(slot || '')) return true;
+    const group = item.slot && SLOT_GROUPS[item.slot];
+    return !!(pobVerdict.SLOT_TO_POB[slot] || (group && group.every((g) => pobVerdict.SLOT_TO_POB[g])) || pobVerdict.SLOT_TO_POB[item.slot]);
+  }
+  const pobErrorOf = (res, i) => (res && res.errors && res.errors[i]) || 'Path of Building could not read this item.';
+  // Path of Building's own weighted trade search for a slot ("Trader"), trimmed to what the trade
+  // site accepts; every listing it finds is then checked exactly with your build.
+  const pobQueries = new Map(); // slot|weights -> { at, r }
+  // which of your tree's jewel sockets a jewel search is for: the one holding this jewel if it's in
+  // your tree, otherwise your first socketed one (the weights are the same for every normal socket)
+  function pobJewelSocket(item) {
+    const socks = ((pobEngine().info() || {}).sockets) || [];
+    return (item && socks.find((s) => s.jewel && s.jewel === item.name)) || socks.find((s) => s.jewel) || socks[0] || null;
+  }
+  const isRadiusJewel = (item) => !!item && (/^Time-Lost /i.test(item.baseType || '') || (item.lines || []).some((l) => /^Radius:/i.test(l.text || '')));
+
+  async function pobQueryFor(slot, item) {
+    const eng = pobEngine();
+    const info = await eng.ensureLoaded();
+    const key = pobVerdict.dpsKey(info && info.stats);
+    const w = pobWeights().damageWeight;
+    // the damage number PoB's search should raise: the same one the verdicts use for this build
+    const dmgStat = { MinionDPS: 'MinionCombinedDPS', FullDPS: 'FullDPS', CombinedDPS: 'CombinedDPS', TotalDPS: 'TotalDPS' }[key] || 'FullDPS';
+    const weights = [{ stat: dmgStat, weightMult: w }, { stat: 'TotalEHP', weightMult: Math.max(0.05, 1 - w) }];
+    let pobSlotName = pobVerdict.SLOT_TO_POB[slot]; let jewelType;
+    if (slot === 'Jewel') {
+      const sock = pobJewelSocket(item);
+      if (!sock) throw new Error('Your Path of Building build has no allocated jewel socket.');
+      // PoB2 knows Base and Radius jewels; PoB1 Base and Abyss
+      if (tg() === 'poe1') {
+        const abyss = !!item && (!!item.abyss || /Abyss Jewels?/i.test(item.itemClass || '') || /^(Murderous|Searching|Hypnotic|Ghastly) Eye Jewel$/i.test(item.baseType || ''));
+        const s2 = abyss ? (((pobEngine().info() || {}).sockets) || []).find((x) => x.abyssal) : null;
+        if (abyss && !s2) throw new Error('Your Path of Building build has no abyssal socket for this jewel.');
+        pobSlotName = (s2 || sock).slot; jewelType = abyss ? 'Abyss' : 'Base';
+      } else { pobSlotName = sock.slot; jewelType = isRadiusJewel(item) ? 'Radius' : 'Base'; }
+    }
+    const ck = `${C.store.data.activeProfile}|${slot}|${jewelType || ''}|${w}`; // resistance priority is applied after, per search
+    const hit = pobQueries.get(ck);
+    if (hit && Date.now() - hit.at < 15 * 60000) return hit.r;
+    const t0 = Date.now();
+    const r = await eng.makeQuery({ slot: pobSlotName, weights, jewelType });
+    r.query = typeof r.query === 'string' ? JSON.parse(r.query) : r.query;
+    C.log(`pob: built a ${slot} search in ${Date.now() - t0} ms (${((r.query.query.stats || []).find((g) => g.type === 'weight') || { filters: [] }).filters.length} weighted stats)`);
+    pobQueries.set(ck, { at: Date.now(), r });
+    return r;
+  }
+  async function pobSearch(item, slot, league, budget, opts) {
+    const pq = await pobQueryFor(slot, item);
+    const all = JSON.parse(JSON.stringify(pq.query));
+    const wg = (all.query.stats || []).find((g) => g.type === 'weight');
+    if (!wg || !wg.filters.length) return null;
+    // "cap resistances first": push the resistances you're still missing to the top of the search
+    const pr = pobPriorities();
+    const boosted = [];
+    if (pr.resFirst && opts.statIndex) {
+      const info = pobEngine().info();
+      const st = (info && (info.stats || {})) || {};
+      const short = ['Fire', 'Cold', 'Lightning', ...(pr.chaos && !pobCI() ? ['Chaos'] : [])].filter((El) => {
+        const v = Number(st[`${El}Resist`]); const tot = Number(st[`${El}ResistTotal`]);
+        const max = Number(st[`${El}ResistMax`]) || 75; // your real cap (e.g. raised by passives)
+        return Number.isFinite(v) && v < max - 0.5 && !(tot > v + 0.5);
+      });
+      if (short.length) {
+        const re = new RegExp(`^\\+?#% to (all Elemental Resistances|(${short.join('|')})( and (Fire|Cold|Lightning|Chaos))? Resistances?|(Fire|Cold|Lightning|Chaos) and (${short.join('|')}) Resistances)$`, 'i');
+        const ids = (opts.statIndex.all || []).filter((e) => (e.type === 'explicit' || e.type === 'implicit') && re.test(e.text)).map((e) => e.id);
+        // Each resistance point counts half as much as a point of your best % stat (e.g. minion damage).
+        // So an item with your damage mods *and* the resistance comes first, and one with only a big
+        // resistance roll doesn't push them out. (Matching the top stat filled the search with res-only rings.)
+        const text = new Map((opts.statIndex.all || []).map((e) => [e.id, e.text]));
+        const isRes = (id) => /Resistances?$/i.test(text.get(id) || '');
+        const pctW = wg.filters.filter((f) => !isRes(f.id) && /#%/.test(text.get(f.id) || '')).map((f) => Math.abs(f.value.weight));
+        const ref = pctW.length ? Math.max(...pctW) : Math.max(...wg.filters.map((f) => Math.abs(f.value.weight)), 1);
+        for (const id of ids) {
+          const f = wg.filters.find((x) => x.id === id);
+          if (f) f.value.weight = Math.max(f.value.weight, ref * 0.5);
+          else wg.filters.push({ id, value: { weight: ref * 0.5 } });
+          boosted.push(id);
+        }
+        C.log(`pob search: resistances first – boosting ${short.join(', ')} res (${ids.length} stats)`);
+      }
+    }
+    wg.filters.sort((a, b) => Math.abs(b.value.weight) - Math.abs(a.value.weight));
+    // "never lose damage": the weighted sum alone happily trades your damage mods for one big
+    // resistance roll (PoB values filling a resistance highly), so a listing must also have as many of
+    // the build's damage mods as the item you wear in this slot (up to 2)
+    let dmgGroup = null;
+    if (pr.keepDmg && opts.statIndex) {
+      const text = new Map((opts.statIndex.all || []).map((e) => [e.id, e.text]));
+      const norm = (t) => String(t || '').replace(/^\+/, '').toLowerCase();
+      const isDmg = (t) => /damage|critical|attack speed|cast speed|cooldown|level of|minions? (deal|have)/i.test(t) && !/resistances?$|energy shield|armour|evasion|life|mana/i.test(t);
+      const dmg = wg.filters.filter((f) => f.value.weight > 0 && isDmg(text.get(f.id))).slice(0, 8);
+      // for jewels: the jewel in the socket the search is for (as saved on My gear, matched by name)
+      const sockJewel = slot === 'Jewel' && pobJewelSocket(item) ? pobJewelSocket(item).jewel : null;
+      const worn = slot === 'Jewel' ? Object.entries(C.store.equipped).filter(([k]) => /^Jewel /.test(k)).map(([, v]) => v).find((v) => v && v.name === sockJewel) || null : C.store.equipped[slot];
+      const have = new Set(Object.keys((worn && worn.stats) || {}).map(norm));
+      const own = new Set(dmg.filter((f) => have.has(norm(text.get(f.id)))).map((f) => norm(text.get(f.id)))).size;
+      if (own > 0 && dmg.length) {
+        dmgGroup = { type: 'count', value: { min: Math.min(2, own) }, filters: dmg.map((f) => ({ id: f.id, disabled: false })) };
+        C.log(`pob search: never lose damage – needs ${dmgGroup.value.min} of ${dmg.length} damage stats (your ${slot} has ${own})`);
+      }
+    }
+    // "keep my movement speed": boots must be about as fast as yours (PoB weighs movement speed lightly)
+    let speedGroup = null;
+    if (pr.speed && slot === 'Boots') {
+      const worn = C.store.equipped.Boots;
+      const ms = worn && worn.stats ? Number(worn.stats['#% increased Movement Speed']) || 0 : 0;
+      if (ms >= 5) {
+        speedGroup = { type: 'and', filters: [{ id: 'pseudo.pseudo_increased_movement_speed', value: { min: Math.max(1, ms - 2) }, disabled: false }] };
+        C.log(`pob search: keep movement speed – boots with at least ${ms - 2}% (yours ${ms}%)`);
+      }
+    }
+    // the site's complexity limit is lower when you're not signed in: start at the size it took last time
+    const SIZES = [30, 15, 10, 7, 5, 3];
+    const sizeKey = (await C.signedIn()) ? 'signed' : 'anon';
+    let size = Math.min((C.store.settings.pobSearchSize || {})[sizeKey] || 0, SIZES.length - 1);
+    let r = null; let body = null;
+    for (;;) {
+      body = JSON.parse(JSON.stringify(all));
+      const g = body.query.stats.find((x) => x.type === 'weight');
+      g.filters = g.filters.slice(0, SIZES[size]);
+      if (dmgGroup) body.query.stats.push({ ...dmgGroup, filters: dmgGroup.filters.slice(0, Math.max(3, Math.min(8, SIZES[size] / 2))) });
+      if (speedGroup) body.query.stats.push(speedGroup);
+      body.query.status = { option: trade.statusOpt(opts.status) };
+      delete body.engine;
+      trade.applyBudget(body, budget, tg());
+      r = await C.runSearch(league, body, `pob ${slot}${size ? ` size${size}` : ''}`);
+      if (!(r && r.tooComplex) || size >= SIZES.length - 1) break;
+      size++;
+      setGameSetting('pobSearchSize', { ...(C.store.settings.pobSearchSize || {}), [sizeKey]: size });
+    }
+    if (r && r.tooComplex) return { ok: false, error: `The trade site says this search has too many filters.${(await C.signedIn()) ? '' : ' Signing in to pathofexile.com (Settings → Trade site account) raises the limit.'}` };
+    if (!r || !r.ok) return r;
+    let droppedDmg = false;
+    if (!r.total && dmgGroup) {
+      // nothing with your damage mods in this budget: show the best without that rule (marked LOSES DAMAGE)
+      body.query.stats = body.query.stats.filter((x) => x.type !== 'count');
+      const r2 = await C.runSearch(league, body, `pob ${slot} no-dmg-rule`);
+      if (r2 && r2.ok) { r = r2; dmgGroup = null; droppedDmg = true; }
+    }
+    const used = body.query.stats.find((x) => x.type === 'weight').filters.length;
+    const needDmg = dmgGroup ? `; every listing has at least ${dmgGroup.value.min} of your damage mods` : droppedDmg ? '; nothing in your budget has your damage mods, so these may lose damage' : '';
+    const needSpeed = speedGroup ? `; boots at least ${speedGroup.filters[0].value.min}% movement speed` : '';
+    const ctx = {
+      item, mode: 'pob', body, searchKey: C.searchKey(body),
+      title: `Best for your build: ${item.slot === 'Ring' ? 'rings' : slot === 'Jewel' ? (tg() !== 'poe1' && isRadiusJewel(item) ? 'radius jewels' : item.abyss ? 'abyss jewels' : 'jewels') : slot}`,
+      note: `Path of Building weighted this search by what each stat does to your build (${used} stats${used < wg.filters.length ? `, the trade site allowed ${used} of ${wg.filters.length}` : ''})${boosted.length ? ', with extra weight on the resistances you still need' : ''}${needDmg}${needSpeed}. Every listing below is then checked with your build: items that lose resistance or damage are marked and go to the bottom.`,
+    };
+    if (opts.noOpen) return { ok: true, r, body, ctx, filters: used }; // "where to spend" looks at the listings itself
+    const res = await C.openIfAny(r, ctx);
+    return { ...res, mode: 'pob', filters: used };
+  }
+
+  // put a PoB verdict onto a comparison (popup result or listing compare)
+  function applyPob(r, j) {
+    if (!r || !j) return r;
+    r.pob = j;
+    // which skill the damage was judged on (Full DPS adds several up: then it's said as such)
+    j.game = tg();
+    if (!j.skill) { const info = pobEngine().info() || {}; j.skill = j.dpsKey === 'FullDPS' ? 'Full DPS' : info.mainSkill || null; }
+    r.verdict = j.verdict;
+    r.scoreMode = 'pob';
+    r.delta = j.byRecovery ? null : j.score; // a flask judged by its recovery: no "0% for your build"
+    r.pct = null;
+    if (j.socket) { r.replacing = [j.socket.replacing ? `${j.socket.replacing} (${j.socket.label})` : `an empty ${j.socket.kind === 'flask' ? 'flask slot' : 'jewel socket'} (${j.socket.label})`]; if (j.socket.kind === 'flask') r.targetSlot = j.socket.label; }
+    else if (j.slot === 'Ring 3') { const g3 = (((pobEngine().info() || {}).gear) || {})['Ring 3']; r.targetSlot = 'Ring 3'; r.replacing = [g3 ? `${g3} (Ring 3)` : 'Ring 3']; }
+    else if (j.slot && j.slot !== r.targetSlot && C.store.equipped[j.slot]) { r.targetSlot = j.slot; r.replacing = [C.store.equipped[j.slot].name]; }
+    if (j.flaskNote) r.flaskNote = j.flaskNote;
+    if (j.limitNote) r.limitNote = j.limitNote;
+    r.risks = j.breaks.length ? j.breaks : null;
+    r.resRank = j.resRank;
+    return r;
+  }
+  function liveResists() { return resLib.live(C.store.settings.resists, C.store.equipped); }
+  function resNeedFor(slot) {
+    const rs = liveResists();
+    if (!rs || !slot) return null;
+    // resistance keeps counting until you're over the cap by the safety buffer
+    const cur = C.store.equipped[slot];
+    const out = {};
+    let any = false;
+    for (const [El, el] of Object.entries(C.RES_EL)) {
+      const total = Number(rs[el]);
+      if (rs[el] === '' || rs[el] == null || !Number.isFinite(total)) continue;
+      const fromSlot = cur && cur.stats ? (cur.stats[`#% to ${El} Resistance`] || 0) : 0;
+      const cap = ((rs.caps && rs.caps[el]) || rs.cap) + (rs.buffer || 0);
+      out[El] = Math.max(0, cap - (total - fromSlot));
+      any = true;
+    }
+    return any ? out : null;
+  }
+
+  return {
+    gameCtx,
+    tg,
+    inGame,
+    sameGame,
+    SWITCHED,
+    setGameSetting,
+    G,
+    pobEngs,
+    pobEngine,
+    stopOtherEngines,
+    pobFile,
+    guideFile,
+    pobXml,
+    pobOn,
+    get pobSheetGen() { return pobSheetGen; },
+    pobSync,
+    pobPriorities,
+    pobCI,
+    pobWeights,
+    pobJudge,
+    isFlaskClass,
+    poe1Unjudged,
+    pobCanJudge,
+    pobErrorOf,
+    pobQueries,
+    pobQueryFor,
+    pobSearch,
+    applyPob,
+    liveResists,
+    resNeedFor,
+  };
+};

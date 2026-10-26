@@ -3,9 +3,6 @@
 // poe.ninja prices for things that aren't judged as gear (currency, gems, maps, divination cards,
 // uniques), through the app's proxy on poe2upgrade.com; the price card in the popup.
 // Moved out of main.js: it reaches the app's shared state and helpers through C (see main.js).
-const fs = require('fs');
-const path = require('path');
-const { app, ipcMain, shell } = require('electron');
 
 module.exports = function (C) {
   const ninjaCache = new Map(); // url key -> { at, data } (or a promise while it loads)

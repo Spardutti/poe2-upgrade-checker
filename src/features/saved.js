@@ -2,9 +2,7 @@
 
 // Saved searches and their new-listing alerts (both games; the other game's with its own rates).
 // Moved out of main.js: it reaches the app's shared state and helpers through C (see main.js).
-const fs = require('fs');
-const path = require('path');
-const { app, ipcMain, shell, net, dialog, Notification, BrowserWindow, session } = require('electron');
+const { ipcMain, shell, Notification } = require('electron');
 
 module.exports = function (C) {
   function savedList() { return C.store.data.savedSearches || (C.store.data.savedSearches = []); }

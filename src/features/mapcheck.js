@@ -3,9 +3,7 @@
 // Map / waystone check: each mod and what it means for your build (pob/server.lua mapCheck),
 // with your own marks per game.
 // Moved out of main.js: it reaches the app's shared state and helpers through C (see main.js).
-const fs = require('fs');
-const path = require('path');
-const { app, ipcMain, shell } = require('electron');
+const { ipcMain } = require('electron');
 
 module.exports = function (C) {
   const mapLib = require('../core/mapcheck');
