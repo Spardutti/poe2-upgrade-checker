@@ -16,6 +16,8 @@ function roundSig(x) {
 // On armour/weapons these mods only raise the item's own base value, which
 // [Base] Armour/Evasion/ES/Spirit already counts - weighting both would double up.
 const LOCAL_DEFENCE = /^#% increased (Armour|Evasion Rating|Evasion|Energy Shield|Armour and Evasion|Armour and Energy Shield|Evasion and Energy Shield|Armour, Evasion and Energy Shield)$|^# to (maximum Energy Shield|Armour|Evasion Rating)$/;
+// and a weapon's own damage and attack speed are already in [Weapon] Total DPS
+const LOCAL_DPS = /^#% increased (Attack Speed|Physical Damage)$|Adds # to # \w+ Damage$/;
 
 function suggestWeights(equipped, isIgnored) {
   const per = new Map(); // key -> { values: [], slots: Set }
@@ -27,6 +29,7 @@ function suggestWeights(equipped, isIgnored) {
     for (const x of statSources(item)) {
       if (x.source === 'socket' || SKIP.test(x.key) || (isIgnored && isIgnored(x.key))) continue;
       if (hasBaseDef && LOCAL_DEFENCE.test(x.key)) continue;
+      if (st['[Weapon] Total DPS'] && LOCAL_DPS.test(x.key)) continue;
       if (st['[Base] Spirit'] && x.key === '#% increased Spirit') continue;
       if (!(x.value > 0)) continue;
       const e = per.get(x.key) || { values: [], slots: new Set() };
