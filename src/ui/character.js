@@ -110,7 +110,7 @@
       row('Effective HP', n0(p.TotalEHP)),
       isNum(p.EnergyShield) && p.EnergyShield > 0 ? row('Energy shield', n0(p.EnergyShield), isNum(p.EnergyShieldRecharge) ? `recharges ${n0(p.EnergyShieldRecharge)}/s after ${n1(p.EnergyShieldRechargeDelay)} s` : '') : '',
       ci ? row('Life', '1', 'Chaos Inoculation') : row('Life', n0(p.Life), isNum(p.LifeRegenRecovery) && p.LifeRegenRecovery > 0 ? `regenerates ${n1(p.LifeRegenRecovery)}/s` : ''),
-      isNum(p.Ward) && p.Ward > 0 ? row('Ward', n0(p.Ward)) : '',
+      isNum(p.Ward) && p.Ward > 0 ? row(st && st.game === 'poe1' ? 'Ward' : 'Runic Ward', n0(p.Ward)) : '',
       row('Armour', n0(p.Armour), isNum(p.PhysicalDamageReduction) && p.PhysicalDamageReduction > 0 ? `${n0(p.PhysicalDamageReduction)}% physical reduction` : ''),
       row('Evasion', n0(p.Evasion), isNum(p.EvadeChance) ? `${n0(p.EvadeChance)}% chance to evade` : ''),
       isNum(p.DeflectChance) && p.DeflectChance > 0 ? row('Deflect chance', pct(p.DeflectChance)) : '',
@@ -176,7 +176,7 @@
     // three groups of related cards, each stacked without gaps: what you deal, what you survive,
     // what you wear and how you're built
     const stack = (cls, title, parts) => { const inner = parts.filter(Boolean).join(''); return inner ? `<section class="char-stack ${cls}"><h4 class="char-group">${esc(title)}</h4>${inner}</section>` : ''; };
-    return `${hero}<div class="char-cols">${stack('s-off', 'Offence', [minionCard, offence, skills])}${stack('s-def', 'Defence', [defence, res, maxHit, st.game === 'poe1' ? bossCard() : '', resources])}${stack('s-build', 'Gear & build', [gear, anointCard(st.game), misc || tree ? `<div class="char-sub">${misc}${tree}</div>` : '', '<div class="card-p" id="strBox"></div>'])}</div>`;
+    return `${hero}<div class="char-cols">${stack('s-off', 'Offence', [minionCard, offence, skills])}${stack('s-def', 'Defence', [defence, res, maxHit, st.game === 'poe1' ? bossCard() : '', resources])}${stack('s-build', 'Gear & build', [gear, anointCard(st.game), st.game === 'poe1' ? '' : runeCard(), misc || tree ? `<div class="char-sub">${misc}${tree}</div>` : '', '<div class="card-p" id="strBox"></div>'])}</div>`;
   }
 
   // PoE1 boss check: Path of Building's boss skill presets, one at a time
@@ -234,6 +234,44 @@
     b.disabled = false; b.textContent = 'Check again';
   });
 
+  // PoE2: the best rune, soul core or idol for each socket on your gear
+  let runeLast = null;
+  function runeCard() {
+    return card('Best runes and soul cores', `<div class="help">Every rune, soul core and idol that fits each socket on your gear, tried by Path of Building in place of what's there. Only the best tier your level can use of each is tried. Gear with no socket is tried with one added (an Artificer's Orb); corrupted gear is left out.</div>
+      <div id="runeOut">${runeLast ? runeTable(runeLast) : ''}</div>
+      <div class="row"><button id="runeBtn">${runeLast ? 'Check again' : 'Find the best runes'}</button></div>`);
+  }
+  const price = (p) => (!p ? '' : p.eachDiv != null && p.eachDiv >= 0.5 ? `${n1(p.eachDiv)} div` : p.each != null ? `${n1(p.each)} ${esc(p.unit || 'ex')}` : '');
+  function runeTable(r) {
+    if (!r.ok) return `<div class="note">${esc(r.error)}</div>`;
+    if (!r.ranked.length) return '<div class="dim">None of your gear has a socket, or could get one.</div>';
+    const dmgOf = (o) => [sgn(o.dpsPct) && `${sgn(o.dpsPct)} dmg`, sgn(o.ehpPct) && `${sgn(o.ehpPct)} EHP`, o.resGain ? `${o.resGain > 0 ? '+' : ''}${Math.round(o.resGain)} res` : ''].filter(Boolean).join(' · ') || 'small gain';
+    const rows = r.ranked.map((x) => {
+      const where = `${esc(x.slot)}${x.sockets > 1 ? ` <span class="dim small">socket ${x.socket}</span>` : ''}${x.added ? '<div class="dim small">no socket yet: Artificer\'s Orb</div>' : ''}`;
+      const gives = x.yours && (x.yours.dpsPct || x.yours.ehpPct || x.yours.resGain) ? `<div class="dim small">gives you ${esc(dmgOf(x.yours))}</div>` : '';
+      const now = x.unknown ? `<span class="dim" title="The copied text doesn't say which rune it is: copy the item again (F2) so the app sees its sockets">unknown rune</span>${gives}`
+        : x.current ? `${esc(x.current)}${x.guessed ? ' <span class="dim small" title="Worked out from what it does: the copied text doesn\'t name it">(worked out)</span>' : ''}${gives}` : '<span class="dim">empty</span>';
+      const alts = x.options.filter((o) => !x.best || o.rune !== x.best.rune).slice(0, 3).map((o) => `${o.rune}: ${dmgOf(o)}${o.breaks.length ? ' (breaks the build)' : ''}`).join('\n');
+      const best = x.best ? `<b title="${esc([...x.best.lines, alts ? '\nAlso good:\n' + alts : ''].join('\n'))}">${esc(x.best.rune)}</b> <span class="dim small">${esc(x.best.type === 'SoulCore' ? 'soul core' : String(x.best.type || 'rune').toLowerCase())}</span><div class="small pos">${esc(dmgOf(x.best))}</div>`
+        : `<span class="dim">${x.current || x.unknown ? 'keep it: nothing better' : 'nothing helps'}</span>`;
+      return `<tr${x.best ? '' : ' class="dim"'}><td>${where}</td><td>${now}</td><td>${best}</td><td class="nowrap">${x.best ? price(r.prices[x.best.rune]) || '<span class="dim">–</span>' : ''}</td></tr>`;
+    }).join('');
+    const t = r.together;
+    const tog = t ? `<div class="small">All of them together: <b class="${t.breaks.length ? 'neg' : 'pos'}">${esc([sgn(t.dpsPct) && `${sgn(t.dpsPct)} damage`, sgn(t.ehpPct) && `${sgn(t.ehpPct)} effective HP`].filter(Boolean).join(', ') || 'a small gain')}</b>${t.breaks.length ? ` <span class="neg">but ${esc(t.breaks[0])}</span>` : ''}.</div>` : '';
+    const shop = (r.shop || []).filter((x) => x.priceDiv != null).slice(0, 3);
+    const first = shop.length > 1 ? `<div class="small">Best value first: ${shop.map((x) => `<b>${esc(x.rune)}</b> in your ${esc(x.slot)} (${x.priceDiv < 0.5 ? 'cheap' : `${n1(x.priceDiv)} div`})`).join(' · ')}.</div>` : '';
+    return `<table class="kv runes"><tr><th>Socket</th><th>Now</th><th>Best for your build</th><th>Price</th></tr>${rows}</table>${tog}${first}
+      <div class="dim small">At level ${r.level}. Hover a rune for what it does and the next best ones.${r.partial ? ' Ran out of time: some runes weren\'t tried.' : ''}</div>`;
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest && e.target.closest('#runeBtn');
+    if (!b) return;
+    b.disabled = true; b.innerHTML = '<span class="spinner"></span> Trying every rune…';
+    runeLast = await window.api.runeCheck(!!runeLast).catch((err) => ({ ok: false, error: err.message || String(err) }));
+    const out = $('#runeOut'); if (out) out.innerHTML = runeTable(runeLast);
+    b.disabled = false; b.textContent = 'Check again';
+  });
+
   // search strings for the game's search box: vendors and stash (things you want), maps (mods you don't)
   const strOpts = { move: true, life: false, gems: false, links: false, res: null };
   async function renderStrings() {
@@ -273,6 +311,6 @@
   document.querySelector('.tabs button[data-tab="char"]').addEventListener('click', () => render(false));
   $('#charRefresh').addEventListener('click', () => render(true));
   // keep it current while it's open (gear copied, build changed, character switched)
-  window.api.onChanged(() => { anointLast = null; if ($('#tab-char').classList.contains('active')) render(false); });
+  window.api.onChanged(() => { anointLast = null; runeLast = null; if ($('#tab-char').classList.contains('active')) render(false); });
   window.renderCharacter = render;
 })();

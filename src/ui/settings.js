@@ -109,7 +109,7 @@ function renderSlots() {
     const gcell = !it ? '' : !g ? '' : g.score == null ? `<span class="dim">${g.unique ? 'unique' : g.unrated === 'unidentified' ? 'unidentified' : 'not rated'}</span>`
       : `<span class="gs g-${esc(g.grade)}" title="${esc((g.missing || []).length ? 'Missing: ' + g.missing.join(', ') : '')}">${g.score} ${esc(g.grade)}</span>`;
     return `<tr class="slotrow"><td>${esc(s)}</td><td>${gcell}</td>
-      <td class="item-cell">${it ? `<b>${esc(it.name)}</b> <span class="dim">${esc(it.baseType !== it.name ? it.baseType : '')}</span>${it.fromPob ? ' <span class="dim small">· from PoB</span>' : ''}<div class="dim mods-line" title="${esc(summary(it))}">${esc(summary(it).replace(/\(-?\d+(?:\.\d+)?-\d+(?:\.\d+)?\)/g, ''))}</div>`
+      <td class="item-cell">${it ? `<b class="rar-${esc(String(it.rarity || '').toLowerCase())}">${esc(it.name)}</b> <span class="dim">${esc(it.baseType !== it.name ? it.baseType : '')}</span>${it.fromPob ? ' <span class="dim small">· from PoB</span>' : ''}<div class="dim mods-line" title="${esc(summary(it))}">${esc(summary(it).replace(/\(-?\d+(?:\.\d+)?-\d+(?:\.\d+)?\)/g, ''))}</div>`
         : '<span class="empty">not set</span>'}</td>
       <td class="nowrap">${it ? `<button data-quick="${esc(s)}">Find upgrades</button>
         <button class="link" data-custom="${esc(s)}">Custom…</button>
@@ -376,7 +376,33 @@ $('#filterMake').addEventListener('click', async () => {
     $('#filterMsg').textContent = r && r.ok ? r.message : (r && r.error) || 'Something went wrong.';
   } catch (err) { $('#filterMsg').textContent = err.message; }
   b.disabled = false;
+  renderFilterStatus();
 });
+// the filter you made for this character: up to date with your gear and build?
+let filterStatusBusy = false;
+async function renderFilterStatus() {
+  if (filterStatusBusy || !$('#filterStatus')) return;
+  filterStatusBusy = true;
+  try {
+    const st = await window.api.filterStatus().catch(() => null);
+    const el = $('#filterStatus');
+    $('#filterRemake').classList.toggle('hidden', !st);
+    if (!st) { el.innerHTML = ''; return; }
+    const when = new Date(st.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = !st.exists ? `<span class="warn">${esc(st.file)} is gone: make the filter again.</span>`
+      : st.upToDate === false ? `<span class="warn">⚠ ${esc(st.file)} (made ${esc(when)}) is out of date: your gear or build has changed since. Press <b>Remake</b>.</span>`
+        : `<span class="dim">${esc(st.file)} made ${esc(when)}${st.source ? ` from ${esc(st.source)}` : ''}${st.upToDate ? ': up to date' : ''}.</span>`;
+  } finally { filterStatusBusy = false; }
+}
+$('#filterRemake').addEventListener('click', async () => {
+  const b = $('#filterRemake'); b.disabled = true;
+  $('#filterMsg').innerHTML = '<span class="spinner"></span> Making it again…';
+  try { const r = await window.api.filterRemake(); $('#filterMsg').textContent = r && r.ok ? r.message : (r && r.error) || 'Something went wrong.'; } catch (err) { $('#filterMsg').textContent = err.message; }
+  b.disabled = false;
+  renderFilterStatus();
+});
+window.api.onChanged(() => renderFilterStatus());
+renderFilterStatus();
 // you changed game: forget this window's copy of the other game's leagues, stats and recent items
 if (window.api.onGameChanged) window.api.onGameChanged(async () => {
   tradeInfo = null; budgetGame = null;
@@ -1007,7 +1033,8 @@ async function renderPobSource() {
     : src.type === 'file'
       ? `Following <b>${esc(src.name)}</b>: saving it in Path of Building updates this character${when}.`
       : `From <b>${esc(src.name.replace(/^https?:\/\//, ''))}</b>${when}.`)
-    + ` <button class="link" id="pobSyncNow">Update now</button> <button class="link" id="pobUnlink">Unlink</button>${stageHtml}`;
+    + ` <button class="link" id="pobSyncNow">Update now</button> <button class="link" id="pobUnlink">Unlink</button>${stageHtml}${guideSkillsHtml(src)}`;
+  bindGuideSkills(src);
   const stg = $('#pobStage');
   if (stg) stg.addEventListener('change', async () => {
     $('#pobMsg').textContent = 'Building that stage…';
@@ -1022,6 +1049,66 @@ async function renderPobSource() {
     if (r.ok && !r.same) { await load(); renderPob(false); } else renderPobSource();
   });
   $('#pobUnlink').addEventListener('click', async () => { await window.api.unlinkPob(); $('#pobMsg').textContent = 'Unlinked: your build stays as it is.'; renderPobSource(); });
+}
+// a guide's skills: .build files have no gem levels or quality, and don't say which skill is the
+// damage one. You set them here; Path of Building can show each skill's damage to help pick.
+let guideOpen = false;
+function guideSkillsHtml(src) {
+  const list = src.planner && src.skillList;
+  if (!list || !list.length) return '';
+  const cfg = src.skills || {};
+  const lvMode = cfg.level === 'max' ? 'max' : Number(cfg.level) > 0 ? 'n' : 'stage';
+  const rows = list.map((k) => `<tr data-gid="${esc(k.id)}"><td><b>${esc(k.name)}</b>${k.supports.length ? ` <span class="dim small" title="${esc(k.supports.join(', '))}">+${k.supports.length} support${k.supports.length === 1 ? '' : 's'}</span>` : ''}</td>
+    <td><input type="number" class="num gsk-lv" min="1" max="40" placeholder="${k.level}" value="${k.own && cfg.gems && cfg.gems[k.id] && cfg.gems[k.id].level ? cfg.gems[k.id].level : ''}" aria-label="${esc(k.name)} level" title="Level ${k.level} now (max ${k.max}). Type one to set this gem apart."></td>
+    <td><input type="number" class="num gsk-q" min="0" max="23" placeholder="${k.quality}" value="${k.own && cfg.gems && cfg.gems[k.id] && cfg.gems[k.id].quality != null ? cfg.gems[k.id].quality : ''}" aria-label="${esc(k.name)} quality"></td>
+    <td class="c"><input type="radio" name="gskMain" value="${esc(k.id)}" ${k.main ? 'checked' : ''} aria-label="Judge items on ${esc(k.name)}"></td>
+    <td class="c"><input type="checkbox" class="gsk-full" ${k.full ? 'checked' : ''} ${k.main ? 'disabled' : ''} aria-label="Count ${esc(k.name)} in total DPS"></td>
+    <td class="gsk-dps dim small"></td></tr>`).join('');
+  return `<details class="fold" id="guideSkills" ${guideOpen ? 'open' : ''}><summary>Skills <span class="fold-why dim small">${esc(list.find((k) => k.main) ? 'main: ' + list.find((k) => k.main).name : '')}</span></summary>
+    <div class="row wrap small">Gem levels <select id="gskLevel"><option value="stage" ${lvMode === 'stage' ? 'selected' : ''}>For the stage</option><option value="max" ${lvMode === 'max' ? 'selected' : ''}>Top level</option><option value="n" ${lvMode === 'n' ? 'selected' : ''}>All at…</option></select>
+      <input type="number" id="gskLevelN" class="num ${lvMode === 'n' ? '' : 'hidden'}" min="1" max="40" value="${lvMode === 'n' ? Number(cfg.level) : 20}" aria-label="Level for every gem">
+      Quality <input type="number" id="gskQ" class="num" min="0" max="23" value="${Number(cfg.quality) || 0}" aria-label="Quality for every skill gem"></div>
+    <table class="tbl small gsk"><tr><th>Skill</th><th>Level</th><th>Quality</th><th title="The skill items are judged on">Main</th><th title="Also counted in Path of Building's total DPS">In total</th><th>Damage</th></tr>${rows}</table>
+    <div class="row"><button id="gskApply" class="primary">Apply</button><button id="gskCompare" title="Path of Building works out each skill's damage as the main skill">Compare skills</button><span class="note" id="gskMsg"></span></div>
+    <div class="help">A guide's file has no gem levels or quality: "For the stage" uses about what you'd have at that point. Type a level or quality on a row to set that gem apart. Your choices are kept when the guide updates.</div>
+  </details>`;
+}
+function bindGuideSkills(src) {
+  const box = $('#guideSkills');
+  if (!box) return;
+  box.addEventListener('toggle', () => { guideOpen = box.open; });
+  $('#gskLevel').addEventListener('change', () => $('#gskLevelN').classList.toggle('hidden', $('#gskLevel').value !== 'n'));
+  box.querySelectorAll('input[name=gskMain]').forEach((r) => r.addEventListener('change', () => {
+    box.querySelectorAll('tr[data-gid]').forEach((tr) => { const cb = tr.querySelector('.gsk-full'); const main = tr.querySelector('input[name=gskMain]').checked; cb.disabled = main; if (main) cb.checked = true; });
+  }));
+  $('#gskApply').addEventListener('click', async () => {
+    const gems = {}; const full = {}; let main = null;
+    box.querySelectorAll('tr[data-gid]').forEach((tr) => {
+      const id = tr.dataset.gid;
+      const lv = tr.querySelector('.gsk-lv').value; const q = tr.querySelector('.gsk-q').value;
+      if (lv !== '' || q !== '') gems[id] = { level: lv, quality: q };
+      if (tr.querySelector('input[name=gskMain]').checked) main = id;
+      else if (tr.querySelector('.gsk-full').checked) full[id] = true;
+    });
+    const mode = $('#gskLevel').value;
+    $('#gskMsg').textContent = 'Building it with your skills…';
+    const r = await window.api.setGuideSkills({ level: mode === 'n' ? $('#gskLevelN').value : mode, quality: $('#gskQ').value, gems, main, full });
+    $('#pobMsg').textContent = r.ok ? r.message : r.error;
+    if (r.ok) { await load(); renderPob(false); } else $('#gskMsg').textContent = r.error;
+  });
+  $('#gskCompare').addEventListener('click', async () => {
+    $('#gskMsg').textContent = 'Path of Building is trying each skill as the main one…';
+    const r = await window.api.guideSkillDps();
+    if (!r.ok) { $('#gskMsg').textContent = r.error; return; }
+    box.querySelectorAll('tr[data-gid]').forEach((tr) => {
+      const d = r.dps[tr.dataset.gid]; const cell = tr.querySelector('.gsk-dps');
+      cell.textContent = d ? `${kfmt(d.dps)}${d.minion ? ' (minions)' : ''}` : '–';
+      cell.classList.toggle('pos', tr.dataset.gid === r.best);
+    });
+    const best = r.best && (src.skillList || []).find((k) => k.id === r.best);
+    const cur = (src.skillList || []).find((k) => k.main);
+    $('#gskMsg').textContent = !best ? 'None of these skills does damage in Path of Building.' : cur && best.id === cur.id ? `${best.name} does the most damage: it's already the main skill.` : `${best.name} does the most damage. Pick it as Main and press Apply to judge items on it.`;
+  });
 }
 const kfmt = (v) => (v == null ? '–' : v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e4 ? Math.round(v / 1000) + 'k' : Math.round(v).toLocaleString('en'));
 async function renderPob(load) {

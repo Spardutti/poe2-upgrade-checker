@@ -40,3 +40,10 @@ test('garbage in, null out', () => {
   assert.equal(divineInExalts({ core: { primary: 'exalted' }, lines: [{ id: 'divine', primaryValue: 0.5 }] }), null);
   assert.match(ninjaUrls('Rise of the Abyssal')[0], /league=Rise%20of%20the%20Abyssal&type=Currency$/);
 });
+
+test('chaos orbs are found by name too, for prices in chaos', () => {
+  const R = require('../src/core/rates');
+  const out = R.currencyRatesInExalts({ core: { primary: 'exalted', items: [{ id: 'chaos-orb', name: 'Chaos Orb' }, { id: 'divine', name: 'Divine Orb' }] }, lines: [{ id: 'chaos-orb', primaryValue: 15 }, { id: 'divine', primaryValue: 700 }] });
+  assert.strictEqual(out.chaos, 15);
+  assert.strictEqual(out.divine, 700);
+});

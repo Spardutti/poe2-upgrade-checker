@@ -55,10 +55,12 @@
           ${withBest[1] ? `<p class="dim">Next: ${esc(withBest[1].slot)} (${gain(withBest[1].best.gain)} for ${esc(withBest[1].best.price)})${withBest[2] ? `, then ${esc(withBest[2].slot)} (${gain(withBest[2].best.gain)} for ${esc(withBest[2].best.price)})` : ''}.</p>` : ''}
         </div>`
       : '<div class="card-p note">Nothing in your price range is an upgrade for your build. Try a higher maximum on Find upgrades.</div>';
+    // a listing's name opens it in the results window (first, then the rest of that slot's search)
+    const pickLink = (r, c, bold) => (c.listingId && r.searched ? `<button class="link spend-pick${bold ? ' b' : ''}" data-slot="${esc(r.slot)}" data-id="${esc(c.listingId)}" title="Show this listing (the trade site's own search, this one first)">${esc(c.name)}</button>` : bold ? `<b>${esc(c.name)}</b>` : esc(c.name));
     const row = (r) => {
       const b = r.best; const big = r.biggest && r.biggest !== b && r.biggest.name !== (b && b.name) ? r.biggest : null;
       const what = r.error ? `<span class="${r.soft ? 'dim' : 'neg'}">${esc(r.error)}</span>`
-        : b ? `<b>${esc(b.name)}</b> <span class="dim">${esc(b.base || '')}</span><br><span class="pos">${gain(b.gain)}</span> for ${esc(b.price)}${b.risks && b.risks.length ? ` <span class="warn" title="${esc(b.risks.join('; '))}">⚠ ${esc(b.risks[0])}</span>` : ''}${big ? `<br><span class="dim">Biggest gain: ${gain(big.gain)} for ${esc(big.price)} (${esc(big.name)})</span>` : ''}`
+        : b ? `${pickLink(r, b, true)} <span class="dim">${esc(b.base || '')}</span>${b.socket ? `<br><span class="small">goes in ${esc(b.socket.label)}${b.socket.replacing ? ` in place of ${esc(b.socket.replacing)}` : ' (empty now)'}</span>` : ''}<br><span class="pos">${gain(b.gain)}</span> for ${esc(b.price)}${b.risks && b.risks.length ? ` <span class="warn" title="${esc(b.risks.join('; '))}">⚠ ${esc(b.risks[0])}</span>` : ''}${big ? `<br><span class="dim">Biggest gain: ${gain(big.gain)} for ${esc(big.price)} (${pickLink(r, big, false)})</span>` : ''}`
           : r.none ? '<span class="dim">Nothing listed in your price range.</span>' : `<span class="dim">None of the ${r.total ? `${r.total} listed` : 'listings'} in your price range beats what you wear.</span>`;
       return `<tr><td><b>${esc(r.slot)}</b>${r.current ? `<br><span class="dim small">${esc(r.current)}</span>` : ''}${changed.has(r.slot) ? '<br><span class="warn small" title="What you wear in this slot has changed since this run: run it again for gains against your new item">changed since</span>' : ''}</td>
         <td>${what}${trend(r)}</td><td class="num">${b && b.perDiv != null ? `<b>${per(b.perDiv)}</b>` : '–'}</td>
@@ -82,6 +84,12 @@
       <p class="dim small">${esc(run.league || '')}${run.budget ? ` · ${esc(run.budget)}` : ''}${when ? ` · checked at ${esc(when)}` : ''} · ${gs ? 'Gear score points gained over what you wear (no Path of Building build loaded, so no resistance pairs)' : '"pts" is Path of Building\'s score for your build, as in the popup: the % change to your damage and effective HP, plus half a point per resistance point toward your cap'}, checked on the first 10 listings of each search.${run.stopped ? ` Stopped early: ${esc(run.stopped)}` : ''}</p></div>
       ${pairHtml}`;
     body().querySelectorAll('.spend-open').forEach((b) => b.addEventListener('click', async () => { b.disabled = true; await window.api.spendOpen(b.dataset.slot); b.disabled = false; }));
+    body().querySelectorAll('.spend-pick').forEach((b) => b.addEventListener('click', async () => {
+      b.disabled = true;
+      const res = await window.api.spendOpen(b.dataset.slot, b.dataset.id);
+      b.disabled = false;
+      if (res && !res.ok && res.error) b.title = res.error;
+    }));
     body().querySelectorAll('.spend-alert').forEach((b) => b.addEventListener('click', () => {
       const tr = body().querySelector(`.spend-alert-row[data-for="${b.dataset.slot}"]`);
       if (tr) tr.classList.toggle('hidden');

@@ -143,7 +143,9 @@ local function pick(o)
     Str = num(o.Str), Dex = num(o.Dex), Int = num(o.Int),
     ReqStr = num(o.ReqStr), ReqDex = num(o.ReqDex), ReqInt = num(o.ReqInt),
     MovementSpeedMod = num(o.MovementSpeedMod), LifeRegenRecovery = num(o.LifeRegenRecovery),
+    EHPSurvivalTime = num(o.EHPSurvivalTime),
   }
+  for _, t in ipairs({ "Physical", "Fire", "Cold", "Lightning", "Chaos" }) do r[t .. "MaximumHitTaken"] = num(o[t .. "MaximumHitTaken"]) end
   for _, el in ipairs({ "Fire", "Cold", "Lightning", "Chaos" }) do
     r[el .. "Resist"] = num(o[el .. "Resist"])
     r[el .. "ResistTotal"] = num(o[el .. "ResistTotal"])
@@ -515,7 +517,8 @@ end
 -- time and then all together; the rest are only reported as not calculated. Also: what your main
 -- skill's damage is made of and whether it leeches, for the app's own checks (reflect, no leech).
 local function variants(text)
-  local t = tostring(text or ""):gsub("%s+$", "")
+  -- a tablet's wording ("Players in your Maps have …", "… in Map"): read as the waystone's
+  local t = tostring(text or ""):gsub("%s+$", ""):gsub(" in your Maps", ""):gsub(" in affected Maps", ""):gsub(" in Maps?%f[%W]", ""):gsub(" in Area%f[%W]", "")
   local out = { t }
   local rest = t:match("^[Pp]layers have (.+)$")
   if rest then out[#out + 1] = rest end
@@ -535,36 +538,66 @@ local function parsePlayerMod(text)
   end
   return nil
 end
--- PoB's calculator reads the Configuration's mods each time it runs: add the map's for one run
-local function withMods(modsList)
+-- PoB's calculator reads the Configuration's mods each time it runs: add the map's for one run.
+-- Player mods go on you; monster mods on the enemy (enemy = { mods = {{name,type,value}}, pen = { Fire = 10 } }),
+-- penetration through the Configuration's enemy pen boxes, as Path of Building's own map settings do.
+local function withMods(modsList, enemyList)
   local cfg = build.configTab
-  local saved = cfg.modList
+  local saved, savedEnemy = cfg.modList, cfg.enemyModList
   local ml = new("ModList")
   ml:AddList(saved)
-  for _, mods in ipairs(modsList) do for _, m in ipairs(mods) do ml:AddMod(modLib.setSource(m, "Map")) end end
+  for _, mods in ipairs(modsList or {}) do for _, m in ipairs(mods) do ml:AddMod(modLib.setSource(m, "Map")) end end
   cfg.modList = ml
+  local savedPen = {}
+  if enemyList and #enemyList > 0 and savedEnemy then
+    local el = new("ModList")
+    el:AddList(savedEnemy)
+    local pen = {}
+    for _, e in ipairs(enemyList) do
+      for _, m in ipairs(e.mods or {}) do
+        if m.name and m.type and tonumber(m.value) then el:NewMod(m.name, m.type, tonumber(m.value), "Map") end
+      end
+      for t, v in pairs(e.pen or {}) do pen[t] = (pen[t] or 0) + (tonumber(v) or 0) end
+    end
+    cfg.enemyModList = el
+    for t, v in pairs(pen) do
+      local k = "enemy" .. t .. "Pen"
+      savedPen[k] = { had = cfg.input[k] }
+      local ctrl = cfg.varControls and cfg.varControls[k]
+      local base = tonumber(cfg.input[k]) or tonumber(ctrl and ctrl.placeholder) or 0
+      cfg.input[k] = base + v
+    end
+  end
   local calcFunc = build.calcsTab:GetMiscCalculator()
   local ok, out = pcall(calcFunc, {})
-  cfg.modList = saved
+  cfg.modList, cfg.enemyModList = saved, savedEnemy
+  for k, v in pairs(savedPen) do cfg.input[k] = v.had end
   if not ok then error(out) end
   return out
 end
-local function mapCheck(mods)
+local function mapCheck(mods, enemy)
   local calcFunc = build.calcsTab:GetMiscCalculator()
   local base = calcFunc({}) -- the same calculation as with the mods, so the two compare
-  local results, all = {}, {}
+  local results, all, allEnemy = {}, {}, {}
+  local enemyBy = {}
+  for _, e in ipairs(enemy or {}) do if e.text then enemyBy[e.text] = e end end
   for i, text in ipairs(mods or {}) do
     local parsed, as = parsePlayerMod(text)
+    local e = enemyBy[text]
     if parsed then
       local okc, out = pcall(withMods, { parsed })
       results[i] = okc and { text = text, as = as, after = pick(out) } or { text = text, as = as, error = tostring(out) }
       all[#all + 1] = parsed
+    elseif e then
+      local okc, out = pcall(withMods, {}, { e })
+      results[i] = okc and { text = text, monster = true, after = pick(out) } or { text = text, monster = true, error = tostring(out) }
+      allEnemy[#allEnemy + 1] = e
     else
       results[i] = { text = text }
     end
   end
   local r = { ok = true, before = pick(base), results = results }
-  if #all > 0 then local okc, out = pcall(withMods, all); if okc then r.all = pick(out) end end
+  if #all > 0 or #allEnemy > 0 then local okc, out = pcall(withMods, all, allEnemy); if okc then r.all = pick(out) end end
   -- your main skill: its damage by type, whether it's a minion skill, leech and regeneration
   local o = build.calcsTab.mainOutput or {}
   local hand = o.MainHand or o
@@ -712,6 +745,9 @@ local function affixNames(req)
   for _, id in ipairs(req.ids or {}) do local h = tostring(id):match("stat_(%d+)$"); if h then want[tonumber(h)] = id end end
   local tags = {}
   for _, t in ipairs(req.tags or {}) do tags[t] = true end
+  -- an item's own base: the tags its mods roll with (str_armour, wand, two_hand_weapon...)
+  local b = req.base and data.itemBases and data.itemBases[req.base]
+  if b and b.tags then for t, on in pairs(b.tags) do if on then tags[t] = true end end end
   local function spawns(mod)
     for i, k in ipairs(mod.weightKey or {}) do
       if tags[k] or k == "default" then return (mod.weightVal and mod.weightVal[i] or 0) > 0 end
@@ -745,6 +781,195 @@ end
 -- the slot's item type on your build and weights each by how much it raises your damage and
 -- effective HP, then builds a weighted trade search from that.
 --   req: { slot = "Gloves", weights = { {stat="MinionCombinedDPS", weightMult=0.6}, ... }, maxPrice, maxPriceType }
+-- each skill group's damage when it's the main skill (what Path of Building shows if you pick it),
+-- so you can see which skill a build really runs on. The main skill is put back afterwards.
+--   -> { main = index, skills = { {index, label, enabled, full, dps, key, minion} } }
+local function skillDps()
+  local list = build.skillsTab.socketGroupList or {}
+  local was = build.mainSocketGroup
+  local out = {}
+  local function recalc() build.buildFlag = true; runCallback("OnFrame") end
+  for i, g in ipairs(list) do
+    if g.enabled ~= false and g.gemList and #g.gemList > 0 then
+      build.mainSocketGroup = i
+      local ok, err = pcall(recalc)
+      local o = build.calcsTab.mainOutput or {}
+      local minion = num(o.Minion and o.Minion.CombinedDPS) or 0
+      local own = num(o.CombinedDPS) or num(o.TotalDPS) or 0
+      local dps, key = own, "CombinedDPS"
+      if minion > own then dps, key = minion, "MinionDPS" end
+      local first = g.gemList[1]
+      out[#out + 1] = { index = i, label = g.displayLabel or g.label, gemId = first and first.gemId or nil, gemName = first and (first.nameSpec or (first.gemData and first.gemData.name)) or nil, full = g.includeInFullDPS and true or false, dps = ok and dps or nil, key = key, minion = minion > own, error = (not ok) and tostring(err) or nil,
+        full_dps = num(o.FullDPS) }
+    end
+  end
+  build.mainSocketGroup = was
+  pcall(recalc)
+  return { ok = true, main = was, skills = out }
+end
+
+-- PoE2 runes and soul cores: every one that fits a socket on your gear, tried in that socket in place
+-- of what's there. Only the best tier of each kind your level can use is tried ("Greater Desert Rune"
+-- over "Lesser Desert Rune"). Gear with no socket that isn't corrupted is tried with one added
+-- (an Artificer's Orb). { level, seconds } ->
+--   { before, slots = { {slot, item, sockets, added, current = {names}, results = { {socket, rune, type, req, lines, after} }} } }
+local RUNE_SLOTS = { "Weapon 1", "Weapon 2", "Helmet", "Body Armour", "Gloves", "Boots" }
+local function runeKind(name)
+  return (tostring(name):gsub("^Lesser ", ""):gsub("^Greater ", ""):gsub("^Perfect ", ""))
+end
+local function withRunes(raw, count, runes)
+  local item = makeItem(raw)
+  if not item then return nil end
+  item.itemSocketCount = count
+  item.runes = {}
+  for i = 1, count do item.runes[i] = runes[i] or "None" end
+  item:UpdateRunes()
+  item:BuildAndParseRaw()
+  return item
+end
+local function runeCheck(req)
+  if GAME == "poe1" then return { ok = false, error = "Runes are a Path of Exile 2 thing." } end
+  local level = tonumber(req.level) or build.characterLevel or 100
+  local deadline = os.clock() + (tonumber(req.seconds) or 50)
+  local calcFunc = build.calcsTab:GetMiscCalculator()
+  local base = calcFunc({})
+  local out = {}
+  for _, name in ipairs(RUNE_SLOTS) do
+    local slot = build.itemsTab.slots[pobSlot(name)]
+    local cur = slot and slot.selItemId and build.itemsTab.items[slot.selItemId]
+    if cur and cur.base and (cur.base.weapon or cur.base.armour or cur.base.tags.wand or cur.base.tags.staff or cur.base.tags.sceptre or (cur.itemSocketCount or 0) > 0) then
+      -- a corrupted item can't be changed: its runes stay
+      if cur.corrupted then goto continue end
+      local count = cur.itemSocketCount or 0
+      local added, unknown = false, false
+      if count == 0 then
+        if #(cur.runeModLines or {}) > 0 then
+          -- rune mods but no "Sockets:" line (an item saved by an older version): one socket, rune unknown
+          count, unknown = 1, true
+        else count, added = 1, true end
+      end
+      local raw = cur:BuildRaw()
+      local current = {}
+      for i = 1, count do current[i] = unknown and "?" or (cur.runes and cur.runes[i]) or "None" end
+      -- the best tier of each kind you can use
+      local best = {}
+      for _, r in ipairs(build.itemsTab:GetValidRunesForItem(cur)) do
+        if r.name ~= "None" and not r.isSocketBound and (r.req or 0) <= level then
+          local k = runeKind(r.name)
+          if not best[k] or (r.req or 0) > (best[k].req or 0) then best[k] = r end
+        end
+      end
+      -- each result is compared with your gear as you wear it (the "before")
+      local entry = { slot = name, item = cur.title or cur.name, sockets = count, added = added, unknown = unknown, current = current, results = {} }
+      -- runes it can't name: your gear with the socket empty, so the app can say what your rune gives now
+      if unknown then
+        entry.runeLines = {}
+        for _, l in ipairs(cur.runeModLines or {}) do entry.runeLines[#entry.runeLines + 1] = tostring(l.line or "") end
+        local okb, b = pcall(function() local it = withRunes(raw, count, {}); return it and calcFunc({ repSlotName = pobSlot(name), repItem = it }) end)
+        if okb and b then entry.bare = pick(b) end
+      end
+      for i = 1, count do
+        for _, r in pairs(best) do
+          if os.clock() > deadline then entry.partial = true; break end
+          if r.name ~= current[i] then
+            local runes = {}
+            for j = 1, count do runes[j] = (current[j] ~= "?" and current[j]) or "None" end
+            runes[i] = r.name
+            local ok, after = pcall(function() local it = withRunes(raw, count, runes); return it and calcFunc({ repSlotName = pobSlot(name), repItem = it }) end)
+            if ok and after then
+              entry.results[#entry.results + 1] = { socket = i, rune = r.name, type = r.type, req = r.req, lines = r.lines, after = pick(after) }
+            end
+          end
+        end
+      end
+      out[#out + 1] = entry
+    end
+    ::continue::
+  end
+  return { ok = true, before = pick(base), level = level, slots = out }
+end
+-- several rune picks together: { picks = { {slot, socket, rune} } } -> { before, after }
+local function runeApply(req)
+  if GAME == "poe1" then return { ok = false, error = "Runes are a Path of Exile 2 thing." } end
+  local calcFunc = build.calcsTab:GetMiscCalculator()
+  local base = calcFunc({})
+  local bySlot = {}
+  for _, p in ipairs(req.picks or {}) do bySlot[p.slot] = bySlot[p.slot] or {}; bySlot[p.slot][tonumber(p.socket) or 1] = p.rune end
+  local override = {}
+  for name, picks in pairs(bySlot) do
+    local slot = build.itemsTab.slots[pobSlot(name)]
+    local cur = slot and slot.selItemId and build.itemsTab.items[slot.selItemId]
+    if cur then
+      local count = math.max(cur.itemSocketCount or 0, 1)
+      local runes = {}
+      for i = 1, count do runes[i] = picks[i] or (cur.runes and cur.runes[i]) or "None" end
+      local it = withRunes(cur:BuildRaw(), count, runes)
+      if it then override[#override + 1] = { slot = pobSlot(name), item = it } end
+    end
+  end
+  -- every slot at once: swap them in, calculate, put the old items back whatever happens
+  local saved = {}
+  local okc, after = pcall(function()
+    for _, o in ipairs(override) do
+      local slot = build.itemsTab.slots[o.slot]
+      saved[#saved + 1] = { slot = slot, id = slot.selItemId, item = o.item }
+      build.itemsTab:AddItem(o.item, true)
+      slot:SetSelItemId(o.item.id)
+    end
+    build.itemsTab:PopulateSlots(); build.buildFlag = true; runCallback("OnFrame")
+    local calc2 = build.calcsTab:GetMiscCalculator()
+    return pick(calc2({}))
+  end)
+  for _, sv in ipairs(saved) do
+    sv.slot:SetSelItemId(sv.id or 0)
+    if build.itemsTab.DeleteItem then pcall(build.itemsTab.DeleteItem, build.itemsTab, sv.item) end
+  end
+  build.itemsTab:PopulateSlots(); build.buildFlag = true; runCallback("OnFrame")
+  if not okc then return { ok = false, error = tostring(after) } end
+  return { ok = true, before = pick(base), after = after }
+end
+
+-- loot filter: bases of the same kind as each one you wear (same item type, same defence mix or
+-- weapon type, same implicit) with more base defence or weapon damage, that you can use now or soon.
+-- Runeforged and unobtainable bases are left out (they don't drop).
+--   { level, ahead = 5, slots = { {slot, base} } } -> { slots = { {slot, base, score, better = { {name, score, level} }} } }
+local function baseScore(b)
+  if b.armour then
+    local t = 0
+    for k, v in pairs(b.armour) do if k == "Armour" or k == "Evasion" or k == "EnergyShield" then t = t + (tonumber(v) or 0) end end
+    return t
+  elseif b.weapon then
+    local w, t = b.weapon, 0
+    for _, ty in ipairs({ "Physical", "Fire", "Cold", "Lightning", "Chaos" }) do t = t + ((tonumber(w[ty .. "Min"]) or 0) + (tonumber(w[ty .. "Max"]) or 0)) / 2 end
+    return t * (tonumber(w.AttackRateBase) or 1)
+  end
+  return nil
+end
+local function betterBases(req)
+  local level = tonumber(req.level) or build.characterLevel or 100
+  local ahead = tonumber(req.ahead) or 5
+  local out = {}
+  for _, s in ipairs(req.slots or {}) do
+    local cur = data.itemBases[s.base]
+    local entry = { slot = s.slot, base = s.base, better = {} }
+    local sc = cur and baseScore(cur)
+    if cur and sc and sc > 0 then
+      entry.score = sc
+      for name, b in pairs(data.itemBases) do
+        if name ~= s.base and not b.hidden and not (b.tags and b.tags.runeforged) and b.type == cur.type and b.subType == cur.subType and b.implicit == cur.implicit then
+          local lv = (b.req and b.req.level) or 1
+          local v = baseScore(b)
+          if v and v > sc * 1.05 and lv <= level + ahead then entry.better[#entry.better + 1] = { name = name, score = v, level = lv } end
+        end
+      end
+      table.sort(entry.better, function(a, b) return a.score > b.score end)
+      while #entry.better > 4 do table.remove(entry.better) end
+    end
+    out[#out + 1] = entry
+  end
+  return { ok = true, level = level, slots = out }
+end
+
 local function genQuery(req)
   local slot = build.itemsTab.slots[pobSlot(req.slot)]
   if not slot then return { ok = false, error = "unknown slot " .. tostring(req.slot) } end
@@ -853,11 +1078,19 @@ while true do
     elseif req.cmd == "affixes" then
       return affixNames(req)
     elseif req.cmd == "mapcheck" then
-      return mapCheck(req.mods or {})
+      return mapCheck(req.mods or {}, req.enemy)
     elseif req.cmd == "pairs" then
       return { ok = true, results = evalPairs(req.pairs or {}) }
     elseif req.cmd == "eval" then
       return { ok = true, results = evalItems(req.items or {}) }
+    elseif req.cmd == "bases" then
+      return betterBases(req)
+    elseif req.cmd == "runes" then
+      return runeCheck(req)
+    elseif req.cmd == "runeapply" then
+      return runeApply(req)
+    elseif req.cmd == "skilldps" then
+      return skillDps()
     elseif req.cmd == "sheet" then
       return sheet()
     elseif req.cmd == "quit" then

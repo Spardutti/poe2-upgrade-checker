@@ -18,7 +18,7 @@ module.exports = function (C) {
     const seq = C.popupSeq;
     const send = () => { if (seq === C.popupSeq && C.popup && !C.popup.isDestroyed()) C.popup.webContents.send('popup:result', C.serialise(r)); };
     if (C.pobOn()) {
-      C.pobEngine().mapCheck(mapLib.modsOf(item)).then((res) => { mapShown.pob = res; r.check = mapLib.check(item, res, mapMarks()); })
+      C.pobEngine().mapCheck(mapLib.modsOf(item), require('../core/monstermods').enemyList(mapLib.modsOf(item))).then((res) => { mapShown.pob = res; r.check = mapLib.check(item, res, mapMarks()); })
         .catch((err) => { r.pobError = err.message; C.log('map check: ' + err.message); })
         .then(() => { r.pending = false; send(); });
     }

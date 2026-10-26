@@ -22,10 +22,10 @@
   <meta name="twitter:description" content="Free Path of Exile 2 and PoE1 overlay: press F2 on an item and Path of Building judges it for your build.">
   <meta name="twitter:image" content="https://poe2upgrade.com/img/og.png">
   <meta name="twitter:image:alt" content="The in-game popup showing an UPGRADE verdict from Path of Building">
-  <meta name="theme-color" content="#050506">
+  <meta name="theme-color" content="#0e0c0a">
   <link rel="icon" href="img/icon-64.png">
   <link rel="apple-touch-icon" href="img/icon-180.png">
-  <link rel="preload" href="fonts/Cinzel-Variable.woff" as="font" type="font/woff" crossorigin>
+  <link rel="preload" href="fonts/AlegreyaSansSC-Bold.woff" as="font" type="font/woff" crossorigin>
   <link rel="stylesheet" href="site.css">
   <script type="application/ld+json">
   {
@@ -87,37 +87,53 @@
   <main id="top">
     <section class="hero">
       <div class="hero-text">
-        <p class="eyebrow">Free item upgrade checker for Path of Exile 2 and Path of Exile 1</p>
-        <h1>Is it really an upgrade?<br><span>Path of Building decides.</span></h1>
+        <p class="kicker">Free item upgrade checker for Path of Exile 2 and Path of Exile 1</p>
+        <h1>Is it really an upgrade? <span>Path of Building decides.</span></h1>
         <p class="lead">Hover an item and press <kbd>F2</kbd>. PoE Upgrade Checker swaps it into your Path of Building build and tells you what it really does to your damage, effective HP and resistances. Then it finds a better one on the trade site, inside your budget.</p>
         <div class="cta">
-          <a class="btn blood" href="/download">Download for Windows</a>
+          <a class="btn main" href="/download">Download for Windows</a>
           <a class="btn" href="https://github.com/ets-public/poe2-upgrade-checker">View on GitHub</a>
         </div>
         <p class="fine">Windows 10/11 · Linux (experimental, Steam/Proton) · PoE2, and PoE1 in beta · Free and open source · Updates itself</p>
       </div>
-      <figure class="hero-shot">
-        <img src="img/popup.webp" alt="PoE Upgrade Checker popup in Path of Exile 2: an UPGRADE verdict of +26.8 points for the build, capping lightning resistance" width="800" height="866" fetchpriority="high">
+      <figure class="frame tip" role="img" aria-label="PoE Upgrade Checker popup in Path of Exile 2: an UPGRADE verdict of +26.8 points for the build, capping lightning resistance">
+        <div class="tip-head" aria-hidden="true">
+          <div class="tip-name">Doom Vise</div>
+          <div class="tip-base">Sirenscale Gloves</div>
+          <span class="tip-close">×</span>
+        </div>
+        <div aria-hidden="true">
+          <div class="tip-verdict"><strong>Upgrade · +26.8</strong><span>for your build, vs Soul Vise · judged by Path of Building</span></div>
+          <div class="tip-sep"></div>
+          <div class="tip-lines">
+            <div><span class="l">Effective HP </span><span class="up">+20.7%</span></div>
+            <div><span class="l">Lightning Resistance </span><span class="v">38% → 75%</span> <span class="up">(capped)</span></div>
+            <div><span class="l">Cold Resistance </span><span class="up">+16%</span></div>
+            <div><span class="l">Energy Shield </span><span class="v">13,360 → </span><span class="dn">12,797</span></div>
+          </div>
+          <div class="tip-sep"></div>
+          <div class="tip-mods">
+            <div>+39% to Lightning Resistance</div>
+            <div>+16% to Cold Resistance</div>
+          </div>
+          <div class="tip-sep"></div>
+          <div class="tip-btns"><span class="b-main">Find upgrades</span><span class="b-alt">What's it worth?</span></div>
+        </div>
       </figure>
     </section>
 
-    <div class="divider" aria-hidden="true"><i></i></div>
-
     <section id="how" class="how">
-      <h2>How it works: three steps, in game</h2>
+      <h2>How it works, in game</h2>
       <ol class="steps">
-        <li class="frame">
-          <span class="num">I</span>
+        <li>
           <h3>Load your build</h3>
           <p>Paste your Path of Building export or a pobb.in link: Path of Building 2 for PoE2, Path of Building Community for PoE1. Any class, any skill. Your gear slots fill in from it.</p>
         </li>
-        <li class="frame">
-          <span class="num">II</span>
+        <li>
           <h3>Hover and press F2</h3>
-          <p>The verdict appears next to the item: <b class="v up">UPGRADE</b>, <b class="v same">SIDEGRADE</b>, <b class="v down">LOSES RESISTANCE</b>… with exactly what changes, and whether to keep, sell or vendor it.</p>
+          <p>The verdict appears next to the item: <span class="verd up">Upgrade</span>, <span class="verd same">Sidegrade</span>, <span class="verd dn">Loses resistance</span>… with exactly what changes, and whether to keep, sell or vendor it.</p>
         </li>
-        <li class="frame">
-          <span class="num">III</span>
+        <li>
           <h3>Find a better one</h3>
           <p>One click searches the official trade site, weighted by what each stat is worth to your build, and judges every listing.</p>
         </li>
@@ -135,77 +151,32 @@
           <li><b>Chaos Inoculation</b> is recognised, and chaos resistance ignored.</li>
         </ul>
       </div>
-      <figure class="frame"><img src="img/popup-warnings.webp" alt="Two popups: LOSES RESISTANCE, lightning resistance 75% to 38%; and LOSES DAMAGE, minion DPS down 20%" loading="lazy" width="1400" height="835"></figure>
+      <figure class="frame"><img src="img/popup-warnings.webp" alt="Two popups: LOSES RESISTANCE, lightning resistance 75% to 38%; and LOSES DAMAGE, minion DPS down 20%" loading="lazy" width="1660" height="1082"></figure>
     </section>
 
     <section id="features" class="features">
       <h2>Everything in one Path of Exile overlay</h2>
-      <div class="grid">
-        <article class="frame">
-          <h3>Judged by Path of Building</h3>
-          <p>The app bundles Path of Building's calculation engine and runs it on your build, so verdicts know your passive tree, gems and configuration. Rings, jewels and flasks are tried in each slot they fit.</p>
-        </article>
-        <article class="frame">
-          <h3>Trade search that knows your build</h3>
-          <p>Find upgrades, same stats or better, craftable bases, or a custom search. Results open in the app, each listing judged, with <i>Travel to hideout</i> and a ready whisper. Skip corrupted items, show one listing per seller, and run your last 30 searches again in one click.</p>
-        </article>
-        <article class="frame">
-          <h3>Where to spend your divines</h3>
-          <p>Every slot searched in your price range and ranked by how much better your build gets per divine, plus pairs of items that cap your resistances together. Set an alert for the next good deal.</p>
-        </article>
-        <article class="frame">
-          <h3>Price check, with history</h3>
-          <p>F2 on currency, cards, gems or uniques shows the poe.ninja price and the last 7 days. <i>What's it worth?</i> prices rares from similar listings, price-fixing baits left out, or from just the stats you pick, total elemental resistance included.</p>
-        </article>
-        <article class="frame">
-          <h3>Map and waystone check</h3>
-          <p>DANGER, CAREFUL or FINE for your build: max resistance and recovery mods are worked out by Path of Building, Thorns and the rest checked against what your build does.</p>
-        </article>
-        <article class="frame">
-          <h3>Keep, sell or vendor</h3>
-          <p>A one-line answer under every item, from its verdict and its price. Selling? It suggests a listing price just under poe.ninja and copies the price note for your stash tab.</p>
-        </article>
-        <article class="frame">
-          <h3>Loot filter from your build</h3>
-          <p>Adds a section to your own filter that highlights rares with the mods Path of Building values most for each slot, and the bases you wear.</p>
-        </article>
-        <article class="frame">
-          <h3>Character sheet and alerts</h3>
-          <p>Your whole character as Path of Building calculates it, damage per hit included, and notifications when a saved search gets new listings, paced to respect the trade site's limits.</p>
-        </article>
-        <article class="frame">
-          <h3>Built for playing both games</h3>
-          <p>It knows whether you're in PoE2 or PoE1 and keeps characters, league and prices for each, Standard included. Compact popup you can drag anywhere, text size and colour-blind options.</p>
-        </article>
-        <article class="frame">
-          <h3>Gem check</h3>
-          <p>F2 on a gem you use: Path of Building tries it at that level and quality in your build and shows the DPS and effective HP change, so you know if it's worth keeping.</p>
-        </article>
-        <article class="frame">
-          <h3>Can you take the hit? (PoE1)</h3>
-          <p>The boss check shows how many hits of each big boss attack you survive, Shaper to Maven, at Pinnacle and Uber, using Path of Building's boss presets.</p>
-        </article>
-        <article class="frame">
-          <h3>Search strings and leveling mode</h3>
-          <p>Paste-ready searches for vendors and your stash (movement speed, the resistances you're short of) and for maps without the mods you marked dangerous. Leveling? Only see gear you can wear.</p>
-        </article>
-        <article class="frame">
-          <h3>Best anoint and instil</h3>
-          <p>Path of Building tries every notable that can go on your amulet and lists the best for your build, with the damage and effective HP each adds and the oils or distilled emotions it takes.</p>
-        </article>
-        <article class="frame">
-          <h3>Mod tiers at a glance</h3>
-          <p>Every mod with its tier and how high it rolled, in the popup and in trade results, so you can see what's top tier and what's worth crafting over.</p>
-        </article>
-        <article class="frame">
-          <h3>Your build stays in sync</h3>
-          <p>Import from pobb.in and update with one click, or link the build file you save in Path of Building and the app follows it every time you save.</p>
-        </article>
-      </div>
+      <dl class="feat">
+        <div><dt>Judged by Path of Building</dt><dd>The app bundles Path of Building's calculation engine and runs it on your build, so verdicts know your passive tree, gems and configuration. Rings, jewels and flasks are tried in each slot they fit.</dd></div>
+        <div><dt>Trade search that knows your build</dt><dd>Find upgrades, same stats or better, craftable bases, or a custom search. Results open in the app, each listing judged, with <i>Travel to hideout</i> and a ready whisper. Skip corrupted items, show one listing per seller, and run your last 30 searches again in one click.</dd></div>
+        <div><dt>Where to spend your divines</dt><dd>Every slot searched in your price range and ranked by how much better your build gets per divine, plus pairs of items that cap your resistances together. Set an alert for the next good deal.</dd></div>
+        <div><dt>Price check, with history</dt><dd>F2 on currency, cards, gems or uniques shows the poe.ninja price and the last 7 days. <i>What's it worth?</i> prices rares from similar listings, price-fixing baits left out, or from just the stats you pick, total elemental resistance included.</dd></div>
+        <div><dt>Map and waystone check</dt><dd>DANGER, CAREFUL or FINE for your build: max resistance and recovery mods are worked out by Path of Building, Thorns and the rest checked against what your build does.</dd></div>
+        <div><dt>Keep, sell or vendor</dt><dd>A one-line answer under every item, from its verdict and its price. Selling? It suggests a listing price just under poe.ninja and copies the price note for your stash tab.</dd></div>
+        <div><dt>Loot filter from your build</dt><dd>Adds a section to your own filter that highlights rares with the mods Path of Building values most for each slot, and the bases you wear.</dd></div>
+        <div><dt>Character sheet and alerts</dt><dd>Your whole character as Path of Building calculates it, damage per hit included, and notifications when a saved search gets new listings, paced to respect the trade site's limits.</dd></div>
+        <div><dt>Built for playing both games</dt><dd>It knows whether you're in PoE2 or PoE1 and keeps characters, league and prices for each, Standard included. Compact popup you can drag anywhere, text size and colour-blind options.</dd></div>
+        <div><dt>Gem check</dt><dd>F2 on a gem you use: Path of Building tries it at that level and quality in your build and shows the DPS and effective HP change, so you know if it's worth keeping.</dd></div>
+        <div><dt>Can you take the hit? (PoE1)</dt><dd>The boss check shows how many hits of each big boss attack you survive, Shaper to Maven, at Pinnacle and Uber, using Path of Building's boss presets.</dd></div>
+        <div><dt>Search strings and leveling mode</dt><dd>Paste-ready searches for vendors and your stash (movement speed, the resistances you're short of) and for maps without the mods you marked dangerous. Leveling? Only see gear you can wear.</dd></div>
+        <div><dt>Best anoint and instil</dt><dd>Path of Building tries every notable that can go on your amulet and lists the best for your build, with the damage and effective HP each adds and the oils or distilled emotions it takes.</dd></div>
+        <div><dt>Mod tiers at a glance</dt><dd>Every mod with its tier and how high it rolled, in the popup and in trade results, so you can see what's top tier and what's worth crafting over.</dd></div>
+        <div><dt>Your build stays in sync</dt><dd>Import from pobb.in and update with one click, or link the build file you save in Path of Building and the app follows it every time you save.</dd></div>
+      </dl>
     </section>
 
     <section id="poe1" class="showcase">
-      <figure class="frame"><img src="img/poe1-amulet.webp" alt="Path of Exile 1 popup: a rare amulet judged UPGRADE, BUT… with +6.3 points for the build and a Dexterity warning" loading="lazy" width="800" height="956"></figure>
+      <figure class="frame"><img src="img/poe1-popup.webp" alt="Path of Exile 1 popup: a rare ring judged LOSES DAMAGE, DPS down 9.2%, with its open prefix and suffix for crafting" loading="lazy" width="800" height="1042"></figure>
       <div class="show-text">
         <h2>Path of Exile 1 support (beta)</h2>
         <p>The same F2 check works in PoE1, with Path of Building Community and your own build. It checks what PoE1 players care about:</p>
@@ -220,44 +191,44 @@
     </section>
 
     <section class="gallery">
-      <figure class="frame tall"><img src="img/results.webp" alt="Trade results judged by Path of Building, each listing with its verdict, resistances first" loading="lazy" width="1000" height="1267"><figcaption>Trade results, every listing checked with your build.</figcaption></figure>
+      <figure class="frame tall"><img src="img/results.webp" alt="Trade results judged by Path of Building, each listing with its verdict, resistances first" loading="lazy" width="1200" height="1520"><figcaption>Trade results, every listing checked with your build.</figcaption></figure>
       <div class="stack">
-        <figure class="frame"><img src="img/where-to-spend.webp" alt="Where to spend: every gear slot searched in your price range, ranked by points per divine, with an alert being set" loading="lazy" width="1600" height="1110"><figcaption>Where to spend: the best upgrade per divine, slot by slot.</figcaption></figure>
-        <figure class="frame"><img src="img/character.webp" alt="The Character page: DPS, effective HP, resistances and skills calculated by Path of Building" loading="lazy" width="1600" height="920"><figcaption>The Character page, calculated by Path of Building.</figcaption></figure>
+        <figure class="frame"><img src="img/where-to-spend.webp" alt="Where to spend: every gear slot searched in your price range, ranked by points per divine" loading="lazy" width="1600" height="1032"><figcaption>Where to spend: the best upgrade per divine, slot by slot.</figcaption></figure>
+        <figure class="frame"><img src="img/character.webp" alt="The Character page: DPS, effective HP, resistances and skills calculated by Path of Building" loading="lazy" width="1600" height="1486"><figcaption>The Character page, calculated by Path of Building.</figcaption></figure>
       </div>
     </section>
 
     <section class="gallery pair">
-      <figure class="frame"><img src="img/map-check.webp" alt="Map check in Path of Exile 1: CAREFUL, with Physical Thorns, reduced maximum resistances and no regeneration checked against the build" loading="lazy" width="800" height="958"><figcaption>Map check: what each mod means for your build.</figcaption></figure>
+      <figure class="frame"><img src="img/map-check.webp" alt="Map check in Path of Exile 1: DANGER, with reduced maximum resistances and reflected damage checked against the build" loading="lazy" width="800" height="1268"><figcaption>Map check: what each mod means for your build.</figcaption></figure>
       <div class="stack">
-        <figure class="frame"><img src="img/price-card.webp" alt="Price card for a divination card: about 5 divines, with the last 7 days from poe.ninja and a SELL hint" loading="lazy" width="800" height="466"><figcaption>Price check with the last 7 days, and whether to sell.</figcaption></figure>
+        <figure class="frame"><img src="img/price-card.webp" alt="Price card for a stack of Divine Orbs: the poe.ninja price, its 7-day change and a suggested listing price" loading="lazy" width="800" height="436"><figcaption>Price check with the last 7 days, and whether to sell.</figcaption></figure>
       </div>
     </section>
 
     <section id="faq" class="faq">
       <h2>Frequently asked questions</h2>
       <div class="faq-list">
-        <details class="frame">
+        <details>
           <summary>Is it safe to use? Can it get me banned?</summary>
           <p>It's built to stay within the rules for third-party tools: it never reads game memory or touches game files, and its only input to the game is one Ctrl+C per key press, the same as copying an item yourself. Trade searches use the official trade site, slowing down whenever the site asks. It's a fan project, not affiliated with or endorsed by Grinding Gear Games.</p>
         </details>
-        <details class="frame">
+        <details>
           <summary>Does it work with Path of Exile 1?</summary>
           <p>Yes, in beta. It uses Path of Building Community for PoE1 and checks links, flasks and anoints too. It knows which game you're playing and keeps separate characters, leagues and prices for each.</p>
         </details>
-        <details class="frame">
+        <details>
           <summary>Do I need Path of Building?</summary>
           <p>You don't need to install it: the app bundles Path of Building's calculation engine. You paste your Path of Building export or a pobb.in link once, and every item is judged with your passive tree, gems and configuration. In PoE2 it can also give a rough gear score without a build.</p>
         </details>
-        <details class="frame">
+        <details>
           <summary>How do I price check items in Path of Exile 2?</summary>
           <p>Hover the item and press F2. Currency, gems, cards and uniques show their poe.ninja price with the last 7 days; for rares, <i>What's it worth?</i> prices them from similar listings on the trade site, leaving out price-fixing baits.</p>
         </details>
-        <details class="frame">
+        <details>
           <summary>Does it work on Linux?</summary>
           <p>There's a Linux AppImage (experimental) that works with the game running through Steam and Proton. Windows 10 and 11 are fully supported.</p>
         </details>
-        <details class="frame">
+        <details>
           <summary>Is it free?</summary>
           <p>Yes. It's free and open source on GitHub, with no account and no ads, and it updates itself.</p>
         </details>
@@ -278,7 +249,7 @@
 
     <section class="final">
       <h2>Stop guessing. Press F2.</h2>
-      <a class="btn blood big" href="/download">Download PoE Upgrade Checker</a>
+      <a class="btn main big" href="/download">Download PoE Upgrade Checker</a>
       <p class="fine">In the game, set Options → Graphics to <b>Windowed Fullscreen</b> so the overlay can draw over the game. The first-run guide does the rest.</p>
       <p class="fine">Stuck or found a bug? Email <a href="mailto:support@poe2upgrade.com">support@poe2upgrade.com</a> or <a href="https://github.com/ets-public/poe2-upgrade-checker/issues">open an issue on GitHub</a>. Contributions are welcome.</p>
     </section>
@@ -286,7 +257,7 @@
 
   <footer>
     <p>PoE Upgrade Checker is a fan project, not affiliated with Grinding Gear Games. Path of Exile is a trademark of Grinding Gear Games.</p>
-    <p><a href="https://github.com/ets-public/poe2-upgrade-checker">GitHub</a> · <a href="https://github.com/ets-public/poe2-upgrade-checker/releases">Releases</a> · <a href="https://github.com/ets-public/poe2-upgrade-checker/issues">Report a problem</a> · <a href="mailto:support@poe2upgrade.com">support@poe2upgrade.com</a> · Fonts: Cinzel and Alegreya Sans (SIL Open Font License)</p>
+    <p><a href="https://github.com/ets-public/poe2-upgrade-checker">GitHub</a> · <a href="https://github.com/ets-public/poe2-upgrade-checker/releases">Releases</a> · <a href="https://github.com/ets-public/poe2-upgrade-checker/issues">Report a problem</a> · <a href="mailto:support@poe2upgrade.com">support@poe2upgrade.com</a> · Fonts: Alegreya Sans and Alegreya Sans SC (SIL Open Font License)</p>
   </footer>
 </body>
 </html>

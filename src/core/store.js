@@ -175,6 +175,15 @@ class Store {
     this.save();
   }
 
+  // the loot filter the app last wrote for this character: { file, source, at, sig } (to say when it's out of date)
+  lootFilter() { const p = this.profileOf(this.data.activeProfile); return (p && p.lootFilter) || null; }
+  setLootFilter(v) {
+    const p = this.profileOf(this.data.activeProfile);
+    if (!p) return;
+    if (v) p.lootFilter = v; else delete p.lootFilter;
+    this.save();
+  }
+
   switchProfile(id) {
     if (!this.profileOf(id) || id === this.data.activeProfile) return false;
     const cur = this.data.profiles[this.data.activeProfile];

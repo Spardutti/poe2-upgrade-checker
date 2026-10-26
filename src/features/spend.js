@@ -73,7 +73,8 @@ module.exports = function (C) {
     });
   }
   ipcMain.handle('spend:get', () => { loadRuns(); return forPage(spendRuns[runKey()]); });
-  ipcMain.handle('spend:open', C.inGame(async (_e, slot, idx) => {
+  // listingId: one listing from the table (its name was clicked): it comes first in the results window
+  ipcMain.handle('spend:open', C.inGame(async (_e, slot, listingId) => {
     loadRuns();
     const run = spendRuns[runKey()];
     const row = run && run.rows.find((x) => x.slot === slot);
@@ -87,7 +88,17 @@ module.exports = function (C) {
       if (!fresh || !fresh.ok) return { ok: false, error: (fresh && fresh.error) || 'The search failed.' };
       r = fresh; row.search = { r, ctx: row.search.ctx };
     }
-    const shown = await C.showResults(r, row.search.ctx);
+    let ctx = row.search.ctx;
+    if (typeof listingId === 'string' && listingId) {
+      const ids = r.ids || [];
+      const pick = [row.best, row.biggest, ...(row.candidates || [])].find((c) => c && c.listingId === listingId);
+      const name = pick ? pick.name : 'That listing';
+      if (ids.includes(listingId)) {
+        r = { ...r, ids: [listingId, ...ids.filter((x) => x !== listingId)] };
+        ctx = { ...ctx, note: `${name} first (the one you clicked), then the rest of the search.`, focusId: listingId };
+      } else ctx = { ...ctx, note: `${name} isn't listed any more (sold or taken down): here's the same search now.` };
+    }
+    const shown = await C.showResults(r, ctx);
     return shown ? { ok: true, inApp: true } : { ok: false, error: 'Could not show the listings.' };
   }));
   // a build-value alert from a slot: "tell me when a Gloves listing is +X% for my build under Y div".
@@ -149,6 +160,10 @@ module.exports = function (C) {
       if (mode === 'pob') await C.pobEngine().ensureLoaded();
       const w = C.store.equipped.Weapon; const off = C.store.equipped.Offhand;
       const slots = SPEND_SLOTS.filter((sl) => !(sl === 'Offhand' && w && w.twoHanded && !(off && /quiver/i.test(off.itemClass || ''))));
+      // jewels: when your tree has jewel sockets, Path of Building's jewel search (each listing is tried
+      // in every socket). Empty sockets first: a jewel there is pure gain.
+      const sockets = mode === 'pob' ? ((C.pobEngine().info() || {}).sockets || []).filter((x) => !x.cluster) : [];
+      if (sockets.length) slots.push('Jewel');
       const rows = [];
       let stopped = null;
       // each slot to the page as soon as it's done (whichever way its turn ended)
@@ -160,13 +175,18 @@ module.exports = function (C) {
         spendProgress({ slot: target, done: i, total: slots.length });
         const item = C.resolveItem(target);
         const pobSlot = target === 'Ring' ? (item && C.resolveSlotOf(item)) || 'Ring 1' : target;
-        if (!C.pobVerdict.SLOT_TO_POB[pobSlot]) continue;
+        if (!C.pobVerdict.SLOT_TO_POB[pobSlot] && target !== 'Jewel') continue;
         const row = { slot: target, pobSlot, current: item ? item.name : null };
+        if (target === 'Jewel') {
+          const empty = sockets.filter((x) => !x.jewel).length;
+          row.current = empty ? `${empty} empty socket${empty === 1 ? '' : 's'} of ${sockets.length}` : `weakest: ${item ? item.name : 'one of yours'}`;
+          row.emptySockets = empty;
+        }
         rows.push(row);
         if (mode === 'gear' && !item) { row.error = 'Nothing saved for this slot: copy what you wear (F2) so it has something to beat.'; continue; }
         try {
           const opts = { statIndex: d.index, filtersData: d.filters, preferLocal: !['Amulet', 'Ring', 'Belt'].includes(target), status: C.store.settings.status, ignoreRules: C.ignoreRules(), game, noOpen: true };
-          const sr = mode === 'pob' ? await C.pobSearch(item || { slot: target, itemClass: null }, pobSlot, league, budget, opts) : await spendGearSearch(item, pobSlot, league, budget, opts);
+          const sr = mode === 'pob' ? await C.pobSearch(item || { slot: target, itemClass: target === 'Jewel' ? 'Jewels' : null }, pobSlot, league, budget, opts) : await spendGearSearch(item, pobSlot, league, budget, opts);
           if (!sr) { row.soft = true; row.error = mode === 'pob' ? 'No stat in this slot changes your build in Path of Building (check your main skill is set there, then import again).' : 'Your build profile has no stats to search for in this slot.'; continue; }
           if (!sr.ok) { row.error = sr.error || 'The search failed.'; if (sr && (sr.rateLimited || sr.switched)) { stopped = sr.error; break; } continue; }
           const r = sr.r;
@@ -179,13 +199,14 @@ module.exports = function (C) {
           // the gain: Path of Building's % for your build, or gear score points
           const gainOf = (x) => (mode === 'pob' ? x.compare.pob && x.compare.pob.score : x.compare.scoreMode === 'gear' ? x.compare.delta : null);
           // only listings for this slot (a search can turn up other item kinds)
-          const forSlot = (x) => (target === 'Ring' ? /^Ring/.test(x.compare.targetSlot || '') : x.compare.targetSlot === target);
+          const forSlot = (x) => (target === 'Ring' ? /^Ring/.test(x.compare.targetSlot || '') : target === 'Jewel' ? (x.item && x.item.slot === 'Jewel') : x.compare.targetSlot === target);
           const good = list.filter((x) => x.compare && forSlot(x) && x.priceEx > 0 && !['resloss', 'dmgloss', 'downgrade'].includes(x.compare.verdict) && gainOf(x) > 0);
           const priceDiv = (x) => (div ? x.priceEx / div : null);
           const cand = good.map((x) => ({
             name: x.item.name, base: x.item.baseType, price: x.priceText, priceEx: x.priceEx, priceDiv: priceDiv(x),
             gain: gainOf(x), verdict: x.compare.verdict, risks: (mode === 'pob' ? x.compare.pob.breaks : x.compare.risks) || [], resGain: mode === 'pob' ? x.compare.pob.resGain || 0 : 0,
             perDiv: div ? gainOf(x) / Math.max(priceDiv(x), 0.05) : null, listingId: x.id, text: x.item.raw || x.item.listingText || null, itemSlot: x.compare.targetSlot,
+            socket: target === 'Jewel' && x.compare.pob && x.compare.pob.socket ? { label: x.compare.pob.socket.label, replacing: x.compare.pob.socket.replacing || null } : null,
           }));
           cand.sort((a, b) => (b.perDiv || 0) - (a.perDiv || 0) || b.gain - a.gain);
           row.best = cand[0] || null;
@@ -236,7 +257,7 @@ module.exports = function (C) {
 
   // pairs of listings from two slots that together cap the resistances you're short of
   async function resistPairs(rows, short) {
-    const per = rows.filter((x) => x.candidates && x.candidates.length).map((x) => ({ row: x, list: x.candidates.filter((c) => c.text && c.resGain > 0).sort((a, b) => b.resGain - a.resGain).slice(0, 2) })).filter((x) => x.list.length);
+    const per = rows.filter((x) => x.slot !== 'Jewel' && x.candidates && x.candidates.length).map((x) => ({ row: x, list: x.candidates.filter((c) => c.text && c.resGain > 0).sort((a, b) => b.resGain - a.resGain).slice(0, 2) })).filter((x) => x.list.length);
     if (per.length < 2) return [];
     const pobSlotOf = (row, c) => C.pobVerdict.SLOT_TO_POB[row.pobSlot] || C.pobVerdict.SLOT_TO_POB[c.itemSlot];
     const req = []; const idx = [];

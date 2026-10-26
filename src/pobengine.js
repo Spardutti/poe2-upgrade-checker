@@ -204,10 +204,40 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game =
     return r.affixes || {};
   }
   // what map or waystone mods do to your character: mods ["text", ...] -> { ok, before, results: [{ text, after | error }] }
-  async function mapCheck(mods) {
+  async function mapCheck(mods, enemy) {
     if (!buildXml) throw new Error('No Path of Building build loaded.');
-    const r = await request({ cmd: 'mapcheck', mods }, 30000 + mods.length * 3000);
+    const r = await request({ cmd: 'mapcheck', mods, enemy: enemy || [] }, 30000 + mods.length * 3000);
     if (!r.ok) throw new Error(r.error || 'Path of Building could not check the map.');
+    return r;
+  }
+
+  // each skill group's damage when it's the main skill -> { main, skills: [{ index, label, dps, key, minion }] }
+  async function skillDps() {
+    if (!buildXml) throw new Error('No Path of Building build loaded.');
+    const r = await request({ cmd: 'skilldps' }, 120000);
+    if (!r.ok) throw new Error(r.error || 'Path of Building could not compare the skills.');
+    return r;
+  }
+
+  // runes and soul cores for each socket on your gear (PoE2) -> { before, level, slots: [...] }
+  async function runeCheck(req) {
+    if (!buildXml) throw new Error('No Path of Building build loaded.');
+    const r = await request({ cmd: 'runes', seconds: 50, ...(req || {}) }, 150000);
+    if (!r.ok) throw new Error(r.error || 'Path of Building could not try the runes.');
+    return r;
+  }
+  // several rune picks together: picks [{ slot, socket, rune }] -> { before, after }
+  async function runeApply(picks) {
+    if (!buildXml) throw new Error('No Path of Building build loaded.');
+    const r = await request({ cmd: 'runeapply', picks }, 60000);
+    if (!r.ok) throw new Error(r.error || 'Path of Building could not try the runes together.');
+    return r;
+  }
+
+  // better bases of the same kind as yours: slots [{ slot, base }] -> { level, slots: [{ slot, base, score, better }] }
+  async function betterBases(req) {
+    const r = await request({ cmd: 'bases', ...(req || {}) }, 60000);
+    if (!r.ok) throw new Error(r.error || 'Path of Building could not list the bases.');
     return r;
   }
 
@@ -220,7 +250,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game =
   }
 
   return {
-    available, start, stop, resetFailure, loadBuild, setBuild, evalItems, evalPairs, mapCheck, affixes, gemCheck, bossCheck, anointCheck, makeQuery,
+    available, start, stop, resetFailure, loadBuild, setBuild, evalItems, evalPairs, mapCheck, affixes, gemCheck, bossCheck, anointCheck, makeQuery, skillDps, runeCheck, runeApply, betterBases,
     kill, sheet: async () => { if (!buildXml) return null; const r = await request({ cmd: "sheet" }, 60000); if (!r.ok) throw new Error(r.error || "Path of Building could not read the character."); return r; },
     ensureLoaded: async () => {
       if (!buildXml) return null;

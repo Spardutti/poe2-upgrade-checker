@@ -121,30 +121,61 @@ function toPob(b, opts = {}) {
   report.passives = { total: inStage, placed: nodes.length };
   if (unknown) report.missing.push(`${unknown} passive${unknown === 1 ? '' : 's'} the bundled tree doesn't have (the guide may be for another patch)`);
 
-  // skills with their supports
+  // skills with their supports. opts.skills (your choices, kept per character):
+  //   level: 'stage' (about what you'd have at this stage; the default) | 'max' | a number for every gem
+  //   quality: a number for every skill gem (supports have none in PoE2)
+  //   gems: { gameId: { level, quality } } one gem set apart from the rest
+  //   main: gameId of the skill items are judged on (default: the one with the most supports)
+  //   full: { gameId: true } other skills counted in Path of Building's total DPS
   const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const groups = []; let gemsPlaced = 0; let gemsUnknown = 0;
+  const cfg = opts.skills || {};
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(Number(v))));
+  const levelFor = (gid, g) => {
+    const own = cfg.gems && cfg.gems[gid];
+    if (own && Number(own.level) > 0) return clamp(own.level, 1, 40);
+    if (cfg.level === 'max') return g.max;
+    if (Number(cfg.level) > 0) return clamp(cfg.level, 1, 40);
+    return gemLevel(g, st.to);
+  };
+  const qualityFor = (gid) => {
+    const own = cfg.gems && cfg.gems[gid];
+    if (own && own.quality != null && own.quality !== '') return clamp(own.quality, 0, 23);
+    return Number(cfg.quality) > 0 ? clamp(cfg.quality, 0, 23) : 0;
+  };
+  const found = []; let gemsPlaced = 0; let gemsUnknown = 0;
   for (const s of b.skills || []) {
     if (!at(s, level)) continue;
     const id = idOf(s); const g = id && d.gems[id];
     if (!g) { gemsUnknown++; continue; }
+    if (found.some((f) => f.id === id)) continue; // the same skill twice in a stage: once is enough
     const supports = [];
     for (const sp of (s && s.support_skills) || []) {
       if (!at(sp, level)) continue;
       const sid = idOf(sp); const sg = sid && d.gems[sid];
       if (!sg) { gemsUnknown++; continue; }
-      supports.push(`<Gem gemId="${esc(sid)}" nameSpec="${esc(sg.name)}" level="${sg.support ? 1 : gemLevel(sg, st.to)}" quality="0" enabled="true"/>`);
+      supports.push({ id: sid, name: sg.name, gem: sg });
       gemsPlaced++;
     }
     gemsPlaced++;
-    groups.push(`<Skill enabled="true" label="" mainActiveSkill="1" includeInFullDPS="${groups.length ? 'false' : 'true'}"><Gem gemId="${esc(id)}" nameSpec="${esc(g.name)}" level="${gemLevel(g, st.to)}" quality="0" enabled="true"/>${supports.join('')}</Skill>`);
+    found.push({ id, name: g.name, gem: g, supports, level: levelFor(id, g), quality: qualityFor(id) });
   }
+  // the main skill: yours if it's in this stage, else the one with the most supports (a guide's
+  // damage skill is the one it links up most), the first one on a tie
+  let main = found.find((f) => f.id === cfg.main);
+  if (!main && found.length) main = found.reduce((a, f) => (f.supports.length > a.supports.length ? f : a), found[0]);
+  const ordered = main ? [main, ...found.filter((f) => f !== main)] : found;
+  const groups = ordered.map((f) => {
+    const full = f === main || !!(cfg.full && cfg.full[f.id]);
+    const sup = f.supports.map((sp) => `<Gem gemId="${esc(sp.id)}" nameSpec="${esc(sp.name)}" level="${sp.gem.support ? 1 : levelFor(sp.id, sp.gem)}" quality="${sp.gem.support ? 0 : qualityFor(sp.id)}" enabled="true"/>`).join('');
+    return `<Skill enabled="true" label="" mainActiveSkill="1" includeInFullDPS="${full ? 'true' : 'false'}"><Gem gemId="${esc(f.id)}" nameSpec="${esc(f.name)}" level="${f.level}" quality="${f.quality}" enabled="true"/>${sup}</Skill>`;
+  });
+  report.skills = ordered.map((f) => ({ id: f.id, name: f.name, level: f.level, quality: f.quality, max: f.gem.max, supports: f.supports.map((x) => x.name), main: f === main, full: f === main || !!(cfg.full && cfg.full[f.id]), own: !!(cfg.gems && cfg.gems[f.id]) }));
   report.gems = { placed: gemsPlaced, skills: groups.length };
   if (gemsUnknown) report.missing.push(`${gemsUnknown} gem${gemsUnknown === 1 ? '' : 's'} the bundled Path of Building doesn't know`);
   if (!groups.length) report.notes.push('No skills for this stage: damage can\'t be judged until you set a skill in Path of Building.');
 
   // the guide's gear, where you haven't copied your own
-  const items = []; const slots = []; const fromGuide = [];
+  const items = []; const slots = []; const fromGuide = []; const uniques = [];
   for (const inv of b.inventory_slots || []) {
     if (!inv || !at(inv, level)) continue;
     const slot = SLOTS[inv.inventory_id];
@@ -155,6 +186,7 @@ function toPob(b, opts = {}) {
       const u = d.uniques[inv.unique_name].split('\n');
       const variants = u.filter((l) => /^Variant:/i.test(l)).length;
       text = ['Rarity: UNIQUE', u[0], u[1], ...(variants ? [`Selected Variant: ${variants}`] : []), ...u.slice(2)].join('\n');
+      uniques.push({ slot: APP_SLOT[slot] || slot, name: u[0], base: u[1] });
     } else if (inv.unique_name) { report.missing.push(`the unique ${inv.unique_name} (not in the bundled Path of Building)`); continue; } else {
       const r = rareFromText(inv.additional_text);
       if (r) text = ['Rarity: RARE', `Guide ${r.base}`, r.base, ...r.mods].join('\n');
@@ -165,6 +197,13 @@ function toPob(b, opts = {}) {
     fromGuide.push(`${APP_SLOT[slot] || slot}: ${inv.unique_name || 'a rare as described'}`);
   }
   report.gear = fromGuide;
+  // every unique the guide uses at this stage (also in slots you've copied your own item into), for the loot filter
+  report.uniques = uniques;
+  for (const inv of b.inventory_slots || []) {
+    if (!inv || !at(inv, level) || !inv.unique_name || !d.uniques[inv.unique_name]) continue;
+    const u = d.uniques[inv.unique_name].split('\n');
+    if (!uniques.some((x) => x.name === u[0])) uniques.push({ slot: APP_SLOT[SLOTS[inv.inventory_id]] || SLOTS[inv.inventory_id] || null, name: u[0], base: u[1] });
+  }
 
   // "+5 to any attribute" passives: the build's gem colours decide (most of them go to the colour
   // most of its gems are, the rest split by the share of the others), so gem requirements come out right

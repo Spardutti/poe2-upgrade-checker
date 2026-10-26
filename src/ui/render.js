@@ -315,8 +315,9 @@
   function ninjaPrice(p, total) {
     if (!p) return '';
     const v = total ? p.total : p.each; const d = total ? p.totalDiv : p.eachDiv;
-    if (d != null && d >= 1) return `≈ <b>${nf(d)} div</b>${v != null ? ` <span class="dim">(${nf(v)} ${esc(p.unit)})</span>` : ''}`;
-    return v != null ? `≈ <b>${nf(v)} ${esc(p.unit)}</b>${d != null && d >= 0.01 ? ` <span class="dim">(${nf(d)} div)</span>` : ''}` : '';
+    const c = total ? p.totalChaos : p.eachChaos; const ch = c != null && c > 0 ? `${nf(c)} chaos` : '';
+    if (d != null && d >= 1) return `≈ <b>${nf(d)} div</b>${v != null || ch ? ` <span class="dim">(${[v != null ? `${nf(v)} ${esc(p.unit)}` : '', ch].filter(Boolean).join(' · ')})</span>` : ''}`;
+    return v != null ? `≈ <b>${nf(v)} ${esc(p.unit)}</b>${(d != null && d >= 0.01) || ch ? ` <span class="dim">(${[d != null && d >= 0.01 ? `${nf(d)} div` : '', ch].filter(Boolean).join(' · ')})</span>` : ''}` : '';
   }
   function trend(p) {
     if (!p || p.change == null) return '';
@@ -470,10 +471,13 @@
         ${r.pending ? '<div class="note"><span class="spinner"></span> Checking the mods with Path of Building…</div>' : ''}
         ${r.noBuild ? '<div class="dim small">Load your Path of Building build on My gear and each mod is worked out for your character.</div>' : ''}
         ${r.pobError ? `<div class="note">${esc(r.pobError)}</div>` : ''}
-        <div class="map-mods">${c.rows.map((m) => `<div class="map-mod lv-${esc(m.level)}" data-key="${esc(m.key)}" data-mark="${esc(m.mark || '')}" title="Click to mark this mod: dangerous → careful → fine → no mark">
-            <span class="mi">${MAPICON[m.level] || '·'}</span><span class="mt">${esc(m.text)}${m.mark ? ' <small class="dim">(your mark)</small>' : ''}${m.note ? `<br><small class="${m.level === 'ok' ? 'dim' : ''}">${esc(m.note)}</small>` : ''}</span></div>`).join('') || '<div class="dim">No mods.</div>'}</div>
+        ${c.summary && (c.summary.adds || c.summary.text) ? `<div class="small">${c.summary.adds ? `Adds <b>${esc(c.summary.adds)}</b>` : ''}${c.summary.adds && c.summary.text ? ': ' : ''}${c.summary.text ? `mods ${esc(c.summary.text)}` : ''}</div>` : ''}
+        ${c.uses != null || (c.reward && c.reward.length) ? `<div class="dim small">${[c.uses != null ? `${c.uses} use${c.uses === 1 ? '' : 's'} left` : '', ...(c.reward || [])].filter(Boolean).map(esc).join(' · ')}</div>` : ''}
+        <div class="map-mods">${(c.groups && c.groups.length > 1 ? c.groups : [{ rows: c.rows }]).map((g) => `${g.label ? `<div class="map-group">${esc(g.label)}</div>` : ''}${g.rows.map((m) => `<div class="map-mod lv-${esc(m.level)}" data-key="${esc(m.key)}" data-mark="${esc(m.mark || '')}" title="Click to mark this mod: dangerous → careful → fine → no mark">
+            <span class="mi">${MAPICON[m.level] || '·'}</span><span class="mt">${esc(m.text)}${m.mark ? ' <small class="dim">(your mark)</small>' : ''}${m.note ? `<br><small class="${m.level === 'ok' ? 'dim' : ''}">${esc(m.note)}</small>` : ''}</span></div>`).join('')}`).join('') || '<div class="dim">No mods.</div>'}</div>
+        ${c.extraLife ? `<div class="dim small">Monsters have about ${Math.round(c.extraLife)}% more life here: they take that much longer to kill.</div>` : ''}
         ${r.ninja ? window.ninjaLine(r.ninja) : ''}
-        <div class="dim small">${c.calculated ? `${c.calculated} mod${c.calculated === 1 ? '' : 's'} worked out by Path of Building; ` : ''}click a mod to mark it dangerous, careful or fine for all your ${r.game === 'poe1' ? 'maps' : 'waystones'}.</div>
+        <div class="dim small">${c.calculated ? `${c.calculated} mod${c.calculated === 1 ? '' : 's'} worked out by Path of Building; ` : ''}click a mod to mark it dangerous, careful or fine for all your ${r.game === 'poe1' ? 'maps' : 'waystones and tablets'}.</div>
         <div class="actions"><button class="find" id="tradeWorth" title="What ${r.game === 'poe1' ? 'maps' : 'waystones'} like this sell for on the trade site">What's it worth?</button></div>
         <div class="note" id="findMsg"></div>
         <div class="sell-row"><button class="link" id="avoidBtn" title="Copies a search for the map device or stash that leaves out ${r.game === 'poe1' ? 'maps' : 'waystones'} with your dangerous mods">Copy a search that avoids dangerous mods</button><span class="dim small" id="avoidOut"></span></div>

@@ -76,3 +76,26 @@ test('.build: a guide rare from text, not from a sentence', () => {
   assert.deepStrictEqual(BP.rareFromText('Sapphire Ring\n- +40% to Cold Resistance\n• +60 to maximum Life'), { base: 'Sapphire Ring', mods: ['+40% to Cold Resistance', '+60 to maximum Life'] });
   assert.strictEqual(BP.rareFromText('Get a ring with resistances, life is nice too'), null);
 });
+
+test('.build: your gem levels, quality, main skill and total-DPS skills', () => {
+  const g2 = Object.entries(D.gems).filter(([, g]) => !g.support && g.attr === 'str')[0][0];
+  const b = { ascendancy: 'Sorceress3', passives: [ids[0]], skills: [{ id: g2 }, { id: gem, support_skills: sup }] };
+  // default: the skill with the most supports is the main one, gems for the stage, no quality
+  let r = BP.toPob(b, { level: 100 });
+  assert.strictEqual(r.report.skills[0].id, gem);
+  assert.ok(r.report.skills[0].main && !r.report.skills[1].full);
+  assert.match(r.xml, new RegExp(`includeInFullDPS="true"><Gem gemId="${gem}"[^>]*quality="0"`));
+  // yours: every gem at 15 with 20 quality, the other skill as main, one gem set apart
+  r = BP.toPob(b, { level: 100, skills: { level: 15, quality: 20, main: g2, gems: { [gem]: { level: 7, quality: 3 } }, full: { [gem]: true } } });
+  const [first, second] = r.report.skills;
+  assert.strictEqual(first.id, g2); assert.ok(first.main);
+  assert.deepStrictEqual([first.level, first.quality], [15, 20]);
+  assert.deepStrictEqual([second.level, second.quality, second.full, second.own], [7, 3, true, true]);
+  assert.ok(r.xml.indexOf(`gemId="${g2}"`) < r.xml.indexOf(`gemId="${gem}"`), 'the main skill is the first group');
+  assert.strictEqual((r.xml.match(/includeInFullDPS="true"/g) || []).length, 2);
+  // supports stay at level 1 with no quality
+  assert.match(r.xml, new RegExp(`gemId="${sup[0]}"[^>]*level="1" quality="0"`));
+  // top level
+  r = BP.toPob(b, { level: 10, skills: { level: 'max' } });
+  assert.strictEqual(r.report.skills[0].level, D.gems[gem].max);
+});

@@ -215,6 +215,7 @@ function stopOtherEngines(game) {
   for (const [g, e] of Object.entries(pobEngs)) if (g !== game) { try { e.stop(); } catch (_) { /* ignore */ } }
 }
 function pobFile(id) { return path.join(app.getPath('userData'), 'pob', `${id || store.data.activeProfile || 'main'}.xml`); }
+function guideFile(id) { return pobFile(id).replace(/\.xml$/, '.build'); }
 function pobXml() { try { return fs.readFileSync(pobFile(), 'utf8'); } catch (_) { return null; } }
 // an item's text as copied in game; items saved by older versions kept only their parsed lines, so
 // their text is put back together from those (sections in the game's order)
@@ -1372,11 +1373,13 @@ async function importBuild(input, opts = {}) {
       const level = follow && lvSet && Number(lvSet.level) > 0 ? Number(lvSet.level) : source && Number(source.stage) > 0 ? Number(source.stage) : 100;
       const have = {};
       for (const [slot, it] of Object.entries(store.equipped || {})) if (it && !it.fromPob) have[slot] = true;
-      plan = planner.toPob(b, { level, have });
+      plan = planner.toPob(b, { level, have, skills: source && source.skills });
       plan.stages = stages;
+      // the .build itself is kept next to the PoB build, so a pasted guide can change stage or skills too
+      try { fs.mkdirSync(path.dirname(pobFile()), { recursive: true }); fs.writeFileSync(guideFile(), code); } catch (err) { log('guide: could not keep the .build: ' + err.message); }
       code = plan.xml;
       if (!source) source = { type: 'build' };
-      source = { ...source, planner: true, stages: stages.map((x) => ({ from: x.from, to: x.to, label: x.label })), stage: source.stage != null ? source.stage : follow ? 'level' : 100, title: plan.report.name };
+      source = { ...source, planner: true, stages: stages.map((x) => ({ from: x.from, to: x.to, label: x.label })), stage: source.stage != null ? source.stage : follow ? 'level' : 100, title: plan.report.name, skillList: plan.report.skills, uniques: (plan.report.uniques || []).slice(0, 20) };
     }
     const xml = pobLib.decodeCode(code);
     const r = pobLib.parsePob(xml);
@@ -1451,7 +1454,8 @@ async function importBuild(input, opts = {}) {
       } catch (err) { engine = { ok: false, error: err.message }; log('pob: ' + err.message); }
     }
     if (newChar) { notifySettings('settings:changed'); buildTrayMenu(); }
-    store.setBuildSource(source ? { ...source, at: Date.now() } : null);
+    // an update of a linked build that you unlinked while it ran: stays unlinked
+    if (!(opts.sync && !store.buildSource())) store.setBuildSource(source ? { ...source, at: Date.now() } : null);
     watchBuildFile();
     return { ok: true, message, slots, engine, newCharacter: newChar };
   } catch (err) {
@@ -1499,10 +1503,12 @@ async function syncBuild(why) {
     let xml;
     try { xml = readBuildFile(src.path); } catch (err) { return { ok: false, error: `Couldn't read ${path.basename(src.path)}: ${err.code === 'ENOENT' ? 'the file is gone' : err.message}` }; }
     const sum = require('crypto').createHash('sha1').update(xml).digest('hex');
-    if (planner.isBuildFile(xml) ? sum === src.sum && why !== 'stage' : xml.trim() === (pobXml() || '').trim()) return { ok: true, same: true, message: 'Your build is already up to date.' };
+    if (planner.isBuildFile(xml) ? sum === src.sum && why !== 'stage' && why !== 'skills' : xml.trim() === (pobXml() || '').trim()) return { ok: true, same: true, message: 'Your build is already up to date.' };
     input = xml;
   } else if (src.type === 'pobbin') input = src.url;
-  else return { ok: false, error: 'This character has no linked build.' };
+  else if (src.type === 'build' && src.planner) {
+    try { input = fs.readFileSync(guideFile(), 'utf8'); } catch (_) { return { ok: false, error: 'Import the .build file again to change it (this one was imported before the app kept a copy).' }; }
+  } else return { ok: false, error: 'This character has no linked build.' };
   const r = await importBuild(input, { source: src, sync: true });
   if (r.ok && src.type === 'file') { const cur = store.buildSource(); if (cur) store.setBuildSource({ ...cur, sum: require('crypto').createHash('sha1').update(input).digest('hex') }); }
   if (store.data.activeProfile !== profile) return r;
@@ -1516,7 +1522,7 @@ ipcMain.handle('pob:source', () => {
   if (!s) return null;
   const lv = store.settings.leveling;
   return { type: s.type, name: s.type === 'file' ? path.basename(s.path) : s.url || s.title || 'a guide', at: s.at || null, planner: !!s.planner, title: s.title || null,
-    stages: s.stages || null, stage: s.stage == null ? 100 : s.stage, levelNow: lv && lv.on && Number(lv.level) > 0 ? Number(lv.level) : null };
+    stages: s.stages || null, stage: s.stage == null ? 100 : s.stage, skillList: s.planner ? s.skillList || null : null, skills: s.planner ? s.skills || null : null, levelNow: lv && lv.on && Number(lv.level) > 0 ? Number(lv.level) : null };
 });
 // a guide's stage: a level (its stage is used), or 'level' to follow your levelling level
 ipcMain.handle('pob:stage', async (_e, stage) => {
@@ -1524,8 +1530,44 @@ ipcMain.handle('pob:stage', async (_e, stage) => {
   if (!s || !s.planner) return { ok: false, error: 'This character has no guide build.' };
   const v = stage === 'level' ? 'level' : Math.max(1, Math.min(100, Number(stage) || 100));
   store.setBuildSource({ ...s, stage: v });
-  if (s.type !== 'file') return { ok: false, error: 'Import the .build file again to change its stage.' };
   return syncBuild('stage');
+});
+// a guide's skills: gem levels and quality (all, or one gem apart), the main skill and which others
+// count in the total DPS. cfg: { level, quality, gems: { id: { level, quality } }, main, full: { id: true } }
+ipcMain.handle('pob:skills', async (_e, cfg) => {
+  const s = store.buildSource();
+  if (!s || !s.planner) return { ok: false, error: 'This character has no guide build.' };
+  const c = cfg && typeof cfg === 'object' ? cfg : {};
+  const n = (v, hi) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Math.max(0, Math.min(hi, Math.round(Number(v)))));
+  const gems = {};
+  for (const [id, g] of Object.entries(c.gems || {}).slice(0, 60)) {
+    if (typeof id !== 'string' || !g) continue;
+    const lv = n(g.level, 40); const q = n(g.quality, 23);
+    if (lv || q != null) gems[id] = { ...(lv ? { level: lv } : {}), ...(q != null ? { quality: q } : {}) };
+  }
+  const full = {};
+  for (const [id, on] of Object.entries(c.full || {}).slice(0, 60)) if (on && typeof id === 'string') full[id] = true;
+  const skills = { level: c.level === 'max' ? 'max' : n(c.level, 40) || 'stage', quality: n(c.quality, 23) || 0, gems, main: typeof c.main === 'string' ? c.main : null, full };
+  store.setBuildSource({ ...s, skills });
+  return syncBuild('skills');
+});
+// each guide skill's damage when it's the main one (Path of Building), to pick the right main skill
+ipcMain.handle('pob:skillDps', async () => {
+  const s = store.buildSource();
+  if (!s || !s.planner || !pobOn()) return { ok: false, error: 'Path of Building isn\'t on for this character.' };
+  try {
+    await pobEngine().ensureLoaded();
+    const r = await pobEngine().skillDps();
+    const list = s.skillList || [];
+    // PoB labels a group by its gems ("Spark, Lightning Penetration"); match on the skill's own name
+    const out = {};
+    for (const sk of list) {
+      const hit = r.skills.find((g) => g.gemId === sk.id) || r.skills.find((g) => String(g.gemName || '').toLowerCase() === String(sk.name).toLowerCase());
+      if (hit && hit.dps != null) out[sk.id] = { dps: Math.round(hit.dps), minion: !!hit.minion };
+    }
+    const best = Object.entries(out).sort((a, b) => b[1].dps - a[1].dps)[0];
+    return { ok: true, dps: out, best: best && best[1].dps > 0 ? best[0] : null };
+  } catch (err) { return { ok: false, error: err.message }; }
 });
 ipcMain.handle('pob:unlink', () => { store.setBuildSource(null); watchBuildFile(); return true; });
 ipcMain.handle('pob:linkFile', async () => {
@@ -1869,6 +1911,7 @@ const C = {
   get pobQueryFor() { return pobQueryFor; },
   get pobSearch() { return pobSearch; },
   get pobVerdict() { return pobVerdict; },
+  get pobSheetGen() { return () => pobSheetGen; },
   get pobWeights() { return pobWeights; },
   get popup() { return popup; },
   get popupSeq() { return popupSeq; },
@@ -1898,8 +1941,12 @@ const prices = require('./features/prices')(C);
 const mapFeature = require('./features/mapcheck')(C);
 require('./features/lootfilter')(C);
 require('./features/spend')(C);
+require('./features/runes')(C);
 const mapLib = require('./core/mapcheck');
-function ninjaPrice(item) { return prices.ninjaPrice(item); }
+function ninjaPrice(item) {
+  // with the same price in chaos orbs (PoE2), for the price card
+  return prices.ninjaPrice(item).then((p) => { const c = chaosRate(); if (p && c) { const ch = (v) => (v == null ? null : Math.round((v / c) * 10) / 10); p.eachChaos = ch(p.each); p.totalChaos = ch(p.total); } return p; });
+}
 function showPriceCard(item) { return prices.showPriceCard(item); }
 function showMapCard(item) { return mapFeature.showMapCard(item); }
 const updates = require('./features/updates')(C);
@@ -2243,9 +2290,9 @@ function resultsPayload() {
   return JSON.parse(JSON.stringify({
     title: ctx.title || 'Trade results', mode: ctx.mode, league: r.league, total: r.total, url: r.url,
     itemName: ctx.item && ctx.item.name, itemClass: ctx.item && ctx.item.itemClass,
-    note: ctx.note || null, priceSummary: ctx.priceSummary || null,
+    note: ctx.note || null, priceSummary: ctx.priceSummary || null, focusId: ctx.focusId || null,
     shown: listings.length, more: resultsState.next < r.ids.length,
-    divineRate: resultsState.divineRate, unit: G(r.game).baseShort, game: r.game || tg(), gameBeta: !!G(r.game).beta, gameShort: G(r.game).short,
+    divineRate: resultsState.divineRate, chaosRate: r.game === 'poe2' ? chaosRate() : null, unit: G(r.game).baseShort, game: r.game || tg(), gameBeta: !!G(r.game).beta, gameShort: G(r.game).short,
     otherGame: r.game && r.game !== tg() ? `These are ${G(r.game).name} results, kept as they were. Press F2 in ${G(r.game).short} (or pick your ${G(r.game).short} character) to check them with that character again.` : null,
     listings: listings.map((x) => ({ ...x, item: x.item ? { name: x.item.name, baseType: x.item.baseType, rarity: x.item.rarity, itemLevel: x.item.itemLevel, corrupted: !!x.item.corrupted, lines: x.item.lines, id: x.item.id } : null })),
     saved: !!(store.data.savedSearches || []).find((x) => x.searchKey === ctx.searchKey),
@@ -2578,15 +2625,19 @@ ipcMain.handle('trade:quick', inGame(async (_e, target, mode, extra) => {
 // ---------- price check ("What's it worth?") ----------
 
 // Both units, so prices are easy to compare: "2 div (1,393 ex)" / "180 ex (0.26 div)"
+// PoE2 prices also in chaos orbs: exalts per chaos from poe.ninja (null in PoE1, where chaos is the base)
+function chaosRate() { const c = tg() === 'poe2' && store.settings.currencyRates && Number(store.settings.currencyRates.chaos); return c > 0 ? c : null; }
+const chaosText = (ex) => { const c = chaosRate(); if (!c || !(ex > 0)) return null; const v = ex / c; return `${v < 10 ? Math.round(v * 10) / 10 : Math.round(v).toLocaleString('en')} chaos`; };
 function fmtEx(ex) {
   if (ex == null) return '?';
   const div = store.settings.divineRate;
   const u = G().baseShort; // ex (PoE2) or chaos (PoE1)
   const exText = ex < 10 ? `${Math.round(ex * 10) / 10} ${u}` : `${Math.round(ex).toLocaleString('en')} ${u}`;
-  if (!div) return exText;
-  if (ex >= div * 0.95) return `${Math.round((ex / div) * 10) / 10} div (${Math.round(ex).toLocaleString('en')} ${G().baseShort})`;
-  if (ex / div < 0.05) return exText; // "0.01 div" says nothing
-  return `${exText} (${Math.round((ex / div) * 100) / 100} div)`;
+  const ch = chaosText(ex);
+  if (!div) return ch ? `${exText} (${ch})` : exText;
+  if (ex >= div * 0.95) return `${Math.round((ex / div) * 10) / 10} div (${[`${Math.round(ex).toLocaleString('en')} ${G().baseShort}`, ch].filter(Boolean).join(' · ')})`;
+  if (ex / div < 0.05) return ch ? `${exText} (${ch})` : exText; // "0.01 div" says nothing
+  return `${exText} (${[`${Math.round((ex / div) * 100) / 100} div`, ch].filter(Boolean).join(' · ')})`;
 }
 
 // the price verdict, with everything that makes it less certain said out loud

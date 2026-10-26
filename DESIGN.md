@@ -1,57 +1,57 @@
-# Wraeclast Iron
+# Game-native
 
-The design language of PoE Upgrade Checker. It takes its mood from Path of Exile 2's dark ARPG world: black and moonlit blue, stone-grey text, carved capitals in parchment gold, cast-iron frames with gold filigree, and blood red for the one thing you came to do. It borrows the mood, not GGG's property: no logos, artwork or fonts from the game, and everything is drawn in CSS.
+The design language of PoE Upgrade Checker. It's built the way Path of Exile's own item tooltips and panels are: a warm near-black ground, rarity-tinted centred headers, thin separators, grey labels with white values, mod text in the games' blue, and small caps instead of spaced capitals. It borrows the games' visual grammar, not GGG's property: no logos, artwork or game fonts, everything drawn in CSS.
 
-All of it lives in [`src/ui/style.css`](src/ui/style.css), which the popup, the results window and the app pages share. Use the tokens; don't add new hex values in components.
+It replaced "Wraeclast Iron" (gold corner diamonds, gradient gold text and buttons, glow), which players said looked generic. The research behind it: the games' tooltip anatomy and colours (loot-filter colour tables), and what players like in other PoE tools (one-line prices, small windows, game-like item cards, dense tables).
+
+All of it lives in [`src/ui/style.css`](src/ui/style.css), which the popup, the results window and the app pages share; the website (`site/site.css`) uses the same tokens. Use the tokens; don't add new hex values in components.
 
 ## Colour
 
 | Token | Value | Use |
 |---|---|---|
-| `--void` | `#050506` | Page background |
-| `--abyss` | `#0a0c10` | Panel fill |
-| `--night` | `#13202e` | Moonlit atmosphere, only inside gradients (page tops, sidebar) |
-| `--iron` / `--iron-hi` / `--iron-lo` | `#2c3038` / `#474c55` / `#16191e` | Frame lines, button edges / bevel highlight / row rules |
-| `--bronze` | `#7a6545` | Inner frame line and other bronze lines/borders (never small text: only 3.5:1 on black) |
-| `--bronze-text` | `#9c845b` | Bronze text: sidebar nav and character label, table headers, links (`button.link`), `summary`, `h4.small`, `.char-group` (5.5:1 on `--abyss`, 5.7:1 on `--void`, 4.6:1 on `--night`) |
-| `--gold` / `--gold-hi` | `#c9a463` / `#f1e4c2` | Filigree, the selected thing, focus / top of the heading gradient |
-| `--stone` | `#b6b6b6` | Body text |
-| `--bone` | `#e2e0db` | Values and strong text |
-| `--ash` | `#858585` | Secondary text |
-| `--blood` (`-hi`, `-lo`) | `#8e1a1a` | The one main action per view |
-| `--up` / `--down` / `--warn` | `#6fd16a` / `#e2483c` / `#e0b04e` | Better / worse / careful (colour-blind mode swaps to blue / orange) |
-| `--rare` / `--unique` / `--magic` / `--mod` / `--rune` | as in game | Item names and mod lines, so they read the way players expect |
+| `--void` | `#0e0c0a` | Page background |
+| `--abyss` | `#0a0908` | Panel fill (popups: `rgba(8, 6, 5, .94-.95)`) |
+| `--iron` / `--iron-hi` / `--iron-lo` | `#2a2118` / `#4a3c2c` / `#1f1913` | Lines: inner frame / panel edge and buttons / row rules |
+| `--bronze-text` | `#aa9e82` | The games' currency tan: table headers, group headings, side navigation |
+| `--gold` / `--gold-hi` | `#e7b478` / `#f3e6c4` | The games' title colour: page and card headings, the selected page / light text on the main action |
+| `--stone` | `#c8c8c8` | Body text (the games' normal item colour) |
+| `--bone` | `#f2efe8` | Values and strong text (white in game) |
+| `--ash` | `#8a857c` | Labels and secondary text (the games' grey, a little lighter for contrast) |
+| `--up` / `--down` / `--warn` | `#9a9aff` / `#e05a4a` / `#e0a84a` | Better (the games' blue) / worse / careful. Colour-blind mode: light blue / orange |
+| `--rare` / `--unique` / `--magic` / `--mod` / `--rune` | `#ffff77` / `#af6025` / `#8888ff` / `#8888ff` / `#c8b48a` | Item names and mod lines, as in game |
+
+Popup headers are tinted by rarity: rare `#3a3216`, unique `#3a2412`, magic `#23233c`, normal `#2a2622`, with a slightly lighter line under them.
 
 ## Type
 
-- **Carved: Cinzel** (bundled, SIL OFL). Headings, item names, verdicts, buttons, navigation, table headers, big numbers. Headings get the parchment-to-gold gradient and a black glow. Cinzel is all capitals, so keep sentences out of it: carve the number, write the words after it in text (`+26.8%` *for your build*).
-- **Text: Alegreya Sans** (bundled, SIL OFL). Everything you read: mods, explanations, settings, tables. 14 px base.
-- Numbers that line up use `font-variant-numeric: tabular-nums`.
+- **Headings: Alegreya Sans SC** (bundled, SIL OFL): real small caps for headings, item names, verdicts, buttons, navigation and table headers. No letter-spacing and no all-caps transforms.
+- **Text: Alegreya Sans** (bundled, SIL OFL): everything you read. 15 px base.
+- Prices and big numbers are bold Alegreya Sans, so "ex", "div" and "chaos" stay readable.
+- Fontin, the PoE1 font, isn't bundled: its licence doesn't allow passing it on without the author's permission.
 
 ## Shapes
 
-- **Iron frame** on every panel (`.card`, `.card-p`, `.listing`, `.modal-box`): a 1 px iron line, a black line and a faint bronze line inside it, a deep drop shadow, and gold diamonds on the top corners. A cold blue wash fades in at the top of each frame.
-- **Square corners everywhere.** No rounded cards, no pills. Small markers are diamonds (the online dot, the diamond-cut divider).
-- **Verdicts are seals:** the carved word in an outlined box with a soft glow in its colour (UPGRADE, LOSES RESISTANCE, LOSES DAMAGE, UPGRADE, BUT…). The number sits beside it.
-- **Warnings** (lost resistance or damage) are a band with a blood gradient and a red edge; the card around them gets a red inner line.
-- **Resistance bars** are engraved gauges with element gradients and a gold notch at the cap.
-- **The selected page** in the sidebar has a gold ring around its sigil.
+- **Panels** are flat: a 1 px edge with a thin double line inside, like the games' panels. No corner ornaments, no gradient washes, no glow.
+- **Popups** are item tooltips: a centred, rarity-tinted header band (name, then base and class), thin separators, centred verdict.
+- **Verdicts** are a small-caps word in its colour with the number beside it (UPGRADE, LOSES RESISTANCE...). No boxes.
+- **Square corners.** Flat chips, tiles and bars; resistance bars in the element's colour.
 
 ## Buttons
 
 | Kind | Look | Where |
 |---|---|---|
-| Blood (`.primary`, `.find`) | Red gradient with a gold edge | The one main action of a view: Find upgrades in the popup, Better for my build, Import |
-| Gilded (`.primary.gilded`) | Iron with a gold edge and gold text | The main action on each of many repeated items: Travel to hideout / Copy whisper on result cards, Run on saved searches |
-| Iron (default) | Dark gradient, iron edge, gold on hover | Everything else |
-| Link (`.link`) | Bronze underlined text (`--bronze-text`) | Small asides: "on trade site ↗", "why?" |
+| Main (`.primary`, `.find`) | Dark warm leather `#3b2a17`, bronze edge `#8a6a3c`, light text | The main action of a view |
+| Gilded (`.primary.gilded`) | A lighter version of the main one | The main action on each of many repeated items (result cards) |
+| Default | `#1e1a16` with the panel edge | Everything else |
+| Link (`.link`) | Tan underlined text | Small asides |
 
 ## Rules
 
-1. The ground is black or cold night blue, never warm brown.
-2. Gold is for frames, headings and the selected thing. Text stays stone grey.
-3. Blood red marks one action per view.
-4. Item names and mods keep the game's colours.
+1. The ground is warm near-black and flat.
+2. Colour means something: rarity, better/worse, damage type. Never decoration.
+3. Gold is for headings and the selected thing only.
+4. Item names and mods keep the games' colours.
 5. Verdicts are words first, numbers second.
-6. Text over atmosphere gets the black glow (`--glow`).
+6. Text is at least 4.5:1 against its background (labels included).
 7. No GGG logos, art or fonts.

@@ -50,7 +50,7 @@ modified version of it.
 
 - **Path of Building** (vendor/pob, vendor/pob1): the Path of Building Community projects, MIT
   licence, kept with their own LICENSE.md.
-- **Fonts** Cinzel and Alegreya Sans (assets/fonts): SIL Open Font License.
+- **Fonts** Alegreya Sans and Alegreya Sans SC (assets/fonts, site/fonts): SIL Open Font License.
 - **Electron, electron-updater** and other npm packages: their own licences (mostly MIT).
 - **Path of Exile game data** (passive tree data, item and mod names, art referenced from the
   trade site): the property of Grinding Gear Games, used for a fan-made tool. This project is not

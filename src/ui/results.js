@@ -17,7 +17,18 @@ const VERDICT = {
   new: ['EMPTY SLOT', 'new'], equipped: ['EQUIPPED', 'same'], unjudged: ['NOT JUDGED', 'same'],
 };
 
+// PoE2: the same price in chaos orbs too
+function chaosOf(priceEx, currency) {
+  const c = Number(data.chaosRate);
+  if (!(c > 0) || !(priceEx > 0) || currency === 'chaos') return '';
+  const v = priceEx / c;
+  return `${v < 10 ? Math.round(v * 10) / 10 : Math.round(v).toLocaleString('en')} chaos`;
+}
 function dual(p, priceEx) {
+  const t = dual0(p, priceEx); const ch = chaosOf(priceEx, p.currency);
+  return ch ? (t ? `${t} · ${ch}` : `≈ ${ch}`) : t;
+}
+function dual0(p, priceEx) {
   const a = Number(p.amount); const d = Number(data.divineRate);
   const base = data.game === 'poe1' ? 'chaos' : 'exalted'; // the everyday currency
   if (!(d > 0)) return p.currency !== base && priceEx > 0 ? `≈ ${Math.round(priceEx).toLocaleString('en')} ${data.unit || 'ex'}` : '';
@@ -46,7 +57,10 @@ function sorted(list) {
   }[mode];
   // sellers you can buy from now come first (an offline seller can't answer a whisper)
   const away = (x) => (!x.instant && !x.online ? 1 : 0);
-  const by0 = by; by = (a, b) => (mode === 'site' ? 0 : away(a) - away(b)) || by0(a, b);
+  // the listing you picked (from Where to spend) stays on top, whatever the order
+  const focus = data && data.focusId;
+  const top = (x) => (focus && x.id === focus ? 1 : 0);
+  const by0 = by; by = (a, b) => (top(b) - top(a)) || (mode === 'site' ? 0 : away(a) - away(b)) || by0(a, b);
   let out = (list || []).map((x, i) => ({ ...x, _i: i }));
   if ($('#noCorrupt').checked) out = out.filter((x) => !(x.item && x.item.corrupted));
   if ($('#onlyUp').checked) out = out.filter((x) => x.compare && (['upgrade', 'small', 'risky', 'new'].includes(x.compare.verdict)));
@@ -81,7 +95,7 @@ function card(x) {
   const value = x.valuePerDiv != null && Math.abs(x.valuePerDiv) >= 0.05 && c && c.delta > 0 && !loss ? `<span class="value" title="${c && c.scoreMode === 'pob' ? 'Path of Building points for your build' : gearMode ? 'Gear score points gained' : 'Upgrade score'} per divine spent">${fmt(x.valuePerDiv, 1)} / div</span>` : '';
   const rr = c ? c.resRank || 0 : 0;
   const offline = !x.instant && !x.online;
-  const ribbons = [best.up === x.id ? '<span class="ribbon">Biggest upgrade</span>' : '', best.value === x.id ? '<span class="ribbon">Best value</span>' : ''].filter(Boolean).join('');
+  const ribbons = [data && data.focusId === x.id ? '<span class="ribbon pick">You picked this</span>' : '', best.up === x.id ? '<span class="ribbon">Biggest upgrade</span>' : '', best.value === x.id ? '<span class="ribbon">Best value</span>' : ''].filter(Boolean).join('');
   return `<article class="listing ${rr < 0 ? 'res-loss' : rr === 2 ? 'res-cap-item' : ''} ${offline ? 'offline' : ''}">${ribbons ? `<div class="ribbons">${ribbons}</div>` : ''}
     <div class="l-top">
       <div>

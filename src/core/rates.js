@@ -92,6 +92,9 @@ function currencyRatesInExalts(data, base = 'exalted') {
     if (l.id && v > 0) out[l.id] = Math.round((v / exVal) * 10000) / 10000;
   }
   if (primary && !out[primary]) out[primary] = Math.round((1 / exVal) * 10000) / 10000;
+  // chaos orbs under the trade site's id, whatever poe.ninja calls them (prices are also shown in chaos)
+  const chaosId = findId(data, 'chaos', 'chaos orb');
+  if (!out.chaos && out[chaosId]) out.chaos = out[chaosId];
   return out;
 }
 
