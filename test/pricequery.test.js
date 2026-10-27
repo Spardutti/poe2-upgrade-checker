@@ -111,33 +111,25 @@ Monsters deal 16% of Damage as Extra Cold
 --------
 Corrupted`;
 
-test('waystone price: same tier, rarity and corruption, its numbers as ranges, and its mods', () => {
-  const widx = T.buildStatIndex({ result: [{ id: 'explicit', entries: [
-    { id: 'explicit.stat_maxres', text: '#% maximum Player Resistances', type: 'explicit' },
-    { id: 'explicit.stat_xcold', text: 'Monsters deal #% of Damage as Extra Cold', type: 'explicit' },
-  ] }] });
+test('waystone price: same tier, corruption and mod count, its numbers as ranges (its mods are in its numbers)', () => {
   const item = parseItem(WAYSTONE);
   assert.ok(PQ.usesMapPriceQuery(item));
-  const q = PQ.buildMapPriceQuery(item, { game: 'poe2', statIndex: widx, level: 0 }).body.query;
+  const q = PQ.buildMapPriceQuery(item, { game: 'poe2', level: 0 }).body.query;
   const f = q.filters;
   assert.strictEqual(f.type_filters.filters.category.option, 'map.waystone');
   assert.strictEqual(f.type_filters.filters.rarity.option, 'rare');
   assert.strictEqual(f.misc_filters.filters.corrupted.option, 'true');
   assert.deepStrictEqual(f.map_filters.filters.map_tier, { min: 16, max: 16 });
-  assert.deepStrictEqual(f.map_filters.filters.map_iir, { min: 25, max: 39 });
-  assert.deepStrictEqual(f.map_filters.filters.map_bonus, { min: 93, max: 143 });
+  assert.deepStrictEqual(f.map_filters.filters.map_iir, { min: 27, max: 45 });
+  assert.deepStrictEqual(f.map_filters.filters.map_bonus, { min: 99, max: 165 });
   assert.ok(f.map_filters.filters.map_packsize && f.map_filters.filters.map_rare_monsters);
-  // every mod: the extra cold at close values, the player resistance downside by name
-  assert.deepStrictEqual(q.stats, [{ type: 'and', filters: [
-    { id: 'explicit.stat_maxres', disabled: false },
-    { id: 'explicit.stat_xcold', disabled: false, value: { min: 13, max: 21 } },
-  ] }]);
-  // then most mods, then half by name, then just the tier
-  const q2 = PQ.buildMapPriceQuery(item, { game: 'poe2', statIndex: widx, level: 2 }).body.query;
-  assert.deepStrictEqual(Object.keys(q2.filters.map_filters.filters), ['map_tier']);
-  assert.deepStrictEqual(q2.stats[0].filters.map((x) => x.value), [undefined, undefined]);
-  const q3 = PQ.buildMapPriceQuery(item, { game: 'poe2', statIndex: widx, level: 3 }).body.query;
-  assert.deepStrictEqual(q3.stats, []);
+  assert.deepStrictEqual(q.stats, [{ type: 'and', filters: [{ id: 'pseudo.pseudo_number_of_affix_mods', value: { min: 2 }, disabled: false }] }]);
+  // looser: at least 70% of the numbers, one mod fewer; last: the tier
+  const q2 = PQ.buildMapPriceQuery(item, { game: 'poe2', level: 2 }).body.query;
+  assert.deepStrictEqual(q2.filters.map_filters.filters.map_iir, { min: 21 });
+  assert.strictEqual(q2.stats[0].filters[0].value.min, 1);
+  const q3 = PQ.buildMapPriceQuery(item, { game: 'poe2', level: 3 }).body.query;
+  assert.deepStrictEqual(Object.keys(q3.filters.map_filters.filters), ['map_tier']);
   assert.strictEqual(q3.filters.trade_filters.filters.indexed.option, '2weeks');
 });
 

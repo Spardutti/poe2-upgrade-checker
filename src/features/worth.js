@@ -38,7 +38,9 @@ module.exports = function (C) {
     if (cmp && cmp.item) {
       group = comparables.pick(cmp.item, listings, cmp.opts || {}, priceQuery.MIN);
       const better = (listings || []).filter((x) => x && x.diff && x.diff.extra.length).length;
-      if (group.group === 'alike' && group.alike < (listings || []).length) notes.push(`priced on the ${group.alike} listings like yours; ${better} with more or bigger mods than yours left out`);
+      const weaker = (listings || []).filter((x) => x && x.diff && !x.diff.extra.length && x.diff.missing.length).length;
+      const what = cmp.opts && cmp.opts.kind === 'map' ? ['better numbers or more mods', 'weaker numbers or fewer mods'] : ['more or bigger mods', 'less'];
+      if (group.group === 'alike' && group.alike < (listings || []).length) notes.push(`priced on the ${group.alike} listings like yours; left out: ${[better ? `${better} with ${what[0]}` : '', weaker ? `${weaker} with ${what[1]}` : ''].filter(Boolean).join(', ')}`);
       else if (group.group === 'close') notes.push(`few listings are just like yours: priced on the ${group.close} that differ by one stat`);
       else if (group.group === 'all' && better) notes.push(`most listings have more or bigger mods than yours, so this may be high`);
       listings = group.listings;
@@ -141,13 +143,13 @@ module.exports = function (C) {
     // maps, waystones and tablets: their tier / kind and numbers (pricequery.js)
     const mapish = !chosen && priceQuery.usesMapPriceQuery(item);
     const market = !chosen && !mapish && priceQuery.usesPriceQuery(item);
-    const levels = chosen ? 1 : mapish ? priceQuery.MAP_LEVELS.length : market ? priceQuery.LEVELS.length : 3;
+    const levels = chosen ? 1 : mapish ? (priceQuery.isTablet(item) ? priceQuery.TABLET_LEVELS : priceQuery.MAP_LEVELS).length : market ? priceQuery.LEVELS.length : 3;
     // the closest search with enough listings to judge wins. A market search goes on loosening until
     // there are ENOUGH (three asking prices from three days is too few to price on: the Eagle
     // Splinter jewel came out at 5 div from 2, 5 and 13 div); the looser matches that aren't like
     // your item are then left out again by comparables.js, so a looser search adds evidence
     // without pricing yours on different items
-    const enough = market ? priceQuery.ENOUGH : mapish ? priceQuery.MIN : 3;
+    const enough = market || mapish ? priceQuery.ENOUGH : 3;
     C.log(`price check: ${item.itemClass || '?'} "${item.name || '?'}"${item.baseType && item.baseType !== item.name ? ` (${item.baseType})` : ''}, ${item.rarity || '?'}${item.corrupted ? ', corrupted' : ''} – ${chosen ? 'the stats you chose' : mapish ? 'map/waystone/tablet search' : market ? 'market search' : 'like-for-like search'}, league ${league}`);
     // the item itself, so the same check can be run again from the log
     if (item.raw) C.log(`price item: ${String(item.raw).replace(/\r?\n/g, ' / ').slice(0, 1500)}`);
@@ -180,7 +182,7 @@ module.exports = function (C) {
       const rates = { ...(C.store.settings.currencyRates || {}), ...(C.store.settings.divineRate ? { divine: C.store.settings.divineRate } : {}) };
       const raw = r.ids && r.ids.length ? await C.fetchListings(league, r.searchId, r.ids.slice(0, 40), C.tg()) : [];
       const listings = raw.map((x) => listingLib.summarise(x, item.itemClass, rates, C.G().base));
-      const cmp = market ? { item, opts } : null;
+      const cmp = market ? { item, opts } : mapish && !priceQuery.isTablet(item) && !/unique/i.test(item.rarity || '') ? { item, opts: { ...opts, kind: 'map' } } : null;
       const summary = priceSummary(listings, league, q.level || 0, cmp);
       logPrices(listings, summary);
       if (summary && summary.typicalEx != null && item.id) C.lastWorth.set(item.id, summary.typicalEx);
@@ -191,7 +193,7 @@ module.exports = function (C) {
     if (shown === 'superseded') {
       // you searched again or changed game while this loaded: nothing to show, no browser either
     } else if (shown) {
-      const cmp = market ? { item, opts } : null;
+      const cmp = market ? { item, opts } : mapish && !priceQuery.isTablet(item) && !/unique/i.test(item.rarity || '') ? { item, opts: { ...opts, kind: 'map' } } : null;
       Object.defineProperty(C.resultsState.ctx, 'priceCompare', { value: cmp, enumerable: false, writable: true, configurable: true });
       summary = priceSummary(C.resultsState.listings, league, q.level || 0, cmp);
       logPrices(C.resultsState.listings, summary);

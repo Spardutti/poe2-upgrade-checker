@@ -173,15 +173,25 @@ function buildPriceQuery(item, opts = {}) {
 const usesPriceQuery = (item) => !!item && !isUnique(item) && /^(rare|magic)$/i.test(item.rarity || '');
 
 // ---------- maps, waystones and precursor tablets ----------
-// A waystone sells on its tier, its numbers (item rarity, pack size, waystone drop chance...) and its
-// mods (some are wanted, some avoided); a tablet on its kind (Abyss, Breach, Ritual...), its uses left
-// and its mods. Every mod the trade site knows is searched: at first all of them at close values,
-// then most of them, then just which mods they are, then only the tier or kind.
+// A waystone (or PoE1 map) sells on its tier, its numbers (item rarity, pack size, monster rarity,
+// waystone drop chance...) and how many mods it has. The numbers come from its mods, so searching
+// for its exact mods as well finds nothing (the Grim Course waystone: 0 listings, then a loose search
+// of much weaker waystones priced it at 67 ex instead of ~6 div). So: the tier, the mod count and
+// the numbers close to yours, loosening a little at a time; then only the listings whose numbers
+// are at least close to yours are priced on (comparables.js, mapStats below).
+// A tablet sells on its kind (Abyss, Breach, Ritual...), its uses left and its mods (they are the
+// tablet): every mod is searched, all at close values first, then most, then half by name.
 const MAP_LEVELS = [
-  { lo: 0.85, hi: 1.3, props: true, mods: (n) => n, values: true, indexed: '3days', label: 'the same tier, close numbers and the same mods, listed in the last 3 days' },
-  { lo: 0.7, hi: null, props: true, mods: (n) => n - Math.ceil(n / 3), values: true, indexed: '1week', label: 'the same tier, close numbers and most of the same mods, listed in the last week' },
-  { lo: 0, hi: null, props: false, mods: (n) => Math.ceil(n / 2), values: false, indexed: '2weeks', label: 'the same tier and half the same mods, listed in the last 2 weeks' },
-  { lo: 0, hi: null, props: false, mods: () => 0, values: false, indexed: '2weeks', label: 'the same tier, listed in the last 2 weeks' },
+  { lo: 0.9, hi: 1.5, props: true, count: 0, indexed: '3days', label: 'the same tier and mod count, numbers close to yours, listed in the last 3 days' },
+  { lo: 0.8, hi: null, props: true, count: 0, indexed: '1week', label: 'the same tier and mod count, numbers at least 80% of yours, listed in the last week' },
+  { lo: 0.7, hi: null, props: true, count: 1, indexed: '2weeks', label: 'the same tier, numbers at least 70% of yours, listed in the last 2 weeks' },
+  { lo: 0, hi: null, props: false, count: 1, indexed: '2weeks', label: 'the same tier, listed in the last 2 weeks' },
+];
+const TABLET_LEVELS = [
+  { lo: 0.85, hi: 1.3, mods: (n) => n, values: true, indexed: '3days', label: 'the same kind, uses and mods at close values, listed in the last 3 days' },
+  { lo: 0.7, hi: null, mods: (n) => n - Math.ceil(n / 3), values: true, indexed: '1week', label: 'the same kind and uses, most of the same mods, listed in the last week' },
+  { lo: 0, hi: null, mods: (n) => Math.ceil(n / 2), values: false, indexed: '2weeks', label: 'the same kind and uses, half the same mods, listed in the last 2 weeks' },
+  { lo: 0, hi: null, mods: () => 0, values: false, indexed: '2weeks', label: 'the same kind, listed in the last 2 weeks' },
 ];
 // item text property -> trade map filter (PoE2 waystones, PoE1 maps). The PoE2 names are the ones
 // on the item ("Monster Rarity: +55%"); the trade site files Monster Rarity under rare monsters and
@@ -233,19 +243,44 @@ function mapMods(item, statIndex) {
   return { mods: out, unmatched };
 }
 
+// a waystone's or map's numbers, read from its text: { id: value } (map filter ids and the PoE1
+// pseudo stats), and its mod count
+function mapNumbers(item, game) {
+  const lines = String(item.raw || item.listingText || '').split(/\r?\n/).map((x) => x.trim());
+  const out = [];
+  for (const [re, id] of [...MAP_PROPS[game], ...MAP_PSEUDO[game]]) {
+    const line = lines.find((x) => re.test(x));
+    const v = line ? Number(line.match(re)[1]) : 0;
+    if (v > 0) out.push({ id, value: v, label: line.replace(/\s*\(augmented\)/i, '').replace(/:.*$/, '') });
+  }
+  return out;
+}
+const modCount = (item) => (item.lines || []).filter((l) => l.tag === 'explicit' && (l.key || l.kw) && !/uses? remaining/i.test(l.key || l.kw || '')).length;
+// for comparables.js: what a waystone or map is priced on, the same way for yours and each listing
+function mapStats(item, opts = {}) {
+  const game = opts.game === 'poe1' ? 'poe1' : 'poe2';
+  const m = new Map();
+  for (const x of mapNumbers(item, game)) m.set(x.id, { value: x.value, label: x.label });
+  const n = modCount(item);
+  if (n) m.set('mods', { value: n, label: 'Modifiers' });
+  return m;
+}
+
 function buildMapPriceQuery(item, opts = {}) {
-  const lv = Math.max(0, Math.min(MAP_LEVELS.length - 1, opts.level || 0));
-  const L = MAP_LEVELS[lv];
+  const tablet = isTablet(item);
+  const LV = tablet ? TABLET_LEVELS : MAP_LEVELS;
+  const lv = Math.max(0, Math.min(LV.length - 1, opts.level || 0));
+  const L = LV[lv];
   const game = opts.game === 'poe1' ? 'poe1' : 'poe2';
   const rar = String(item.rarity || '').toLowerCase();
   const unique = rar === 'unique';
-  const tablet = isTablet(item);
   const qf = { type_filters: { filters: {} }, misc_filters: { filters: { corrupted: { option: item.corrupted ? 'true' : 'false' } } }, trade_filters: { filters: { indexed: { option: L.indexed } } } };
   const cat = tablet ? 'map.tablet' : game === 'poe2' ? 'map.waystone' : 'map';
   qf.type_filters.filters.category = { option: cat };
   if (['rare', 'magic', 'normal'].includes(rar)) qf.type_filters.filters.rarity = { option: rar };
   const query = { status: { option: 'available' }, stats: [], filters: qf };
   const labels = [];
+  let unmatched = [];
   let need = 0; let total = 0;
   if (unique && item.name) { query.name = item.name; if (item.baseType && item.baseType !== item.name) query.type = item.baseType; }
   if (tablet) {
@@ -253,6 +288,25 @@ function buildMapPriceQuery(item, opts = {}) {
     if (base && !unique) { query.type = base; labels.push(base); }
     const uses = (String(item.raw || '').match(/(\d+) uses? remaining/i) || [])[1];
     if (uses) { query.stats.push({ type: 'and', filters: [{ id: 'pseudo.pseudo_number_of_uses_remaining', value: { min: Number(uses) }, disabled: false }] }); labels.push(`${uses} uses`); }
+    need = total = labels.length;
+    // a tablet's mods are what it is: every one the trade site knows
+    if (!unique) {
+      const r = mapMods(item, opts.statIndex);
+      unmatched = r.unmatched;
+      const n = r.mods.length;
+      total += n;
+      const k = Math.max(0, Math.min(n, L.mods(n)));
+      if (n && k) {
+        const filters = r.mods.map((m) => {
+          const f = { id: m.id, disabled: false };
+          if (L.values && m.tv > 0) { f.value = { min: round(m.tv * L.lo) || 1 }; if (L.hi) f.value.max = Math.ceil(m.tv * L.hi); }
+          return f;
+        });
+        query.stats.push(k === n ? { type: 'and', filters } : { type: 'count', value: { min: k }, filters });
+        need += k;
+      }
+      for (const m of r.mods) labels.push(m.label);
+    }
   } else {
     const tier = mapTier(item);
     const mfl = {};
@@ -265,52 +319,28 @@ function buildMapPriceQuery(item, opts = {}) {
       mfl.map_uberblighted = { option: ravaged ? 'true' : 'false' };
       if (blighted || ravaged) labels.push(ravaged ? 'blight-ravaged' : 'blighted');
     }
-    if (L.props && !unique) {
-      const lines = String(item.raw || '').split(/\r?\n/).map((x) => x.trim());
-      for (const [re, id] of MAP_PROPS[game]) {
-        const line = lines.find((x) => re.test(x));
-        const v = line ? Number(line.match(re)[1]) : 0;
-        if (!(v > 0)) continue;
-        mfl[id] = { min: Math.floor(v * L.lo) };
-        if (L.hi) mfl[id].max = Math.ceil(v * L.hi);
-        labels.push(line.replace(/\s*\(augmented\)/i, ''));
+    if (!unique) {
+      // how many mods (an 8-mod corrupted waystone is another item than a 6-mod one): at least
+      // as many as yours, one fewer in the looser steps
+      const n = modCount(item);
+      if (n > 1) { query.stats.push({ type: 'and', filters: [{ id: 'pseudo.pseudo_number_of_affix_mods', value: { min: Math.max(1, n - L.count) }, disabled: false }] }); labels.push(`${n - L.count}+ mods`); }
+      if (L.props) {
+        const pf = [];
+        for (const x of mapNumbers(item, game)) {
+          const range = { min: Math.floor(x.value * L.lo) || 1 };
+          if (L.hi) range.max = Math.ceil(x.value * L.hi);
+          if (/^pseudo\./.test(x.id)) pf.push({ id: x.id, value: range, disabled: false }); else mfl[x.id] = range;
+          labels.push(`${x.label} ${x.value}%`);
+        }
+        if (pf.length) query.stats.push({ type: 'and', filters: pf });
       }
-      const pf = [];
-      for (const [re, id] of MAP_PSEUDO[game]) {
-        const line = lines.find((x) => re.test(x));
-        const v = line ? Number(line.match(re)[1]) : 0;
-        if (!(v > 0)) continue;
-        const value = { min: Math.floor(v * L.lo) || 1 };
-        if (L.hi) value.max = Math.ceil(v * L.hi);
-        pf.push({ id, value, disabled: false });
-        labels.push(line.replace(/\s*\(augmented\)/i, ''));
-      }
-      if (pf.length) query.stats.push({ type: 'and', filters: pf });
     }
     if (Object.keys(mfl).length) qf.map_filters = { filters: mfl };
+    need = total = labels.length;
+    // its mods are in its numbers; they're logged, not searched
+    if (!unique) { const r = mapMods(item, opts.statIndex); unmatched = r.unmatched; }
   }
-  need = labels.length; total = labels.length;
-  // the mods (waystones, tablets and PoE1 maps: a reflect or no-regen map sells for less, an
-  // influenced or 8-mod one for more). A unique's mods are always the same: its name is enough.
-  let unmatched = [];
-  if (!unique) {
-    const r = mapMods(item, opts.statIndex);
-    unmatched = r.unmatched;
-    const n = r.mods.length;
-    total += n;
-    const k = Math.max(0, Math.min(n, L.mods(n)));
-    if (n && k) {
-      const filters = r.mods.map((m) => {
-        const f = { id: m.id, disabled: false };
-        if (L.values && m.tv > 0) { f.value = { min: round(m.tv * L.lo) || 1 }; if (L.hi) f.value.max = Math.ceil(m.tv * L.hi); }
-        return f;
-      });
-      query.stats.push(k === n ? { type: 'and', filters } : { type: 'count', value: { min: k }, filters });
-      need += k;
-    }
-    for (const m of r.mods) labels.push(m.label);
-  }
-  return { body: { query, sort: { price: 'asc' } }, need, total, level: lv, levels: MAP_LEVELS.length, levelLabel: L.label, labels, ...(unmatched.length ? { unmatched } : {}) };
+  return { body: { query, sort: { price: 'asc' } }, need, total, level: lv, levels: LV.length, levelLabel: L.label, labels, ...(unmatched.length ? { unmatched } : {}) };
 }
 
-module.exports = { buildPriceQuery, buildMapPriceQuery, priceStats, usesPriceQuery, usesMapPriceQuery, isTablet, LEVELS, MAP_LEVELS, ENOUGH, MIN, FILLER };
+module.exports = { buildPriceQuery, buildMapPriceQuery, mapStats, TABLET_LEVELS, priceStats, usesPriceQuery, usesMapPriceQuery, isTablet, LEVELS, MAP_LEVELS, ENOUGH, MIN, FILLER };

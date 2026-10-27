@@ -100,7 +100,7 @@ test('price check: what was left out of the search is said (for the log)', () =>
   assert.ok(skipped.some((x) => /Life Regeneration.*filler/.test(x)) && skipped.some((x) => /Total life 12/.test(x)), JSON.stringify(skipped));
 });
 
-test('PoE1 map price: blight, Originator numbers, quality kind and every mod', () => {
+test('PoE1 map price: blight, Originator numbers, quality kind and mod count', () => {
   const idx = trade.buildStatIndex({ result: [
     { id: 'implicit', entries: [{ id: 'implicit.stat_1792283443|1', text: 'Area is influenced by The Shaper', type: 'implicit' }] },
     { id: 'explicit', entries: [
@@ -136,10 +136,11 @@ Travel to this Map by using it in a personal Map Device. Maps can only be used o
   const f = q.body.query.filters.map_filters.filters;
   assert.strictEqual(q.body.query.filters.type_filters.filters.category.option, 'map');
   assert.deepStrictEqual([f.map_blighted, f.map_uberblighted], [{ option: 'true' }, { option: 'false' }]);
-  assert.deepStrictEqual(f.map_iiq, { min: 68, max: 104 });
+  assert.deepStrictEqual(f.map_iiq, { min: 72, max: 120 });
   const ids = q.body.query.stats.flatMap((g) => g.filters.map((x) => x.id));
-  assert.deepStrictEqual(ids, ['pseudo.pseudo_map_more_scarab_drops', 'pseudo.pseudo_map_quality_currency', 'implicit.stat_1792283443|1', 'explicit.stat_reflect', 'explicit.stat_2550456553', 'explicit.stat_hex']);
-  assert.ok(!q.unmatched, JSON.stringify(q.unmatched));
+  assert.deepStrictEqual(ids, ['pseudo.pseudo_number_of_affix_mods', 'pseudo.pseudo_map_more_scarab_drops', 'pseudo.pseudo_map_quality_currency']);
+  assert.strictEqual(q.body.query.stats[0].filters[0].value.min, 3); // its 3 mods (the mods themselves are in its numbers)
+  assert.ok(!q.unmatched, JSON.stringify(q.unmatched)); // every mod is still matched (and logged)
   // a plain map leaves blighted ones out
   const plain = parseItem('Item Class: Maps\nRarity: Normal\nStrand Map\n--------\nMap Tier: 5\n--------\nItem Level: 73');
   assert.deepStrictEqual(pq.buildMapPriceQuery(plain, { game: 'poe1', statIndex: idx }).body.query.filters.map_filters.filters.map_blighted, { option: 'false' });

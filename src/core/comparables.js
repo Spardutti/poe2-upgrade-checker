@@ -27,7 +27,8 @@ function statMap(item, opts) {
 }
 
 // how one listing differs from your item: { extra: [labels], missing: [labels] }
-function compare(ours, theirs) {
+// (less: how far under yours a number may be before it counts as missing)
+function compare(ours, theirs, less = MUCH_LESS) {
   const extra = []; const missing = [];
   for (const [id, t] of theirs) {
     const o = ours.get(id);
@@ -37,7 +38,7 @@ function compare(ours, theirs) {
   for (const [id, o] of ours) {
     const t = theirs.get(id);
     if (!t) missing.push(o.label);
-    else if (t.value < o.value * MUCH_LESS) missing.push(`${o.label} ${round(t.value)} (yours ${round(o.value)})`);
+    else if (t.value < o.value * less) missing.push(`${o.label} ${round(t.value)} (yours ${round(o.value)})`);
   }
   return { extra, missing };
 }
@@ -45,13 +46,18 @@ const round = (x) => (x >= 10 ? Math.round(x) : Math.round(x * 10) / 10);
 
 // listings: summarise() output ({ item, priceEx, ... }). Each gets .diff = { extra, missing }.
 // -> { listings (the group to price from), group: 'alike' | 'close' | 'all', alike, close, total }
+// opts.kind 'map': waystones and maps, compared on their numbers and mod count (pricequery.mapStats);
+// a number more than a tenth under yours already makes it a lesser waystone
 function pick(item, listings, opts = {}, min = 3) {
   const all = (listings || []).filter(Boolean);
   if (!item || !all.length) return { listings: all, group: 'all', alike: 0, close: 0, total: all.length };
-  const ours = statMap(item, opts);
+  const map = opts.kind === 'map';
+  const stats = map ? pq.mapStats : statMap;
+  const less = map ? 0.9 : MUCH_LESS;
+  const ours = stats(item, opts);
   for (const x of all) {
     if (!x.item) { x.diff = null; continue; }
-    try { x.diff = compare(ours, statMap(x.item, opts)); } catch (_) { x.diff = null; }
+    try { x.diff = compare(ours, stats(x.item, opts), less); } catch (_) { x.diff = null; }
   }
   const sellers = (list) => new Set(list.filter((x) => x.priceEx > 0).map((x) => x.account || x.id)).size;
   const alike = all.filter((x) => x.diff && !x.diff.extra.length && !x.diff.missing.length);

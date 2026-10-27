@@ -52,3 +52,19 @@ test('price: a stat well above yours counts as more; one well under as missing',
   assert.ok(big.diff.extra.length === 1 && !big.diff.missing.length, JSON.stringify(big.diff));
   assert.ok(small.diff.missing.length === 1 && !small.diff.extra.length, JSON.stringify(small.diff));
 });
+
+test('waystone: priced on listings with numbers at least close to yours (the Grim Course case)', () => {
+  const pq = require('../src/core/pricequery');
+  const way = (p, mods, extra = '') => parseItem(`Item Class: Waystones\nRarity: Rare\nX\nWaystone (Tier 15)\n--------\nWaystone Tier: 15\nItem Rarity: +${p[0]}%\nPack Size: +${p[1]}%\nMonster Rarity: +${p[2]}%\nMonster Effectiveness: +${p[3]}%\nWaystone Drop Chance: +${p[4]}%\n--------\nItem Level: 81\n--------\n${Array.from({ length: mods }, (_, i) => `Monsters have ${90 + i}% increased Stun Buildup`).join('\n')}${extra}\n--------\nCorrupted`);
+  const GRIM = way([12, 18, 78, 13, 120], 8);
+  assert.strictEqual(pq.mapStats(GRIM, { game: 'poe2' }).get('mods').value, 8);
+  // four cheap waystones with much weaker numbers, then the real market at 4-11 div
+  const weak = [[8, 12, 54, 9, 84], [9, 13, 60, 10, 90], [10, 14, 58, 9, 86], [8, 12, 55, 9, 85]].map((p) => L(67, way(p, 8)));
+  const real = [[12, 18, 80, 13, 122], [13, 19, 79, 14, 125], [12, 18, 82, 13, 120], [14, 20, 85, 15, 130], [12, 19, 78, 13, 121]].map((p, i) => L([2800, 3400, 4600, 5200, 7300][i], way(p, 8)));
+  const all = [...weak, ...real];
+  assert.strictEqual(priceStats(all, { now: NOW }).typicalEx, 67); // what it said before
+  const g = comparables.pick(GRIM, all, { kind: 'map', game: 'poe2' }, 3);
+  assert.strictEqual(g.group, 'alike');
+  assert.strictEqual(priceStats(g.listings, { now: NOW }).typicalEx, 4600);
+  assert.ok(weak[0].diff.missing.length >= 4, JSON.stringify(weak[0].diff));
+});
