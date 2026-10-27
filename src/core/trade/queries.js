@@ -105,7 +105,7 @@ function buildUpgradeQuery(item, weights, opts) {
 const GEAR_TYPES = ['explicit', 'implicit'];
 // the sizes a gear search shrinks through when the trade site says "too complex" (logged out it
 // allows only a handful of filters); Find upgrades and Where to spend both step through these
-const GEAR_SEARCH_SIZES = [{ maxFilters: 40 }, { maxFilters: 20, explicitOnly: true }, { maxFilters: 10, explicitOnly: true, coreShare: 0 }, { maxFilters: 6, explicitOnly: true, coreShare: 0 }, { countOnly: true, explicitOnly: true }];
+const GEAR_SEARCH_SIZES = [{ maxFilters: 40 }, { maxFilters: 20, explicitOnly: true }, { maxFilters: 10, explicitOnly: true, coreShare: 0 }, { maxFilters: 6, explicitOnly: true, coreShare: 0 }, { countOnly: true, maxFilters: 6, explicitOnly: true, coreShare: 0 }];
 function keyForm(text) { return String(text).replace(/^\+/, '').replace(/\s*\(local\)\s*$/i, '').trim(); }
 function buildGearQuery(item, opts) {
   const weights = opts.weights || [];
