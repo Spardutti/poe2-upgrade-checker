@@ -75,6 +75,9 @@ function buildStatIndex(statsData) {
     for (const t of [text, bare]) {
       const m = t.match(/^(.*)\ban additional (.+?)$/);
       if (m && !/#/.test(t)) forms.push(`${m[1]}# additional ${m[2].replace(/(\w+)$/, (w) => (/s$/.test(w) ? w : w + 's'))}`);
+      // "Rare Monsters each have # additional Modifier": the item says "2 additional Modifiers"
+      const p = t.match(/^(.*# additional )(\w+)$/);
+      if (p && !/s$/.test(p[2])) forms.push(`${p[1]}${p[2]}s`);
     }
     for (const f of forms) {
       const k = norm(f);

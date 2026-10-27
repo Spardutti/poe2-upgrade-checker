@@ -129,7 +129,7 @@ const ELDRITCH_LINE = /^(Searing Exarch|Eater of Worlds) Item$/;
 // PoE1-only lines that say something about the item and are never mods.
 const POE1_FLAG_LINE = /^(Synthesised Item|Split|Foil Unique(?: \(.*\))?|Abyss)$/;
 // Help text at the bottom of jewels, flasks etc.
-const HELP_LINE = /^(Place into an? |Right[ -]click to |Can only hold charges |Used automatically when condition is met|Can be used in (?:a|a personal) Map Device)/i;
+const HELP_LINE = /^(Place into an? |Right[ -]click to |Can only hold charges |Used automatically when condition is met|Can be used in (?:a|a personal) Map Device|Travel to this Map by using it in )/i;
 // PoE1/PoE2 weapon property blocks start with the weapon type ("Claw", "Two Handed Sword")
 const WEAPON_TYPE_LINE = /^(Bow|Claw|Dagger|Rune Dagger|Wand|Sceptre|Staff|Warstaff|Quarterstaff|Crossbow|Spear|Flail|Fishing Rod|Thrusting One Handed Sword|(?:One|Two) Hand(?:ed)? (?:Sword|Axe|Mace))$/;
 // Flask / charm base properties

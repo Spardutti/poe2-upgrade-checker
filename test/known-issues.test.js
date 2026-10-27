@@ -99,3 +99,48 @@ test('price check: what was left out of the search is said (for the log)', () =>
   const { skipped } = pq.priceStats(ring, { statIndex: trade.buildStatIndex({ result: [] }) });
   assert.ok(skipped.some((x) => /Life Regeneration.*filler/.test(x)) && skipped.some((x) => /Total life 12/.test(x)), JSON.stringify(skipped));
 });
+
+test('PoE1 map price: blight, Originator numbers, quality kind and every mod', () => {
+  const idx = trade.buildStatIndex({ result: [
+    { id: 'implicit', entries: [{ id: 'implicit.stat_1792283443|1', text: 'Area is influenced by The Shaper', type: 'implicit' }] },
+    { id: 'explicit', entries: [
+      { id: 'explicit.stat_reflect', text: 'Monsters reflect #% of Elemental Damage', type: 'explicit' },
+      { id: 'explicit.stat_2550456553', text: 'Rare Monsters each have # additional Modifier', type: 'explicit' },
+      { id: 'explicit.stat_hex', text: 'Monsters are Hexproof', type: 'explicit' },
+    ] },
+  ] });
+  const map = parseItem(`Item Class: Maps
+Rarity: Rare
+Grim Halls
+Blighted Strand Map
+--------
+Map Tier: 16
+Item Quantity: +80% (augmented)
+Item Rarity: +45% (augmented)
+Monster Pack Size: +30% (augmented)
+More Scarabs: +40% (augmented)
+Quality (Currency): +20% (augmented)
+--------
+Item Level: 83
+--------
+Monster Level: 83
+--------
+Area is influenced by The Shaper (implicit)
+--------
+Monsters reflect 18% of Elemental Damage
+Rare Monsters each have 2 additional Modifiers
+Monsters are Hexproof
+--------
+Travel to this Map by using it in a personal Map Device. Maps can only be used once.`);
+  const q = pq.buildMapPriceQuery(map, { game: 'poe1', statIndex: idx, level: 0 });
+  const f = q.body.query.filters.map_filters.filters;
+  assert.strictEqual(q.body.query.filters.type_filters.filters.category.option, 'map');
+  assert.deepStrictEqual([f.map_blighted, f.map_uberblighted], [{ option: 'true' }, { option: 'false' }]);
+  assert.deepStrictEqual(f.map_iiq, { min: 68, max: 104 });
+  const ids = q.body.query.stats.flatMap((g) => g.filters.map((x) => x.id));
+  assert.deepStrictEqual(ids, ['pseudo.pseudo_map_more_scarab_drops', 'pseudo.pseudo_map_quality_currency', 'implicit.stat_1792283443|1', 'explicit.stat_reflect', 'explicit.stat_2550456553', 'explicit.stat_hex']);
+  assert.ok(!q.unmatched, JSON.stringify(q.unmatched));
+  // a plain map leaves blighted ones out
+  const plain = parseItem('Item Class: Maps\nRarity: Normal\nStrand Map\n--------\nMap Tier: 5\n--------\nItem Level: 73');
+  assert.deepStrictEqual(pq.buildMapPriceQuery(plain, { game: 'poe1', statIndex: idx }).body.query.filters.map_filters.filters.map_blighted, { option: 'false' });
+});

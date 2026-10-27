@@ -192,6 +192,16 @@ const MAP_PROPS = {
     [/^(?:Waystone )?Gold(?: Found)?:\s*\+?(\d+)%/i, 'map_gold'], [/^(?:Waystone )?Experience(?: Gained)?:\s*\+?(\d+)%/i, 'map_experience']],
   poe1: [[/^Item Quantity:\s*\+?(\d+)%/i, 'map_iiq'], [/^Item Rarity:\s*\+?(\d+)%/i, 'map_iir'], [/^Monster Pack Size:\s*\+?(\d+)%/i, 'map_packsize']],
 };
+// PoE1 map numbers the trade site has as stats rather than map filters: an Originator map's "More
+// Scarabs: +40%", and the kind of map quality ("Quality (Currency): +20%")
+const MAP_PSEUDO = {
+  poe1: [[/^More Maps:\s*\+?(\d+)%/i, 'pseudo.pseudo_map_more_map_drops'], [/^More Scarabs:\s*\+?(\d+)%/i, 'pseudo.pseudo_map_more_scarab_drops'],
+    [/^More Currency:\s*\+?(\d+)%/i, 'pseudo.pseudo_map_more_currency_drops'], [/^More Divination Cards:\s*\+?(\d+)%/i, 'pseudo.pseudo_map_more_card_drops'],
+    [/^Quality \(Rarity\):\s*\+?(\d+)%/i, 'pseudo.pseudo_map_quality_rarity'], [/^Quality \(Pack Size\):\s*\+?(\d+)%/i, 'pseudo.pseudo_map_quality_pack_size'],
+    [/^Quality \(Divination Cards\):\s*\+?(\d+)%/i, 'pseudo.pseudo_map_quality_cards'], [/^Quality \(Scarabs\):\s*\+?(\d+)%/i, 'pseudo.pseudo_map_quality_scarabs'],
+    [/^Quality \(Currency\):\s*\+?(\d+)%/i, 'pseudo.pseudo_map_quality_currency']],
+  poe2: [],
+};
 const isTablet = (item) => !!item && /tablet/i.test(String(item.itemClass || ''));
 const isMapLike = (item) => !!item && /^(maps|waystones)$/i.test(String(item.itemClass || '').trim());
 const usesMapPriceQuery = (item) => isMapLike(item) || isTablet(item);
@@ -247,6 +257,14 @@ function buildMapPriceQuery(item, opts = {}) {
     const tier = mapTier(item);
     const mfl = {};
     if (tier) { mfl.map_tier = { min: tier, max: tier }; labels.push(`tier ${tier}`); }
+    // PoE1: a blighted or blight-ravaged map is its own market, and so is a plain one
+    if (game === 'poe1' && !unique) {
+      const b = `${item.baseType || ''} ${item.name || ''}`;
+      const ravaged = /\bBlight-ravaged\b/i.test(b); const blighted = !ravaged && /\bBlighted\b/i.test(b);
+      mfl.map_blighted = { option: blighted ? 'true' : 'false' };
+      mfl.map_uberblighted = { option: ravaged ? 'true' : 'false' };
+      if (blighted || ravaged) labels.push(ravaged ? 'blight-ravaged' : 'blighted');
+    }
     if (L.props && !unique) {
       const lines = String(item.raw || '').split(/\r?\n/).map((x) => x.trim());
       for (const [re, id] of MAP_PROPS[game]) {
@@ -257,14 +275,25 @@ function buildMapPriceQuery(item, opts = {}) {
         if (L.hi) mfl[id].max = Math.ceil(v * L.hi);
         labels.push(line.replace(/\s*\(augmented\)/i, ''));
       }
+      const pf = [];
+      for (const [re, id] of MAP_PSEUDO[game]) {
+        const line = lines.find((x) => re.test(x));
+        const v = line ? Number(line.match(re)[1]) : 0;
+        if (!(v > 0)) continue;
+        const value = { min: Math.floor(v * L.lo) || 1 };
+        if (L.hi) value.max = Math.ceil(v * L.hi);
+        pf.push({ id, value, disabled: false });
+        labels.push(line.replace(/\s*\(augmented\)/i, ''));
+      }
+      if (pf.length) query.stats.push({ type: 'and', filters: pf });
     }
     if (Object.keys(mfl).length) qf.map_filters = { filters: mfl };
   }
   need = labels.length; total = labels.length;
-  // the mods: PoE2 waystones and tablets (a PoE1 map sells on its tier and numbers; its mods are
-  // what you roll it for). A unique's mods are always the same: its name is enough.
+  // the mods (waystones, tablets and PoE1 maps: a reflect or no-regen map sells for less, an
+  // influenced or 8-mod one for more). A unique's mods are always the same: its name is enough.
   let unmatched = [];
-  if (!unique && (tablet || game === 'poe2')) {
+  if (!unique) {
     const r = mapMods(item, opts.statIndex);
     unmatched = r.unmatched;
     const n = r.mods.length;
