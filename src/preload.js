@@ -94,6 +94,7 @@ contextBridge.exposeInMainWorld('api', {
   copyText: (t) => ipcRenderer.send('clipboard:write', t),
   hideResults: () => ipcRenderer.send('results:hide'),
   priceCheck: (target, picks) => ipcRenderer.invoke('trade:price', target, picks),
+  priceFeedback: (caseId, rating, actual) => ipcRenderer.invoke('price:feedback', caseId, rating, actual),
   saveSearch: (name) => ipcRenderer.invoke('saved:add', name),
   savedList: () => ipcRenderer.invoke('saved:list'),
   savedRun: (id) => ipcRenderer.invoke('saved:run', id),

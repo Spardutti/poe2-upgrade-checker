@@ -131,6 +131,35 @@
     const [t, cls] = CONF[c.grade];
     return ` <span class="conf ${cls}" title="${R.esc(c.grade === 'solid' ? 'Plenty of recent listings close to this item, at similar prices' : `Treat it as ${c.grade === 'rough' ? 'a rough figure' : 'a guess'}: ${c.why}`)}">${t}</span>`;
   };
+  // your verdict on a price: saved with the check, to measure the pricing against what you know
+  window.priceFeedbackHtml = function (caseId) {
+    if (!caseId) return '';
+    return `<div class="price-fb small dim" data-case="${R.esc(caseId)}">Price right? <button class="link" data-fb="low">Too low</button> · <button class="link" data-fb="right">About right</button> · <button class="link" data-fb="high">Too high</button>
+      <span class="fb-more hidden"> Worth about <input type="text" class="fb-actual" size="8" placeholder="3 div" aria-label="What it's worth"> <button class="link fb-save">Save</button></span><span class="fb-msg"></span></div>`;
+  };
+  window.bindPriceFeedback = function (el, onResize) {
+    const box = el.querySelector('.price-fb');
+    if (!box) return;
+    const id = box.dataset.case; const msg = box.querySelector('.fb-msg'); const more = box.querySelector('.fb-more');
+    let rating = null;
+    const send = async (actual) => {
+      const res = await window.api.priceFeedback(id, rating, actual).catch((err) => ({ ok: false, error: err.message }));
+      msg.textContent = res && res.ok ? ' Thanks, saved.' : ` ${(res && res.error) || 'Not saved.'}`;
+      if (onResize) onResize();
+    };
+    box.querySelectorAll('[data-fb]').forEach((b) => b.addEventListener('click', () => {
+      rating = b.dataset.fb;
+      box.querySelectorAll('[data-fb]').forEach((x) => x.classList.toggle('on', x === b));
+      if (rating === 'right') { more.classList.add('hidden'); send(''); return; }
+      more.classList.remove('hidden'); msg.textContent = '';
+      const inp = box.querySelector('.fb-actual'); if (inp) inp.focus();
+      if (onResize) onResize();
+    }));
+    const save = () => send(box.querySelector('.fb-actual').value.trim());
+    box.querySelector('.fb-save').addEventListener('click', save);
+    box.querySelector('.fb-actual').addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  };
+
   // the price hotkey (F3): the item's name and its price, nothing else
   window.renderQuickPrice = function (el, r, opts) {
     opts = opts || {};
@@ -142,6 +171,7 @@
     else if (p) body = `<div class="price-answer"><b>${ninjaPrice(p)}</b></div><div class="dim small">${p.stack > 1 ? `stack: ${ninjaPrice(p, true)} · ` : ''}poe.ninja${p.league ? `, ${R.esc(p.league)}` : ''}</div>`;
     else if (t) body = `<div class="price-answer">≈ <b>${R.esc(t.typical)}</b>${window.confHtml(t.confidence)}</div><div class="dim small">${t.range ? `most ${R.esc(t.range)} · ` : ''}${R.esc(t.sellers || t.total)} seller${(t.sellers || t.total) === 1 ? '' : 's'}${t.baits ? ` (${R.esc(t.baits)} far cheaper left out as likely baits)` : ''} · ${R.esc(r.source || 'trade site')}${r.checkedAt ? ` · checked ${R.esc(ago(r.checkedAt))} <button class="link" id="qpRefresh">refresh</button>` : ''}</div>`;
     else body = `<div class="dim">${R.esc(r.error || 'No price found.')}</div>`;
+    if (!r.pending && !p) body += window.priceFeedbackHtml((t && t.caseId) || r.caseId);
     el.innerHTML = `<div class="card price-card quick-price">
         <div class="name ${R.esc((it.rarity || '').toLowerCase())}">${R.esc(it.name || '')}</div>
         ${base ? `<div class="meta">${R.esc(base)}</div>` : ''}
@@ -152,6 +182,7 @@
     if (c) c.addEventListener('click', () => window.api.close());
     const rf = el.querySelector('#qpRefresh');
     if (rf) rf.addEventListener('click', () => { rf.disabled = true; window.api.quickPriceRefresh(); });
+    window.bindPriceFeedback(el, opts.onResize);
   };
   // a gem: what the same gem in your build would do at this level and quality
   const pct = (v) => (v == null || Math.abs(v) < 0.05 ? null : `${v > 0 ? '+' : ''}${v}%`);

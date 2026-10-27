@@ -85,3 +85,8 @@ table.gsk input::placeholder { color: var(--ash); opacity: .7; }
 .map-group { font: 600 11px var(--f-carved); letter-spacing: .08em; text-transform: uppercase; color: var(--gold); margin: 8px 0 2px; }
 button.link.spend-pick.b { font-weight: 700; color: var(--stone); }
 .ribbon.pick { color: #fff; background: linear-gradient(#4a7fb5, #2f5d8a); border-color: #7fb0e0; }
+
+/* your verdict on a price (Too low / About right / Too high) */
+.price-fb { margin-top: 4px; }
+.price-fb .link.on { color: var(--text, inherit); text-decoration: underline; font-weight: 600; }
+.price-fb .fb-actual { width: 6em; padding: 1px 4px; font: inherit; }

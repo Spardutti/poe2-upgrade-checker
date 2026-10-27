@@ -131,19 +131,52 @@ module.exports = function (C) {
   // every listing read (its text and price), so a price that looked wrong can be replayed and the
   // pricing tuned on real checks. Only public trade data: no seller names. Kept under ~5 MB (the
   // older half goes to price-checks.1.jsonl).
+  const caseFile = () => path.join(app.getPath('userData'), 'price-checks.jsonl');
+  function appendCase(obj) {
+    const file = caseFile();
+    let size = 0; try { size = fs.statSync(file).size; } catch (_) { /* new */ }
+    if (size > 5 * 1024 * 1024) { try { fs.renameSync(file, file.replace(/\.jsonl$/, '.1.jsonl')); } catch (_) { /* keep going */ } }
+    fs.appendFileSync(file, JSON.stringify(obj) + '\n');
+  }
+  // -> the check's id (for your verdict on it), or null
   function saveCase(item, league, steps, listings, summary) {
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     try {
-      const file = path.join(app.getPath('userData'), 'price-checks.jsonl');
-      const line = JSON.stringify({
-        at: new Date().toISOString(), game: C.tg(), league, item: item.raw || null, steps,
+      appendCase({
+        id, at: new Date().toISOString(), game: C.tg(), league, item: item.raw || null, steps,
         listings: (listings || []).filter(Boolean).map((x) => ({ price: x.price, priceEx: x.priceEx, indexed: x.indexed, text: x.item && x.item.listingText ? x.item.listingText : null, affixes: x.item && x.item.affixCount != null ? x.item.affixCount : undefined })),
         verdict: summary ? { typicalEx: summary.typicalEx, floorEx: summary.floorEx, range: summary.range, group: summary.group, confidence: summary.confidence, notes: summary.notes } : null,
-      }) + '\n';
-      let size = 0; try { size = fs.statSync(file).size; } catch (_) { /* new */ }
-      if (size > 5 * 1024 * 1024) { try { fs.renameSync(file, file.replace(/\.jsonl$/, '.1.jsonl')); } catch (_) { /* keep going */ } }
-      fs.appendFileSync(file, line);
-    } catch (err) { C.log('price check: could not save the case: ' + err.message); }
+      });
+      return id;
+    } catch (err) { C.log('price check: could not save the case: ' + err.message); return null; }
   }
+
+  // ---------- your verdict on a price ("too low / about right / too high", and what it's worth) ----------
+  // Saved with the check it's about, so the pricing can be measured against what you know
+  // (tools/replay-prices.js). actual: what you typed ("3 div", "250 ex", "40 chaos", "3.5d").
+  function parseActual(text) {
+    const m = String(text || '').trim().toLowerCase().replace(',', '.').match(/^(\d+(?:\.\d+)?)\s*([a-z]*)/);
+    if (!m) return null;
+    const v = Number(m[1]); const u = m[2];
+    const rates = C.store.settings.currencyRates || {};
+    const div = C.store.settings.divineRate;
+    const poe1 = C.tg() === 'poe1'; // prices are counted in exalts (PoE2) or chaos (PoE1)
+    if (!u) return v; // no currency: the game's own unit
+    if (/^(d|div|divs|divine|divines)$/.test(u)) return div ? v * div : null;
+    if (/^(e|ex|exa|exalt|exalts|exalted)$/.test(u)) return poe1 ? (rates.exalted ? v * rates.exalted : null) : v;
+    if (/^(c|ch|chaos)$/.test(u)) return poe1 ? v : rates.chaos ? v * rates.chaos : null;
+    return null;
+  }
+  ipcMain.handle('price:feedback', (_e, caseId, rating, actual) => {
+    if (typeof caseId !== 'string' || !/^[a-z0-9-]{4,40}$/.test(caseId)) return { ok: false };
+    const r = ['low', 'right', 'high'].includes(rating) ? rating : null;
+    const text = typeof actual === 'string' ? actual.slice(0, 40) : '';
+    const actualEx = text ? parseActual(text) : null;
+    if (text && actualEx == null) return { ok: false, error: 'Write it like "3 div", "250 ex" or "40 chaos".' };
+    try { appendCase({ feedback: caseId, at: new Date().toISOString(), rating: r, actual: text || null, actualEx }); } catch (err) { return { ok: false, error: err.message }; }
+    C.log(`price check ${caseId}: you said ${r || '-'}${text ? `, worth ${text}` : ''}`);
+    return { ok: true };
+  });
 
   // ---------- where to spend your divines ----------
   ipcMain.handle('trade:price', C.inGame(async (_e, target, picks) => {
@@ -211,11 +244,22 @@ module.exports = function (C) {
       // just the price: the first 40 listings read, nothing shown, nothing judged
       const rates = { ...(C.store.settings.currencyRates || {}), ...(C.store.settings.divineRate ? { divine: C.store.settings.divineRate } : {}) };
       const raw = r.ids && r.ids.length ? await C.fetchListings(league, r.searchId, r.ids.slice(0, 40), C.tg()) : [];
-      const listings = raw.map((x) => listingLib.summarise(x, item.itemClass, rates, C.G().base));
+      let listings = raw.map((x) => listingLib.summarise(x, item.itemClass, rates, C.G().base));
       const cmp = market ? { item, opts } : mapish && !priceQuery.isTablet(item) && !/unique/i.test(item.rarity || '') ? { item, opts: { ...opts, kind: 'map' } } : null;
-      const summary = priceSummary(listings, league, q.level || 0, cmp);
+      let summary = priceSummary(listings, league, q.level || 0, cmp);
+      // few of the cheapest 40 are like yours: the ones like it are often a little dearer, so 40 more
+      // are read (one more round of the trade site's fetches) before judging
+      if (cmp && summary && summary.group && summary.group !== 'alike' && r.ids.length > 40 && C.sameGame()) {
+        const more = await C.fetchListings(league, r.searchId, r.ids.slice(40, 80), C.tg()).catch((err) => { C.log('price check: could not read more listings: ' + err.message); return []; });
+        if (more.length) {
+          C.log(`price check: only ${summary.group === 'weaker' ? 'weaker' : 'a few'} listings like yours in the first 40: read ${more.length} more`);
+          listings = listings.concat(more.map((x) => listingLib.summarise(x, item.itemClass, rates, C.G().base)));
+          summary = priceSummary(listings, league, q.level || 0, cmp);
+        }
+      }
       logPrices(listings, summary);
-      saveCase(item, league, steps, listings, summary);
+      const caseId = saveCase(item, league, steps, listings, summary);
+      if (summary) summary.caseId = caseId;
       if (summary && summary.typicalEx != null && item.id) C.lastWorth.set(item.id, summary.typicalEx);
       return { ok: true, mode: 'price', total: r.total, league, item: item.name, url: r.url, summary, levelLabel: q.levelLabel, level: q.level };
     }
@@ -228,7 +272,8 @@ module.exports = function (C) {
       Object.defineProperty(C.resultsState.ctx, 'priceCompare', { value: cmp, enumerable: false, writable: true, configurable: true });
       summary = priceSummary(C.resultsState.listings, league, q.level || 0, cmp);
       logPrices(C.resultsState.listings, summary);
-      saveCase(item, league, steps, C.resultsState.listings, summary);
+      const caseId = saveCase(item, league, steps, C.resultsState.listings, summary);
+      if (summary) summary.caseId = caseId;
       C.resultsState.ctx.priceSummary = summary;
       C.resultsState.ctx.priceLeague = league;
       C.resultsState.ctx.priceLevel = q.level || 0;
