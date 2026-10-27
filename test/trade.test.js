@@ -91,7 +91,7 @@ test('budget price filter', () => {
   T.applyBudget(body, { max: 20, currency: 'divine' });
   assert.deepEqual(body.query.filters.trade_filters.filters.price, { max: 20, option: 'divine' });
   assert.equal(body.query.filters.type_filters.filters.category.option, 'armour.helmet');
-  assert.equal(T.budgetLabel({ max: 20, currency: 'divine', divineRate: 150 }), '≤ 20 div');
+  assert.equal(T.budgetLabel({ max: 20, currency: 'divine', divineRate: 150 }), '≤ 20 div (div listings only)');
 });
 
 test('budget with a minimum price', () => {
@@ -100,8 +100,8 @@ test('budget with a minimum price', () => {
   assert.deepEqual(T.priceFilter({ min: 5, currency: 'divine' }), { min: 5, option: 'divine' });
   assert.deepEqual(T.priceFilter({ min: 50, max: '', currency: 'exalted' }), { min: 50, option: 'exalted' });
   assert.deepEqual(T.priceFilter({ min: 30, max: 10, currency: 'chaos' }), { min: 10, max: 30, option: 'chaos' });
-  assert.equal(T.budgetLabel({ min: 5, max: 20, currency: 'divine', divineRate: 150 }), '5–20 div');
-  assert.equal(T.budgetLabel({ min: 5, currency: 'divine', divineRate: 150 }), '≥ 5 div');
+  assert.equal(T.budgetLabel({ min: 5, max: 20, currency: 'divine', divineRate: 150 }), '5–20 div (div listings only)');
+  assert.equal(T.budgetLabel({ min: 5, currency: 'divine', divineRate: 150 }), '≥ 5 div (div listings only)');
   assert.equal(T.budgetLabel({ min: '', max: '', currency: 'divine' }), null);
 });
 
@@ -464,7 +464,7 @@ test('leveling mode: a level cap goes into the search and the label', () => {
   const body = { query: { filters: {} } };
   T.applyBudget(body, { maxLevel: 34 });
   assert.equal(body.query.filters.req_filters.filters.lvl.max, 34);
-  assert.equal(T.budgetLabel({ max: 20, currency: 'divine', divineRate: 150, maxLevel: 34 }), '≤ 20 div · lvl ≤ 34');
+  assert.equal(T.budgetLabel({ max: 20, currency: 'divine', divineRate: 150, maxLevel: 34 }), '≤ 20 div (div listings only) · lvl ≤ 34');
   assert.equal(T.budgetLabel({ maxLevel: 34 }), 'lvl ≤ 34');
 });
 

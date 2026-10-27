@@ -129,7 +129,7 @@ const ELDRITCH_LINE = /^(Searing Exarch|Eater of Worlds) Item$/;
 // PoE1-only lines that say something about the item and are never mods.
 const POE1_FLAG_LINE = /^(Synthesised Item|Split|Foil Unique(?: \(.*\))?|Abyss)$/;
 // Help text at the bottom of jewels, flasks etc.
-const HELP_LINE = /^(Place into an? |Right[ -]click to |Can only hold charges |Used automatically when condition is met)/i;
+const HELP_LINE = /^(Place into an? |Right[ -]click to |Can only hold charges |Used automatically when condition is met|Can be used in (?:a|a personal) Map Device)/i;
 // PoE1/PoE2 weapon property blocks start with the weapon type ("Claw", "Two Handed Sword")
 const WEAPON_TYPE_LINE = /^(Bow|Claw|Dagger|Rune Dagger|Wand|Sceptre|Staff|Warstaff|Quarterstaff|Crossbow|Spear|Flail|Fishing Rod|Thrusting One Handed Sword|(?:One|Two) Hand(?:ed)? (?:Sword|Axe|Mace))$/;
 // Flask / charm base properties
@@ -288,6 +288,11 @@ function parseItem(raw) {
     let inReminder = false;
     // a flask's (or charm's) property block: charges, duration, recovery and the flask's own buff
     const flaskBlock = block.some((l) => /^(Currently has \d+ Charges?|Consumes \d+ of \d+ Charges? on use)$/i.test(l));
+    let hasMod = null;
+    const blockHasMod = () => {
+      if (hasMod == null) hasMod = block.some((l) => !l.startsWith('{') && !l.startsWith('(') && !!modToStat(l.replace(/\((-?\d+(?:\.\d+)?)[-–](-?\d+(?:\.\d+)?)\)/g, '').replace(TAG, '').trim()));
+      return hasMod;
+    };
     block.forEach((line) => {
       const rr = line.match(/(-?\d+(?:\.\d+)?)\((-?\d+(?:\.\d+)?)[-–](-?\d+(?:\.\d+)?)\)/);
       lineRoll = rr && Number(rr[3]) !== Number(rr[2]) ? Math.max(0, Math.min(100, Math.round(((Number(rr[1]) - Number(rr[2])) / (Number(rr[3]) - Number(rr[2]))) * 100))) : null;
@@ -384,10 +389,13 @@ function parseItem(raw) {
       if (!stat) {
         // flavour text / keyword mods with no numbers - keep a flag stat for keyword mods
         if (/^Veiled (Prefix|Suffix)$/.test(modText)) item.veiled = true;
-        if (/^(maps|waystones)$/i.test(item.itemClass || '') || (block.length <= 6 && item.rarity !== 'Unique')) {
+        // a unique's keyword mods ("Cannot be Ignited") sit in the block with its other mods; its
+        // flavour text is a block of its own, with no numbers in it
+        if (/^(maps|waystones|tablets?|precursor tablets?)$/i.test(item.itemClass || '') || (block.length <= 6 && item.rarity !== 'Unique') || (item.rarity === 'Unique' && blockHasMod())) {
           // help text, the weapon-type line and "Fractured Item" are shown as info, not as mods
           const info = HELP_LINE.test(modText) || WEAPON_TYPE_LINE.test(modText) || /^Fractured Item$/i.test(modText);
-          item.lines.push({ text: line, key: null, value: null, tag: info ? 'info' : tag });
+          // kw: the mod's own words, for matching it to a trade stat (it has no number to make a key)
+          item.lines.push({ text: line, key: null, value: null, tag: info ? 'info' : tag, ...(info ? {} : { kw: modText }) });
         }
         return;
       }

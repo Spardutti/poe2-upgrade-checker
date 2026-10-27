@@ -80,7 +80,11 @@ function priceLabel(budget, game) {
   if (min != null && max != null && min > max) [min, max] = [max, min];
   const range = min != null && max != null ? `${min}–${max} ${name}` : max != null ? `≤ ${max} ${name}` : `≥ ${min} ${name}`;
   if (!price.option) return range; // PoE1: any currency, counted in chaos
-  return range + (price.option && (price.option !== games.gameOf(game).base || games.gameOf(game).id === 'poe1') && price.option !== 'divine' ? ` (${name} listings only)` : '');
+  // the trade site takes one currency per search (its own "equivalent" uses a rate far from the
+  // market's), so the label says which listings are in it: a 2 div budget searches exalt-priced
+  // listings, a 10 div one divine-priced listings
+  const short = { exalted: 'ex', divine: 'div', chaos: 'chaos' }[price.option] || price.option;
+  return `${range} (${short} listings only)`;
 }
 
 module.exports = { priceFilter, applyBudget, budgetLabel };

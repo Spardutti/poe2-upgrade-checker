@@ -93,7 +93,7 @@ function renderGearSummary() {
     <span class="note" id="gearSumMsg"></span></div>`;
   document.querySelectorAll('[data-quick2]').forEach((b) => b.addEventListener('click', async () => {
     $('#gearSumMsg').textContent = ` Searching upgrades for ${b.dataset.quick2}…`;
-    window.showSearchResult($('#gearSumMsg'), await window.api.quickFind(b.dataset.quick2, 'upgrade'));
+    window.showSearchResult($('#gearSumMsg'), await window.api.quickFind(b.dataset.quick2, 'upgrade').catch((err) => ({ ok: false, error: (err && err.message) || String(err) })));
   }));
 }
 

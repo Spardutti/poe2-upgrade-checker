@@ -155,9 +155,11 @@ async function runFind(fn, msgSel) {
   msg.textContent = 'Searching the trade site…';
   const btns = [...document.querySelectorAll('.find-actions button, #findSearch')];
   btns.forEach((b) => { b.disabled = true; });
-  try { window.showSearchResult(msg, await fn()); } finally {
+  let res;
+  try { res = await fn(); } catch (err) { res = { ok: false, error: (err && err.message) || String(err) }; } finally {
     btns.forEach((b) => { b.disabled = false; });
   }
+  window.showSearchResult(msg, res);
 }
 $('#findSearch').addEventListener('click', () => runFind(() => {
   const picks = findRows.filter((r) => r.keep).map((r) => ({ key: r.key, min: r.min, max: r.max, source: r.source, id: r.id, idType: r.idType }));

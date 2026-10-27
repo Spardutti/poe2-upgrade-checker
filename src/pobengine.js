@@ -47,7 +47,7 @@ function createEngine({ log = () => {}, appPath, resourcesPath, packaged, game =
   function available() {
     if (isAvailable) return true;
     const h = hostCommand();
-    isAvailable = !!(h && fs.existsSync(h.cmd) && fs.existsSync(path.join(srcDir, 'HeadlessWrapper.lua')) && fs.existsSync(serverLua));
+    isAvailable = !!(h && fs.existsSync(h.cmd) && fs.existsSync(path.join(srcDir, 'HeadlessWrapper.lua')) && fs.existsSync(serverLua) && fs.existsSync(path.join(path.dirname(serverLua), 'server-checks.lua')));
     return isAvailable;
   }
 

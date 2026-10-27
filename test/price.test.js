@@ -88,10 +88,25 @@ test('price confidence: plenty of close prices is solid; few, spread or loosened
   assert.strictEqual(confidence(solid, 0).grade, 'solid');
   assert.strictEqual(confidence(solid, 1).grade, 'rough');
   assert.strictEqual(confidence(solid, 2).grade, 'guess');
-  const spread = priceStats([L(100), L(150), L(200), L(300), L(450), L(600), L(800), L(900)], { now: NOW });
+  const spread = priceStats([L(150), L(200), L(250), L(300), L(450), L(600), L(800), L(900)], { now: NOW });
   assert.strictEqual(confidence(spread, 0).grade, 'rough');
   assert.match(confidence(spread, 0).why, /spread/);
   const few = priceStats([L(100), L(110), L(120)], { now: NOW });
   assert.strictEqual(confidence(few, 0).grade, 'guess');
   assert.match(confidence(few, 0).why, /only 3 sellers/);
+});
+
+test('price: a cheap market under a lot of overpriced listings is the price, not baits', () => {
+  // the Rapture Circle case: a few sellers at 30-90 ex, then 20 greedy listings at 2-10 div
+  const greedy = Array.from({ length: 20 }, (_, i) => L(1400 + i * 300));
+  const s = priceStats([L(30), L(50), L(65), L(90), ...greedy], { now: NOW });
+  assert.strictEqual(s.baits, 0);
+  assert.strictEqual(s.cheapestEx, 30);
+  assert.ok(s.typicalEx < 100, `typical ${s.typicalEx}`);
+});
+
+test('price: one or two listings far under the rest are still baits', () => {
+  const s = priceStats([L(5), L(8), ...market(300, 10)], { now: NOW });
+  assert.strictEqual(s.baits, 2);
+  assert.strictEqual(s.cheapestEx, 300);
 });

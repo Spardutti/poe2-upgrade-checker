@@ -169,11 +169,11 @@ function render() {
   }));
   document.querySelectorAll('[data-hideout]').forEach((b) => b.addEventListener('click', async () => {
     b.disabled = true; b.textContent = 'Asking the trade site…';
-    let r = await window.api.hideout(b.dataset.hideout);
+    let r = await window.api.hideout(b.dataset.hideout).catch((err) => ({ ok: false, error: (err && err.message) || String(err) }));
     if (r && r.needSignIn) {
       b.textContent = 'Sign in to pathofexile.com…';
-      const s = await window.api.signIn();
-      if (s && s.signedIn) { data.signedIn = true; b.textContent = 'Asking the trade site…'; r = await window.api.hideout(b.dataset.hideout); }
+      const s = await window.api.signIn().catch(() => null);
+      if (s && s.signedIn) { data.signedIn = true; b.textContent = 'Asking the trade site…'; r = await window.api.hideout(b.dataset.hideout).catch((err) => ({ ok: false, error: (err && err.message) || String(err) })); }
       else r = { ok: false, error: 'Not signed in – click "on trade site" to buy it from your browser.' };
     }
     b.disabled = false;
@@ -215,7 +215,7 @@ $('#save').addEventListener('click', async () => {
 });
 $('#more').addEventListener('click', async () => {
   $('#more').disabled = true; $('#moreMsg').textContent = 'Loading…';
-  const d = await window.api.resultsMore();
+  const d = await window.api.resultsMore().catch((err) => ({ error: (err && err.message) || String(err) }));
   $('#more').disabled = false;
   if (d && d.error) { $('#moreMsg').textContent = d.error; return; }
   $('#moreMsg').textContent = '';

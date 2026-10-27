@@ -118,7 +118,7 @@
       const msg = el.querySelector('#findMsg');
       b.disabled = true; msg.innerHTML = '<span class="spinner"></span> Checking prices…';
       if (opts && opts.onResize) opts.onResize();
-      const res = await window.api.priceCheck(it.id ? { itemId: it.id } : '__last');
+      const res = await window.api.priceCheck(it.id ? { itemId: it.id } : '__last').catch((err) => ({ ok: false, error: (err && err.message) || String(err) }));
       b.disabled = false;
       window.showSearchResult(msg, res);
       if (opts && opts.onResize) opts.onResize();
@@ -140,7 +140,7 @@
     let body;
     if (r.pending) body = '<div class="dim"><span class="spinner"></span> Checking the price…</div>';
     else if (p) body = `<div class="price-answer"><b>${ninjaPrice(p)}</b></div><div class="dim small">${p.stack > 1 ? `stack: ${ninjaPrice(p, true)} · ` : ''}poe.ninja${p.league ? `, ${R.esc(p.league)}` : ''}</div>`;
-    else if (t) body = `<div class="price-answer">≈ <b>${R.esc(t.typical)}</b>${window.confHtml(t.confidence)}</div><div class="dim small">${t.range ? `most ${R.esc(t.range)} · ` : ''}${R.esc(t.sellers || t.total)} seller${(t.sellers || t.total) === 1 ? '' : 's'} · ${R.esc(r.source || 'trade site')}${r.checkedAt ? ` · checked ${R.esc(ago(r.checkedAt))} <button class="link" id="qpRefresh">refresh</button>` : ''}</div>`;
+    else if (t) body = `<div class="price-answer">≈ <b>${R.esc(t.typical)}</b>${window.confHtml(t.confidence)}</div><div class="dim small">${t.range ? `most ${R.esc(t.range)} · ` : ''}${R.esc(t.sellers || t.total)} seller${(t.sellers || t.total) === 1 ? '' : 's'}${t.baits ? ` (${R.esc(t.baits)} far cheaper left out as likely baits)` : ''} · ${R.esc(r.source || 'trade site')}${r.checkedAt ? ` · checked ${R.esc(ago(r.checkedAt))} <button class="link" id="qpRefresh">refresh</button>` : ''}</div>`;
     else body = `<div class="dim">${R.esc(r.error || 'No price found.')}</div>`;
     el.innerHTML = `<div class="card price-card quick-price">
         <div class="name ${R.esc((it.rarity || '').toLowerCase())}">${R.esc(it.name || '')}</div>

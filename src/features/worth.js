@@ -7,6 +7,7 @@ const listingLib = require('../core/listing');
 const priceLib = require('../core/price');
 const priceQuery = require('../core/pricequery');
 const ninjaLib = require('../core/ninja');
+const comparables = require('../core/comparables');
 
 module.exports = function (C) {
   // ---------- price check ("What's it worth?") ----------
@@ -28,11 +29,22 @@ module.exports = function (C) {
   }
 
   // the price verdict, with everything that makes it less certain said out loud
-  function priceSummary(listings, league, level = 0) {
-    const s = priceLib.priceStats(listings);
-    if (!s) return null;
+  // cmp: { item, opts } for a market search (rare and magic gear): the price comes from the listings
+  // like that item (comparables.js), not from better items that also matched the search
+  function priceSummary(listings, league, level = 0, cmp = null) {
     const pl = (k, one, many) => `${k} ${k === 1 ? one : many}`;
     const notes = [];
+    let group = null;
+    if (cmp && cmp.item) {
+      group = comparables.pick(cmp.item, listings, cmp.opts || {}, priceQuery.MIN);
+      const better = (listings || []).filter((x) => x && x.diff && x.diff.extra.length).length;
+      if (group.group === 'alike' && group.alike < (listings || []).length) notes.push(`priced on the ${group.alike} listings like yours; ${better} with more or bigger mods than yours left out`);
+      else if (group.group === 'close') notes.push(`few listings are just like yours: priced on the ${group.close} that differ by one stat`);
+      else if (group.group === 'all' && better) notes.push(`most listings have more or bigger mods than yours, so this may be high`);
+      listings = group.listings;
+    }
+    const s = priceLib.priceStats(listings);
+    if (!s) return null;
     const rate = C.store.settings.divineRate;
     if (s.unconvertible) notes.push(`${pl(s.unconvertible, 'listing is', 'listings are')} priced in ${rate ? 'a currency' : 'divines or a currency'} without a known ${C.G().base} rate${rate ? '' : " (poe.ninja couldn't be reached)"}, so ${s.unconvertible === 1 ? "it's" : "they're"} left out`);
     if (rate && C.store.settings.divineRateAt && Date.now() - C.store.settings.divineRateAt > 6 * C.HOUR) notes.push(`the divine rate (${rate} ${C.G().baseShort}) is ${Math.round((Date.now() - C.store.settings.divineRateAt) / C.HOUR)} hours old`);
@@ -43,7 +55,7 @@ module.exports = function (C) {
     if (s.noPrice) notes.push(`${s.noPrice} unpriced`);
     if (s.spread && !s.few) notes.push('prices vary a lot');
     const out = {
-      count: s.count, sellers: s.sellers, total: s.total, notes,
+      count: s.count, sellers: s.sellers, total: s.total, notes, baits: s.baits || 0, group: group ? group.group : null,
       cheapestEx: s.cheapestEx == null ? null : s.cheapestEx, typicalEx: null, few: !!s.few, unreliable: s.unreliable,
       cheapest: s.cheapestEx == null ? null : fmtEx(s.cheapestEx), typical: null, range: null,
     };
@@ -55,7 +67,14 @@ module.exports = function (C) {
       out.typicalEx = s.typicalEx; out.typical = fmtEx(s.typicalEx);
       out.range = s.lowEx !== s.highEx ? `${fmtEx(s.lowEx)} – ${fmtEx(s.highEx)}` : null;
       out.verdict = `Worth about ${out.typical}${out.range ? ` (most ${out.range})` : ''}.`;
-      out.confidence = priceLib.confidence(s, level);
+      // listings just like yours from a looser search are still close matches: only the age of the
+      // listings (a week, two) makes it less sure
+      out.confidence = priceLib.confidence(s, group && group.group === 'alike' ? Math.min(level, 1) : level);
+      // priced from listings that aren't quite like yours: never "solid"
+      if (out.confidence && group && group.group !== 'alike') {
+        const why = group.group === 'close' ? 'listings differ a little from yours' : 'listings have more than yours';
+        out.confidence = { grade: out.confidence.grade === 'solid' ? 'rough' : out.confidence.grade === 'rough' && group.group === 'all' ? 'guess' : out.confidence.grade, why: [out.confidence.why, why].filter(Boolean).join(', ') };
+      }
       // selling it: a little under the cheapest comparable listing (not when the price is a guess)
       if (out.confidence && out.confidence.grade !== 'guess') {
         const rate = C.store.settings.divineRate;
@@ -63,6 +82,37 @@ module.exports = function (C) {
       }
     }
     return out;
+  }
+
+  // ---------- the price check's trace in the log ----------
+  // Enough to work out afterwards why a price came out as it did: what was searched and what was
+  // left out (and why), how far the search was loosened, every listing price read (with the ones
+  // dropped as baits or as stale marked), and the verdict with its confidence. No sellers' names.
+  const short = (x) => (x == null ? '?' : x >= 100 ? String(Math.round(x)) : String(Math.round(x * 10) / 10));
+  function logQuery(q, level, total, want) {
+    const parts = [`price L${level}: ${total == null ? 'search failed' : `${total} listed`} (want ${want})`, `searched on ${q.need} of ${q.total}: ${(q.labels || []).join('; ') || '-'}`];
+    if (level === 0 && q.skipped && q.skipped.length) parts.push(`left out: ${q.skipped.join('; ')}`);
+    if (level === 0 && q.unmatched && q.unmatched.length) parts.push(`not on the trade site: ${q.unmatched.join('; ')}`);
+    C.log(parts.join(' | '));
+  }
+  function logPrices(listings, summary) {
+    const base = C.G().baseShort;
+    const all = (listings || []).filter(Boolean);
+    const g = summary && summary.group;
+    const inGroup = (x) => !g || g === 'all' || (x.diff && (g === 'alike' ? !x.diff.extra.length && !x.diff.missing.length : x.diff.extra.length + x.diff.missing.length <= 1));
+    const s = priceLib.priceStats(all.filter(inGroup));
+    const baits = (s && s.baitPrices) || []; const stale = (s && s.stalePrices) || [];
+    const marks = (ex) => { let i = baits.indexOf(ex); if (i >= 0) { baits.splice(i, 1); return ' [bait]'; } i = stale.indexOf(ex); if (i >= 0) { stale.splice(i, 1); return ' [stale]'; } return ''; };
+    const diffText = (x) => (!x.diff ? '' : [...x.diff.extra.map((e) => `+${e}`), ...x.diff.missing.map((m) => `-${m}`)].join(', '));
+    const rows = all.slice().sort((a, b) => (a.priceEx == null) - (b.priceEx == null) || (a.priceEx || 0) - (b.priceEx || 0)).slice(0, 25).map((x) => {
+      const p = !x.price ? 'unpriced' : x.priceEx == null ? `${x.price.amount} ${x.price.currency} (no rate)` : `${x.price.currency === C.G().base ? '' : `${x.price.amount} ${x.price.currency}=`}${short(x.priceEx)}${inGroup(x) ? marks(x.priceEx) : ' [not like yours]'}`;
+      const d = diffText(x);
+      return d ? `${p} {${d}}` : p;
+    });
+    if (rows.length) C.log(`price listings (${base}, cheapest first, ${all.length} read${g ? `, priced on: ${g}` : ''}): ${rows.join(' | ')}`);
+    if (!summary) { C.log('price verdict: none (no priced listings)'); return; }
+    const conf = summary.confidence ? `${summary.confidence.grade}${summary.confidence.why ? ` (${summary.confidence.why})` : ''}` : '-';
+    C.log(`price verdict: ${summary.typical ? `≈ ${summary.typical}` : summary.verdict} | most ${summary.range || '-'} | ${summary.count} priced sellers of ${summary.sellers} | confidence ${conf}${summary.notes.length ? ` | ${summary.notes.join('; ')}` : ''}`);
   }
 
   // ---------- where to spend your divines ----------
@@ -92,8 +142,15 @@ module.exports = function (C) {
     const mapish = !chosen && priceQuery.usesMapPriceQuery(item);
     const market = !chosen && !mapish && priceQuery.usesPriceQuery(item);
     const levels = chosen ? 1 : mapish ? priceQuery.MAP_LEVELS.length : market ? priceQuery.LEVELS.length : 3;
-    // the closest search with at least a few sellers wins: looser matches are different (usually cheaper) items
-    const enough = market || mapish ? priceQuery.MIN : 3;
+    // the closest search with enough listings to judge wins. A market search goes on loosening until
+    // there are ENOUGH (three asking prices from three days is too few to price on: the Eagle
+    // Splinter jewel came out at 5 div from 2, 5 and 13 div); the looser matches that aren't like
+    // your item are then left out again by comparables.js, so a looser search adds evidence
+    // without pricing yours on different items
+    const enough = market ? priceQuery.ENOUGH : mapish ? priceQuery.MIN : 3;
+    C.log(`price check: ${item.itemClass || '?'} "${item.name || '?'}"${item.baseType && item.baseType !== item.name ? ` (${item.baseType})` : ''}, ${item.rarity || '?'}${item.corrupted ? ', corrupted' : ''} – ${chosen ? 'the stats you chose' : mapish ? 'map/waystone/tablet search' : market ? 'market search' : 'like-for-like search'}, league ${league}`);
+    // the item itself, so the same check can be run again from the log
+    if (item.raw) C.log(`price item: ${String(item.raw).replace(/\r?\n/g, ' / ').slice(0, 1500)}`);
     for (let level = 0; level < levels; level++) {
       q = mapish ? priceQuery.buildMapPriceQuery(item, { ...opts, level }) : market ? priceQuery.buildPriceQuery(item, { ...opts, level }) : trade.buildSimilarQuery(item, { ...opts, level });
       if (chosen) {
@@ -106,6 +163,7 @@ module.exports = function (C) {
       }
       q.body.sort = { price: 'asc' };
       r = await C.runSearch(league, q.body, chosen ? 'price chosen' : `price L${level}`);
+      logQuery(q, level, r && r.ok ? r.total : null, enough);
       if (!r.ok || r.total == null || r.total >= enough) break;
       if (r.near) break;
       await new Promise((res) => setTimeout(res, 700));
@@ -122,7 +180,9 @@ module.exports = function (C) {
       const rates = { ...(C.store.settings.currencyRates || {}), ...(C.store.settings.divineRate ? { divine: C.store.settings.divineRate } : {}) };
       const raw = r.ids && r.ids.length ? await C.fetchListings(league, r.searchId, r.ids.slice(0, 40), C.tg()) : [];
       const listings = raw.map((x) => listingLib.summarise(x, item.itemClass, rates, C.G().base));
-      const summary = priceSummary(listings, league, q.level || 0);
+      const cmp = market ? { item, opts } : null;
+      const summary = priceSummary(listings, league, q.level || 0, cmp);
+      logPrices(listings, summary);
       if (summary && summary.typicalEx != null && item.id) C.lastWorth.set(item.id, summary.typicalEx);
       return { ok: true, mode: 'price', total: r.total, league, item: item.name, url: r.url, summary, levelLabel: q.levelLabel, level: q.level };
     }
@@ -131,7 +191,10 @@ module.exports = function (C) {
     if (shown === 'superseded') {
       // you searched again or changed game while this loaded: nothing to show, no browser either
     } else if (shown) {
-      summary = priceSummary(C.resultsState.listings, league, q.level || 0);
+      const cmp = market ? { item, opts } : null;
+      Object.defineProperty(C.resultsState.ctx, 'priceCompare', { value: cmp, enumerable: false, writable: true, configurable: true });
+      summary = priceSummary(C.resultsState.listings, league, q.level || 0, cmp);
+      logPrices(C.resultsState.listings, summary);
       C.resultsState.ctx.priceSummary = summary;
       C.resultsState.ctx.priceLeague = league;
       C.resultsState.ctx.priceLevel = q.level || 0;

@@ -37,9 +37,20 @@ module.exports = function (C) {
       return f.startsWith(UI_DIR + path.sep);
     } catch (_) { return false; }
   }
-  const POE_HOSTS = /(^|\.)(pathofexile\.com|steamcommunity\.com|steampowered\.com|epicgames\.com|live\.com|microsoftonline\.com|xbox\.com|playstation\.com|sony\.com|sonyentertainmentnetwork\.com|google\.com|apple\.com)$/i;
+  // pathofexile.com and the sign-in pages of the accounts it (and Epic) can sign in with. Only the
+  // sign-in hosts of the big sites: all of google.com or live.com would let a link or redirect show
+  // someone's Google Form or hosted page in a window with no address bar.
+  const POE_HOSTS = /(^|\.)(pathofexile\.com|steamcommunity\.com|epicgames\.com|sonyentertainmentnetwork\.com|playstation\.com)$/i;
+  const LOGIN_HOSTS = new Set(['login.steampowered.com', 'store.steampowered.com', 'login.live.com', 'account.live.com', 'login.microsoftonline.com',
+    'login.xbox.com', 'account.xbox.com', 'www.xbox.com', 'xbox.com', 'accounts.google.com', 'appleid.apple.com', 'idmsa.apple.com']);
+  const SONY_LOGIN = /(^|\.)account\.sony\.com$/i;
   function isPoeLoginUrl(url) {
-    try { const u = new URL(url); return u.protocol === 'https:' && POE_HOSTS.test(u.hostname); } catch (_) { return false; }
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'https:') return false;
+      const h = u.hostname.toLowerCase();
+      return POE_HOSTS.test(h) || LOGIN_HOSTS.has(h) || SONY_LOGIN.test(h);
+    } catch (_) { return false; }
   }
   const PARTITION_POE = 'persist:poe'; // = POE_PARTITION below
   function guardContents(wc) {
@@ -47,10 +58,17 @@ module.exports = function (C) {
     wc.on('will-navigate', (e, url) => {
       if (poe() ? isPoeLoginUrl(url) : isAppPage(url)) return;
       e.preventDefault();
+      if (poe()) { try { C.log(`sign-in window: ${new URL(url).hostname} opened in your browser instead (not a sign-in host)`); } catch (_) { /* ignore */ } }
       // a link the player clicked in the (visible) sign-in window: their browser, not this app
       if (poe() && /^https:\/\//i.test(url)) { try { const w = BrowserWindow.fromWebContents(wc); if (w && w.isVisible()) shell.openExternal(url); } catch (_) { /* ignore */ } }
     });
-    wc.on('will-redirect', (e, url) => { if (poe() ? !isPoeLoginUrl(url) && !/^https:\/\//i.test(url) : !isAppPage(url)) e.preventDefault(); });
+    // a redirect in the sign-in window goes only to those hosts too (logged when refused, so a
+    // sign-in that goes through another site shows up in the log)
+    wc.on('will-redirect', (e, url) => {
+      if (poe() ? isPoeLoginUrl(url) : isAppPage(url)) return;
+      e.preventDefault();
+      if (poe()) { try { C.log(`sign-in window: redirect to ${new URL(url).hostname} refused (not a sign-in host)`); } catch (_) { /* ignore */ } }
+    });
     wc.setWindowOpenHandler(({ url }) => {
       if (poe() && isPoeLoginUrl(url)) wc.loadURL(url); // a sign-in provider opening in a new window: same window instead
       return { action: 'deny' };

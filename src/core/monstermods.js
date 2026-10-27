@@ -15,7 +15,8 @@ const num = (s) => Number(String(s).replace(/[^\d.-]/g, ''));
 // each rule: a pattern for the mod text (PoE2 wording first, PoE1 where it differs) -> what it adds
 const RULES = [
   // extra damage of a type ("Monsters deal 30% of Damage as Extra Fire")
-  [/^Monsters (?:deal|gain) (\d+)% of (?:their )?(?:Physical )?Damage as Extra (Fire|Cold|Lightning|Chaos)/i, (m) => ({ kind: 'hit', mods: [{ name: `DamageGainAs${el(m[2])}`, type: 'BASE', value: num(m[1]) }] })],
+  // (only their physical damage: "gain 20% of their Physical Damage as Extra Chaos" is a smaller thing)
+  [/^Monsters (?:deal|gain) (\d+)% of (?:their )?(Physical )?Damage as Extra (Fire|Cold|Lightning|Chaos)/i, (m) => ({ kind: 'hit', mods: [{ name: `${m[2] ? 'Physical' : ''}DamageGainAs${el(m[3])}`, type: 'BASE', value: num(m[1]) }] })],
   [/^Monsters deal (\d+)% extra Physical Damage as (Fire|Cold|Lightning|Chaos)/i, (m) => ({ kind: 'hit', mods: [{ name: `PhysicalDamageGainAs${el(m[2])}`, type: 'BASE', value: num(m[1]) }] })],
   // more damage
   [/^(\d+)% (increased|more) Monster Damage/i, (m) => ({ kind: 'hit', mods: [{ name: 'Damage', type: /more/i.test(m[2]) ? 'MORE' : 'INC', value: num(m[1]) }] })],
@@ -43,9 +44,11 @@ const RULES = [
   [/^Monsters have \+?(\d+)% to all Elemental Resistances/i, (m) => ({ kind: 'tough', mods: [{ name: 'ElementalResist', type: 'BASE', value: num(m[1]) }] })],
   [/^\+?(\d+)% (?:to )?Monster Chaos Resistance/i, (m) => ({ kind: 'tough', mods: [{ name: 'ChaosResist', type: 'BASE', value: num(m[1]) }] })],
   [/^\+?(\d+)% Monster Physical Damage Reduction/i, (m) => ({ kind: 'tough', mods: [{ name: 'PhysicalDamageReduction', type: 'BASE', value: num(m[1]) }] })],
+  // the combined wordings first: "increased Armour, Evasion and Energy Shield" is all three, not just Armour
+  [/^Monsters have (\d+)% increased Armour, Evasion and Energy Shield/i, (m) => ({ kind: 'tough', mods: ['Armour', 'Evasion', 'EnergyShield'].map((name) => ({ name, type: 'INC', value: num(m[1]) })) })],
+  [/^Monsters have (\d+)% increased (Armour|Evasion(?: Rating)?|Energy Shield) and (Armour|Evasion(?: Rating)?|Energy Shield)\b/i, (m) => ({ kind: 'tough', mods: [m[2], m[3]].map((w) => ({ name: /armour/i.test(w) ? 'Armour' : /evasion/i.test(w) ? 'Evasion' : 'EnergyShield', type: 'INC', value: num(m[1]) })) })],
   [/^Monsters have (\d+)% increased Armour/i, (m) => ({ kind: 'tough', mods: [{ name: 'Armour', type: 'INC', value: num(m[1]) }] })],
   [/^Monsters have (\d+)% increased Evasion/i, (m) => ({ kind: 'tough', mods: [{ name: 'Evasion', type: 'INC', value: num(m[1]) }] })],
-  [/^Monsters have (\d+)% increased Armour, Evasion and Energy Shield/i, (m) => ({ kind: 'tough', mods: [{ name: 'Armour', type: 'INC', value: num(m[1]) }, { name: 'Evasion', type: 'INC', value: num(m[1]) }] })],
   // your crits do less to them
   [/^Monsters take (\d+)% reduced Extra Damage from Critical Hits/i, (m) => ({ kind: 'tough', mods: [{ name: 'SelfCritMultiplier', type: 'INC', value: -num(m[1]) }] })],
   // energy shield on top of life: more to chew through, like more life

@@ -17,8 +17,35 @@ $('#pobLinkFile').addEventListener('click', async () => {
   if (r.ok) { await load(); renderPob(false); }
 });
 // the linked build (pobb.in or a PoB file): read it again, or stop following it
+// what you've typed in the skills table but not applied yet: the page redraws whenever a setting
+// changes (an account check, a linked build file read again), and that mustn't wipe it
+function guideDraft() {
+  const box = $('#guideSkills');
+  if (!box || box.dataset.dirty !== '1') return null;
+  const d = { rows: {}, level: $('#gskLevel').value, levelN: $('#gskLevelN').value, q: $('#gskQ').value };
+  box.querySelectorAll('tr[data-gid]').forEach((tr) => {
+    d.rows[tr.dataset.gid] = { lv: tr.querySelector('.gsk-lv').value, q: tr.querySelector('.gsk-q').value, main: tr.querySelector('input[name=gskMain]').checked, full: tr.querySelector('.gsk-full').checked };
+  });
+  return d;
+}
+function restoreGuideDraft(d) {
+  const box = $('#guideSkills');
+  if (!d || !box) return;
+  const rows = [...box.querySelectorAll('tr[data-gid]')];
+  if (rows.length !== Object.keys(d.rows).length || rows.some((tr) => !d.rows[tr.dataset.gid])) return; // another guide or stage: its own skills
+  for (const tr of rows) {
+    const r = d.rows[tr.dataset.gid];
+    tr.querySelector('.gsk-lv').value = r.lv; tr.querySelector('.gsk-q').value = r.q;
+    tr.querySelector('input[name=gskMain]').checked = r.main;
+    const cb = tr.querySelector('.gsk-full'); cb.checked = r.full; cb.disabled = r.main;
+  }
+  $('#gskLevel').value = d.level; $('#gskLevelN').value = d.levelN; $('#gskQ').value = d.q;
+  $('#gskLevelN').classList.toggle('hidden', d.level !== 'n');
+  box.dataset.dirty = '1';
+}
 async function renderPobSource() {
   const el = $('#pobSource');
+  const draft = guideDraft();
   const src = await window.api.pobSource();
   if (!src) { el.innerHTML = ''; return; }
   const when = src.at ? ` · read ${new Date(src.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : '';
@@ -36,6 +63,7 @@ async function renderPobSource() {
       : `From <b>${esc(src.name.replace(/^https?:\/\//, ''))}</b>${when}.`)
     + ` <button class="link" id="pobSyncNow">Update now</button> <button class="link" id="pobUnlink">Unlink</button>${stageHtml}${guideSkillsHtml(src)}`;
   bindGuideSkills(src);
+  restoreGuideDraft(draft);
   const stg = $('#pobStage');
   if (stg) stg.addEventListener('change', async () => {
     $('#pobMsg').textContent = 'Building that stage…';
@@ -78,6 +106,8 @@ function bindGuideSkills(src) {
   const box = $('#guideSkills');
   if (!box) return;
   box.addEventListener('toggle', () => { guideOpen = box.open; });
+  const dirty = () => { box.dataset.dirty = '1'; };
+  box.addEventListener('input', dirty); box.addEventListener('change', dirty);
   $('#gskLevel').addEventListener('change', () => $('#gskLevelN').classList.toggle('hidden', $('#gskLevel').value !== 'n'));
   box.querySelectorAll('input[name=gskMain]').forEach((r) => r.addEventListener('change', () => {
     box.querySelectorAll('tr[data-gid]').forEach((tr) => { const cb = tr.querySelector('.gsk-full'); const main = tr.querySelector('input[name=gskMain]').checked; cb.disabled = main; if (main) cb.checked = true; });
@@ -95,7 +125,7 @@ function bindGuideSkills(src) {
     $('#gskMsg').textContent = 'Building it with your skills…';
     const r = await window.api.setGuideSkills({ level: mode === 'n' ? $('#gskLevelN').value : mode, quality: $('#gskQ').value, gems, main, full });
     $('#pobMsg').textContent = r.ok ? r.message : r.error;
-    if (r.ok) { await load(); renderPob(false); } else $('#gskMsg').textContent = r.error;
+    if (r.ok) { box.dataset.dirty = '0'; await load(); renderPob(false); } else $('#gskMsg').textContent = r.error;
   });
   $('#gskCompare').addEventListener('click', async () => {
     $('#gskMsg').textContent = 'Path of Building is trying each skill as the main one…';

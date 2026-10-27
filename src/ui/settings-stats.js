@@ -112,9 +112,9 @@ async function renderSaved() {
   document.querySelectorAll('[data-run]').forEach((b) => b.addEventListener('click', async () => {
     const msg = document.querySelector(`[data-savedmsg="${b.dataset.run}"]`);
     msg.textContent = 'Searching…'; b.disabled = true;
-    const r = await window.api.savedRun(b.dataset.run);
+    const r = await window.api.savedRun(b.dataset.run).catch((err) => ({ ok: false, error: (err && err.message) || String(err) }));
     b.disabled = false;
-    if (!r.ok) { msg.textContent = r.error || 'Search failed.'; return; }
+    if (!r || !r.ok) { msg.textContent = (r && r.error) || 'Search failed.'; return; }
     const diff = r.prev != null && r.total != null ? r.total - r.prev : null;
     msg.textContent = r.total === 0 ? 'Nothing listed right now.' : `${r.total} listed${diff != null ? ` (${diff >= 0 ? '+' : ''}${diff} since last time)` : ''}.`;
     setTimeout(renderSaved, 1500);

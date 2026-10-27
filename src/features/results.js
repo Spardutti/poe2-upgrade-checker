@@ -228,7 +228,7 @@ module.exports = function (C) {
     if (!resultsState) return null;
     if (resultsOtherGame()) return { ...resultsPayload(), error: `Switch back to ${C.G(resultsState.r.game).short} to load more of these.` };
     try { await loadMoreListings(10); } catch (err) { return { error: err.message || String(err) }; }
-    if (resultsState.ctx.mode === 'price') resultsState.ctx.priceSummary = C.priceSummary(resultsState.listings, resultsState.ctx.priceLeague, resultsState.ctx.priceLevel || 0);
+    if (resultsState.ctx.mode === 'price') resultsState.ctx.priceSummary = C.priceSummary(resultsState.listings, resultsState.ctx.priceLeague, resultsState.ctx.priceLevel || 0, resultsState.ctx.priceCompare || null);
     return resultsPayload();
   });
   ipcMain.handle('results:rescore', async () => {

@@ -212,7 +212,7 @@
     const word = game === 'poe1' ? 'anoint' : 'instil';
     return card(game === 'poe1' ? 'Best anoint' : 'Best instil', `<div class="help">Every notable that can go on your amulet, tried by Path of Building in place of its current one. Notables already on your tree are left out.</div>
       <div id="anointOut">${anointLast ? anointTable(anointLast) : ''}</div>
-      <div class="row"><button id="anointBtn">${anointLast ? 'Check again' : `Find the best ${word}`}</button></div>`);
+      <div class="row"><button id="anointBtn" data-word="${word}">${anointLast ? 'Check again' : `Find the best ${word}`}</button></div>`);
   }
   const sgn = (v) => (!isNum(v) || Math.abs(v) < 0.05 ? '' : `${v > 0 ? '+' : ''}${n1(v)}%`);
   function anointTable(r) {
@@ -229,13 +229,22 @@
     const b = e.target.closest && e.target.closest('#anointBtn');
     if (!b) return;
     b.disabled = true; b.innerHTML = '<span class="spinner"></span> Trying every notable…';
-    anointLast = await window.api.anointCheck().catch((err) => ({ ok: false, error: err.message || String(err) }));
+    const gen = charGen;
+    const res = await window.api.anointCheck().catch((err) => ({ ok: false, error: err.message || String(err) }));
+    const btn = $('#anointBtn') || b;
+    btn.disabled = false;
+    // another character (or new gear) since it was asked: that answer is for the old one
+    if (gen !== charGen) { btn.textContent = `Find the best ${btn.dataset.word || 'anoint'}`; return; }
+    anointLast = res;
     const out = $('#anointOut'); if (out) out.innerHTML = anointTable(anointLast);
-    b.disabled = false; b.textContent = 'Check again';
+    btn.textContent = 'Check again';
   });
 
   // PoE2: the best rune, soul core or idol for each socket on your gear
   let runeLast = null;
+  // bumped whenever the character, its gear or the settings change: a check still running for the
+  // character before throws its answer away
+  let charGen = 0;
   function runeCard() {
     return card('Best runes and soul cores', `<div class="help">Every rune, soul core and idol that fits each socket on your gear, tried by Path of Building in place of what's there. Only the best tier your level can use of each is tried. Gear with no socket is tried with one added (an Artificer's Orb); corrupted gear is left out.</div>
       <div id="runeOut">${runeLast ? runeTable(runeLast) : ''}</div>
@@ -267,9 +276,14 @@
     const b = e.target.closest && e.target.closest('#runeBtn');
     if (!b) return;
     b.disabled = true; b.innerHTML = '<span class="spinner"></span> Trying every rune…';
-    runeLast = await window.api.runeCheck(!!runeLast).catch((err) => ({ ok: false, error: err.message || String(err) }));
+    const gen = charGen;
+    const res = await window.api.runeCheck(!!runeLast).catch((err) => ({ ok: false, error: err.message || String(err) }));
+    const btn = $('#runeBtn') || b;
+    btn.disabled = false;
+    if (gen !== charGen) { btn.textContent = 'Find the best runes'; return; } // for the character before
+    runeLast = res;
     const out = $('#runeOut'); if (out) out.innerHTML = runeTable(runeLast);
-    b.disabled = false; b.textContent = 'Check again';
+    btn.textContent = 'Check again';
   });
 
   // search strings for the game's search box: vendors and stash (things you want), maps (mods you don't)
@@ -311,6 +325,6 @@
   document.querySelector('.tabs button[data-tab="char"]').addEventListener('click', () => render(false));
   $('#charRefresh').addEventListener('click', () => render(true));
   // keep it current while it's open (gear copied, build changed, character switched)
-  window.api.onChanged(() => { anointLast = null; runeLast = null; if ($('#tab-char').classList.contains('active')) render(false); });
+  window.api.onChanged(() => { charGen++; anointLast = null; runeLast = null; if ($('#tab-char').classList.contains('active')) render(false); });
   window.renderCharacter = render;
 })();

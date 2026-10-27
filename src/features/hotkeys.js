@@ -22,7 +22,11 @@ module.exports = function (C) {
     const r = { ok: true, kind: 'quickprice', item: { name: item.name, baseType: item.baseType, itemClass: item.itemClass, rarity: item.rarity, id: item.id }, pending: true };
     const key = quickKey(item);
     const hit = quickCache.get(key);
-    if (!force && hit && Date.now() - hit.at < QUICK_TTL) { Object.assign(r, hit.r, { pending: false, checkedAt: hit.at }); C.showResult(r); return; }
+    if (!force && hit && Date.now() - hit.at < QUICK_TTL) {
+      Object.assign(r, hit.r, { pending: false, checkedAt: hit.at }); C.showResult(r);
+      C.log(`quick price: "${item.name}" from the last check ${Math.round((Date.now() - hit.at) / 60000)} min ago: ${r.trade ? `≈ ${r.trade.typical}` : r.ninja ? 'poe.ninja' : '?'}`);
+      return;
+    }
     C.showResult(r);
     const seq = C.popupSeq;
     const send = () => { if (seq === C.popupSeq && C.popup && !C.popup.isDestroyed()) C.popup.webContents.send('popup:result', C.serialise(r)); };
@@ -32,6 +36,7 @@ module.exports = function (C) {
       if (!tradeFirst) {
         const p = await C.prices.ninjaPrice(item).catch((err) => { C.log('quick price, poe.ninja: ' + err.message); return null; });
         if (p) { r.ninja = p; r.source = 'poe.ninja'; }
+        C.log(`quick price: "${item.name}" poe.ninja ${p ? `${p.name || ''}${p.variant ? ` (${p.variant})` : ''}: ${JSON.stringify({ each: p.each, div: p.eachDiv, stack: p.stack, listed: p.listings, volume: p.volume, unsure: p.unsure || undefined, league: p.league })}` : 'has no price for it'}`);
       }
       if (!r.ninja && (item.slot || tradeFirst || unique)) {
         const t = await C.gameCtx.run({ game: C.store.activeGame() }, () => C.tradePrice(item, null, { window: false }));
@@ -39,7 +44,7 @@ module.exports = function (C) {
         else if (t.fallback || t.total == null) r.error = "The trade site didn't answer. Try again in a moment.";
         else if (!t.total) r.error = 'Nothing like it is listed right now.';
         else if (t.summary && t.summary.typical) {
-          r.trade = { typical: t.summary.typical, range: t.summary.range, sellers: t.summary.sellers, total: t.total, confidence: t.summary.confidence };
+          r.trade = { typical: t.summary.typical, range: t.summary.range, sellers: t.summary.sellers, total: t.total, confidence: t.summary.confidence, baits: t.summary.baits || 0 };
           r.source = `trade site, ${t.league}`;
           quickCache.set(key, { at: Date.now(), r: { trade: r.trade, source: r.source } });
           if (quickCache.size > 300) quickCache.delete(quickCache.keys().next().value);
@@ -47,6 +52,7 @@ module.exports = function (C) {
         else r.error = (t.summary && t.summary.verdict) || 'Not enough listings to judge.';
       } else if (!r.ninja) r.error = "poe.ninja doesn't list a price for this.";
     } catch (err) { r.error = err.message || String(err); C.log('quick price: ' + (err.stack || err)); }
+    if (r.error) C.log(`quick price: "${item.name}" shown: ${r.error}`);
     r.pending = false;
     send();
   }

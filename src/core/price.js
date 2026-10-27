@@ -5,8 +5,8 @@
 // one seller listing many copies, listings nobody has touched in weeks. So:
 //   1. one listing per seller (their cheapest)
 //   2. leave out listings older than STALE_DAYS when at least 3 fresh ones remain
-//   3. drop baits: while the cheapest is under a third of the 4th cheapest (or under a fifth of
-//      the middle of the market), drop it, at most a third of the listings
+//   3. drop baits: one or two sellers far under the next listings, or a group a hundred times
+//      under them; at most a third of the listings (see below)
 //   4. cheapest = what's left at the bottom; worth = the median of the cheapest 5 sellers
 //      (what it sells for is near the bottom of the market: dearer listings are what's still unsold)
 //   5. range = cheapest to 5th cheapest
@@ -37,17 +37,30 @@ function priceStats(listings, opts = {}) {
   const age = (x) => { const t = Date.parse(x.indexed || ''); return Number.isFinite(t) ? now - t : 0; };
   const fresh = list.filter((x) => age(x) <= STALE_DAYS * DAY);
   let stale = 0; let staleKept = 0;
-  if (fresh.length >= 3 && fresh.length < list.length) { stale = list.length - fresh.length; list = fresh; }
+  let stalePrices = [];
+  if (fresh.length >= 3 && fresh.length < list.length) { stale = list.length - fresh.length; stalePrices = list.filter((x) => !fresh.includes(x)).map((x) => x.priceEx); list = fresh; }
   else staleKept = list.length - fresh.length; // too few fresh ones to leave the old ones out
   const p = list.map((x) => x.priceEx).sort((a, b) => a - b);
   if (!p.length) return unconvertible ? { count: 0, unconvertible, noPrice, total: all.length, unreliable: 'rate' } : null;
-  const mid = medianOf(p);
   const maxDrop = Math.floor(p.length / 3);
-  let baits = 0;
-  // baits are far out of line (1 ex for a 20 div item), not just cheaper: a wide market (lots of
-  // overpriced listings) mustn't make the real cheap ones look like baits
-  // (against the 4th cheapest only with enough listings: in a handful, the 4th can be the odd one out)
-  while (p.length >= 4 && baits < maxDrop && ((p.length >= 6 && p[0] < 0.35 * p[3]) || p[0] < 0.2 * mid)) { p.shift(); baits++; }
+  let baits = 0; const baitPrices = [];
+  // baits are far out of line (1 ex for a 20 div item), not just cheaper. Each cheap listing is
+  // judged against the ones just above it, never against the middle of the whole market: on the
+  // trade site most listings are overpriced ones that haven't sold, so a ring that sells for 60 ex
+  // can have a market "middle" of 3 div, and every real offer under 600 ex would look like a bait.
+  //   - one or two sellers well under the next listings (under 0.35x): baits
+  //   - three or more sellers within 3x of each other: that's the market, kept, unless they're a
+  //     hundred times under the next listings (three accounts at 1 ex for a 300 ex item)
+  while (p.length >= 4 && baits < maxDrop) {
+    let g = 1;
+    while (g < p.length && p[g] <= 3 * p[0]) g++;
+    const next = p[g];
+    if (next == null) break;
+    const bait = g >= 3 ? p[0] < 0.01 * next : p[0] < 0.35 * next;
+    if (!bait) break;
+    const drop = Math.min(g, maxDrop - baits);
+    baitPrices.push(...p.splice(0, drop)); baits += drop;
+  }
   const n = p.length;
   const typicalEx = medianOf(p.slice(0, Math.min(5, n)));
   const lowEx = p[0];
@@ -55,7 +68,7 @@ function priceStats(listings, opts = {}) {
   const priced = all.filter((x) => x.price).length;
   return {
     cheapestEx: p[0], typicalEx, lowEx, highEx,
-    count: n, sellers: bySeller.size, baits, stale, staleKept, unconvertible, noPrice, total: all.length,
+    count: n, sellers: bySeller.size, baits, baitPrices, stalePrices, stale, staleKept, unconvertible, noPrice, total: all.length,
     few: n < 3, // not enough listings to judge
     spread: n >= 2 && highEx / p[0] > 3, // prices vary a lot
     // too many listings in a currency without a rate: the number would be a guess

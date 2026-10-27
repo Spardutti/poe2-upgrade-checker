@@ -736,6 +736,8 @@ test('poe2: items parse as before', () => {
   const ADDED = ['fractured', 'flask'];
   for (const { text, parsed: was } of baseline) {
     const now = JSON.parse(JSON.stringify(parseItem(text)));
+    // a unique's keyword mods ("Cannot be Ignited") are shown now; they were left out before
+    if (now.rarity === 'Unique') now.lines = now.lines.filter((l) => !(l.kw && l.key === null && !was.lines.some((o) => o.text === l.text)));
     const label = text.split('\n').slice(0, 3).join(' / ');
     for (const k of Object.keys(now)) if (!(k in was)) assert.ok(ADDED.includes(k), `${label}: new field ${k}`);
     for (const k of Object.keys(was)) {

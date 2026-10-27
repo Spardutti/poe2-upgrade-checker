@@ -14,6 +14,21 @@ const EXCHANGE_TYPES = {
   poe1: ['Currency', 'Fragment', 'Runegraft', 'AllflameEmber', 'Tattoo', 'Omen', 'DjinnCoin', 'Ducat', 'EnshroudingCrystal', 'DivinationCard', 'Artifact', 'Oil', 'DeliriumOrb', 'Scarab', 'Astrolabe', 'Fossil', 'Resonator', 'Essence'],
 };
 const QUERY = ['league', 'type'];
+// the lists the app reads (src/core/ninja.js): any other "type" would be one more poe.ninja call
+// and one more cache entry for nothing. A list the app doesn't ask for here is answered 400; the
+// app then asks poe.ninja itself.
+const ITEM_TYPES = {
+  poe2: ['UniqueWeapons', 'UniqueArmours', 'UniqueAccessories', 'UniqueFlasks', 'UniqueCharms', 'UniqueJewels', 'UniqueSanctumRelics', 'UniqueTablets', 'PrecursorTablets'],
+  poe1: ['UniqueWeapon', 'UniqueArmour', 'UniqueAccessory', 'UniqueFlask', 'UniqueJewel', 'UniqueTincture', 'UniqueRelic', 'UniqueMap', 'ForbiddenJewel',
+    'SkillGem', 'ImbuedGem', 'Map', 'BlightedMap', 'BlightRavagedMap', 'Incubator', 'Memory', 'Vial', 'Invitation', 'ScryingOrb'],
+};
+function typeAllowed(game, what, type) {
+  if (what === 'leagues') return true;
+  if (what === 'exchange/current/overview') return EXCHANGE_TYPES[game].includes(type);
+  if (what === 'stash/current/item/overview') return ITEM_TYPES[game].includes(type);
+  if (what === 'stash/current/currency/overview') return ['Currency', 'Fragment'].includes(type);
+  return false;
+}
 const UA = 'PoE Upgrade Checker price proxy (https://poe2upgrade.com; support@poe2upgrade.com)';
 // poe.ninja refreshes PoE1 about every 15 minutes and PoE2 about hourly
 const TTL = { poe1: 15 * 60, poe2: 30 * 60 };
@@ -194,6 +209,7 @@ async function handle(request, env, ctx) {
     }
     const m = url.pathname.match(ALLOWED);
     if (!m) return new Response('Not found', { status: 404 });
+    if (!typeAllowed(m[1], m[2], url.searchParams.get('type'))) return new Response(JSON.stringify({ error: 'unknown type' }), { status: 400, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
     const q = QUERY.filter((k) => url.searchParams.get(k)).map((k) => `${k}=${encodeURIComponent(url.searchParams.get(k).slice(0, 80))}`).join('&');
     const target = `https://poe.ninja/${m[1]}/api/economy/${m[2]}${q ? '?' + q : ''}`;
     // one cache entry per poe.ninja URL, whatever else the request carried

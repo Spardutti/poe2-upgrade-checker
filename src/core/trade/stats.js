@@ -52,6 +52,7 @@ const COND = /\b(if you've|if you have|while|when|recently)\b|\bper (?!second)/i
 function buildStatIndex(statsData) {
   const index = new Map(); // normText -> [{ id, text, type, local }]
   const all = [];
+  const aliases = [];
   for (const group of (statsData && statsData.result) || []) {
     for (const e of group.entries || []) {
       const type = e.type || group.id || '';
@@ -60,6 +61,24 @@ function buildStatIndex(statsData) {
       const k = norm(e.text);
       if (!index.has(k)) index.set(k, []);
       index.get(k).push(entry);
+      aliases.push([e.text, entry]);
+    }
+  }
+  // other wordings of the same stat, where the item says it differently from the trade site:
+  //   "#% increased Gold found in Map (Gold Piles)": the site's note in brackets isn't on the item
+  //   "Map contains an additional Rare Chest": the item says "Map contains 3 additional Rare Chests"
+  // only where nothing has that wording already
+  for (const [text, entry] of aliases) {
+    const forms = [];
+    const bare = text.replace(/\s+\((?!local\))[^()]+\)\s*$/i, '');
+    if (bare !== text) forms.push(bare);
+    for (const t of [text, bare]) {
+      const m = t.match(/^(.*)\ban additional (.+?)$/);
+      if (m && !/#/.test(t)) forms.push(`${m[1]}# additional ${m[2].replace(/(\w+)$/, (w) => (/s$/.test(w) ? w : w + 's'))}`);
+    }
+    for (const f of forms) {
+      const k = norm(f);
+      if (!index.has(k)) { const list = [entry]; list.__alias = true; index.set(k, list); } else if (index.get(k).__alias && !index.get(k).includes(entry)) index.get(k).push(entry);
     }
   }
   return { index, all };
@@ -71,6 +90,7 @@ const TYPE_PREF = ['pseudo', 'explicit', 'implicit', 'augment', 'rune', 'enchant
 function matchStat(key, statIndex, opts) {
   opts = opts || {};
   if (EQUIPMENT_FILTERS[key]) return { kind: 'equipment', id: EQUIPMENT_FILTERS[key], text: key };
+  if (!statIndex || !statIndex.index) return null; // the trade site's stat list isn't loaded
   let cands = statIndex.index.get(norm(key));
   if (!cands || !cands.length) {
     // The parser turns "40% reduced Freeze Duration on you" into "#% increased …: -40" (so the two

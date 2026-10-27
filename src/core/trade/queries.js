@@ -126,7 +126,11 @@ function buildGearQuery(item, opts) {
     // a "total to" stat (res, attributes) also counts all-res / all-attribute mods, so it replaces the single mods
     const totals = all.filter((e) => / total to /.test(e.text) && w.test.test(keyForm(e.text.replace(' total to ', ' to '))));
     // every trade stat this weight covers (e.g. Minion crit = several texts)
-    const ids = totals.length ? totals : all.filter((e) => (opts.explicitOnly ? e.type === 'explicit' : GEAR_TYPES.includes(e.type)) && w.test.test(keyForm(e.text)));
+    // (a "(Local)" stat only where it can roll: local attack speed is a weapon mod, local armour an
+    // armour mod; on a ring either would only take a filter slot from a stat that's there)
+    const cls = opts.itemClass || item.itemClass;
+    const fits = (e) => !e.local || !cls || localFor(keyForm(e.text), cls, true);
+    const ids = totals.length ? totals : all.filter((e) => (opts.explicitOnly ? e.type === 'explicit' : GEAR_TYPES.includes(e.type)) && w.test.test(keyForm(e.text)) && fits(e));
     if (!ids.length) continue;
     const ww = Math.round(w.w * scale * 100) / 100;
     for (const e of ids) {
