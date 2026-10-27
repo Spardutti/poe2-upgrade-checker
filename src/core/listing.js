@@ -92,7 +92,24 @@ function listingToItem(result, itemClass) {
   const item = parseItem(text);
   if (item) item.listingText = text;
   if (item) addTiers(item, it);
+  if (item) { const n = affixCount(it); if (n != null) item.affixCount = n; }
   return item;
+}
+
+// How many explicit mods (affixes) a listing has, as the trade site counts "# Modifiers": a hybrid
+// mod is one affix on two lines ("increased Critical Hit Chance" + "Critical Damage Bonus"), so the
+// lines can't be counted. PoE2 names each line's affix (explicitMods[].mods[].name); PoE1 lists the
+// affixes in item.extended.mods.explicit. null when neither is there.
+function affixCount(it) {
+  const ex = arr(it.explicitMods);
+  if (ex.length && ex.every((m) => m && typeof m === 'object' && Array.isArray(m.mods))) {
+    const names = new Set();
+    ex.forEach((m, i) => { const a = m.mods.length ? m.mods.map((x) => `${x.name || ''}|${x.tier || ''}`).join('+') : `line${i}`; names.add(a); });
+    return names.size;
+  }
+  const ext = it.extended && it.extended.mods && it.extended.mods.explicit;
+  if (Array.isArray(ext) && ext.length) return ext.length;
+  return null;
 }
 
 // The trade site says each explicit mod's tier ("P1" = top prefix tier, "S3"...) in item.extended:

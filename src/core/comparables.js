@@ -45,7 +45,7 @@ function compare(ours, theirs, less = MUCH_LESS) {
 const round = (x) => (x >= 10 ? Math.round(x) : Math.round(x * 10) / 10);
 
 // listings: summarise() output ({ item, priceEx, ... }). Each gets .diff = { extra, missing }.
-// -> { listings (the group to price from), group: 'alike' | 'close' | 'all', alike, close, total }
+// -> { listings (the group to price from), group: 'alike' | 'close' | 'all' (maps: 'alike' | 'better' | 'weaker'), alike, close, total }
 // opts.kind 'map': waystones and maps, compared on their numbers and mod count (pricequery.mapStats);
 // a number more than a tenth under yours already makes it a lesser waystone
 function pick(item, listings, opts = {}, min = 3) {
@@ -64,6 +64,13 @@ function pick(item, listings, opts = {}, min = 3) {
   const close = all.filter((x) => x.diff && x.diff.extra.length + x.diff.missing.length <= 1);
   const out = { alike: alike.length, close: close.length, total: all.length };
   if (sellers(alike) >= min) return { ...out, listings: alike, group: 'alike' };
+  if (map) {
+    // a waystone or map is never priced on weaker ones: then the ones at least as good (the price
+    // may be high), and if every listing is weaker, no price, only "worth more than"
+    const notWeaker = all.filter((x) => x.diff && !x.diff.missing.length);
+    if (sellers(notWeaker) >= min) return { ...out, listings: notWeaker, group: 'better' };
+    return { ...out, listings: all, group: 'weaker' };
+  }
   if (sellers(close) >= min) return { ...out, listings: close, group: 'close' };
   return { ...out, listings: all, group: 'all' };
 }

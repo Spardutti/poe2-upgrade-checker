@@ -68,3 +68,29 @@ test('waystone: priced on listings with numbers at least close to yours (the Gri
   assert.strictEqual(priceStats(g.listings, { now: NOW }).typicalEx, 4600);
   assert.ok(weak[0].diff.missing.length >= 4, JSON.stringify(weak[0].diff));
 });
+
+test('waystone: mods are counted as affixes, not lines (the Barren Compass case)', () => {
+  const pq = require('../src/core/pricequery');
+  const listing = require('../src/core/listing');
+  // a hybrid prefix: one mod, two lines
+  const ours = parseItem('Item Class: Waystones\nRarity: Rare\nBarren Compass\nWaystone (Tier 15)\n--------\nItem Rarity: +30% (augmented)\n--------\nItem Level: 82\n--------\n{ Prefix Modifier "Destructive" (Tier: 1) }\nMonsters have 222(200-240)% increased Critical Hit Chance\nMonsters have +24(21-25)% Critical Damage Bonus\n{ Suffix Modifier "of Exposure" (Tier: 1) }\n-7(-8--6)% maximum Player Resistances\n--------\nCorrupted');
+  assert.strictEqual(pq.mapStats(ours, { game: 'poe2' }).get('mods').value, 2);
+  assert.strictEqual(pq.buildMapPriceQuery(ours, { game: 'poe2' }).body.query.stats[0].filters[0].value.min, 2);
+  // a listing: the trade site names each line's affix
+  const it = listing.listingToItem({ item: { rarity: 'Rare', typeLine: 'Waystone (Tier 15)', name: 'X', corrupted: true,
+    explicitMods: [{ description: 'Monsters have 222% increased Critical Hit Chance', mods: [{ name: 'Destructive', tier: 'P1' }] },
+      { description: 'Monsters have +24% Critical Damage Bonus', mods: [{ name: 'Destructive', tier: 'P1' }] },
+      { description: '-7% maximum Player Resistances', mods: [{ name: 'of Exposure', tier: 'S1' }] }] } }, 'Waystones');
+  assert.strictEqual(it.affixCount, 2);
+});
+
+test('waystone: never priced on weaker waystones', () => {
+  const way = (p) => parseItem(`Item Class: Waystones\nRarity: Rare\nX\nWaystone (Tier 15)\n--------\nItem Rarity: +${p[0]}%\nPack Size: +${p[1]}%\nWaystone Drop Chance: +${p[2]}%\n--------\nItem Level: 81\n--------\nMonsters are Armoured\n--------\nCorrupted`);
+  const ours = way([30, 28, 140]);
+  const weaker = [[26, 23, 100], [25, 24, 115], [24, 22, 110], [22, 21, 105], [26, 25, 120]].map((p, i) => L([67, 67, 203, 224, 244][i], way(p)));
+  assert.strictEqual(comparables.pick(ours, weaker, { kind: 'map', game: 'poe2' }, 3).group, 'weaker');
+  const better = [[31, 30, 150], [35, 29, 145], [32, 31, 160]].map((p, i) => L([2000, 2500, 3000][i], way(p)));
+  const g = comparables.pick(ours, [...weaker, ...better], { kind: 'map', game: 'poe2' }, 3);
+  assert.ok(['alike', 'better'].includes(g.group), g.group);
+  assert.ok(priceStats(g.listings, { now: NOW }).typicalEx >= 2000);
+});

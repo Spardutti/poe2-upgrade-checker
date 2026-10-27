@@ -1,7 +1,9 @@
 'use strict';
 
 // "What's it worth?": prices from the trade site in exalts, divines and chaos.
-const { ipcMain, shell } = require('electron');
+const { ipcMain, shell, app } = require('electron');
+const fs = require('fs');
+const path = require('path');
 const trade = require('../core/trade');
 const listingLib = require('../core/listing');
 const priceLib = require('../core/price');
@@ -42,11 +44,19 @@ module.exports = function (C) {
       const what = cmp.opts && cmp.opts.kind === 'map' ? ['better numbers or more mods', 'weaker numbers or fewer mods'] : ['more or bigger mods', 'less'];
       if (group.group === 'alike' && group.alike < (listings || []).length) notes.push(`priced on the ${group.alike} listings like yours; left out: ${[better ? `${better} with ${what[0]}` : '', weaker ? `${weaker} with ${what[1]}` : ''].filter(Boolean).join(', ')}`);
       else if (group.group === 'close') notes.push(`few listings are just like yours: priced on the ${group.close} that differ by one stat`);
+      else if (group.group === 'better') notes.push(`few listings are just like yours: priced on the ones at least as good, so this may be high`);
       else if (group.group === 'all' && better) notes.push(`most listings have more or bigger mods than yours, so this may be high`);
       listings = group.listings;
     }
     const s = priceLib.priceStats(listings);
     if (!s) return null;
+    // every listing found is weaker than yours: their price is a floor, not your item's price
+    if (group && group.group === 'weaker') {
+      const floor = s.count ? fmtEx(s.typicalEx) : null;
+      return { count: s.count, sellers: s.sellers, total: s.total, notes, baits: s.baits || 0, group: 'weaker', typicalEx: null, typical: null, range: null, few: true,
+        cheapestEx: s.cheapestEx == null ? null : s.cheapestEx, cheapest: s.cheapestEx == null ? null : fmtEx(s.cheapestEx), floorEx: s.typicalEx,
+        verdict: `Every listing found is weaker than yours (lower numbers or fewer mods)${floor ? `, so it's worth more than about ${floor}` : ''}. Not enough like it to price.` };
+    }
     const rate = C.store.settings.divineRate;
     if (s.unconvertible) notes.push(`${pl(s.unconvertible, 'listing is', 'listings are')} priced in ${rate ? 'a currency' : 'divines or a currency'} without a known ${C.G().base} rate${rate ? '' : " (poe.ninja couldn't be reached)"}, so ${s.unconvertible === 1 ? "it's" : "they're"} left out`);
     if (rate && C.store.settings.divineRateAt && Date.now() - C.store.settings.divineRateAt > 6 * C.HOUR) notes.push(`the divine rate (${rate} ${C.G().baseShort}) is ${Math.round((Date.now() - C.store.settings.divineRateAt) / C.HOUR)} hours old`);
@@ -74,7 +84,7 @@ module.exports = function (C) {
       out.confidence = priceLib.confidence(s, group && group.group === 'alike' ? Math.min(level, 1) : level);
       // priced from listings that aren't quite like yours: never "solid"
       if (out.confidence && group && group.group !== 'alike') {
-        const why = group.group === 'close' ? 'listings differ a little from yours' : 'listings have more than yours';
+        const why = group.group === 'close' ? 'listings differ a little from yours' : group.group === 'better' ? 'listings are better than yours' : 'listings have more than yours';
         out.confidence = { grade: out.confidence.grade === 'solid' ? 'rough' : out.confidence.grade === 'rough' && group.group === 'all' ? 'guess' : out.confidence.grade, why: [out.confidence.why, why].filter(Boolean).join(', ') };
       }
       // selling it: a little under the cheapest comparable listing (not when the price is a guess)
@@ -117,6 +127,24 @@ module.exports = function (C) {
     C.log(`price verdict: ${summary.typical ? `≈ ${summary.typical}` : summary.verdict} | most ${summary.range || '-'} | ${summary.count} priced sellers of ${summary.sellers} | confidence ${conf}${summary.notes.length ? ` | ${summary.notes.join('; ')}` : ''}`);
   }
 
+  // Each price check as one line of price-checks.jsonl next to the log: the item, the searches, and
+  // every listing read (its text and price), so a price that looked wrong can be replayed and the
+  // pricing tuned on real checks. Only public trade data: no seller names. Kept under ~5 MB (the
+  // older half goes to price-checks.1.jsonl).
+  function saveCase(item, league, steps, listings, summary) {
+    try {
+      const file = path.join(app.getPath('userData'), 'price-checks.jsonl');
+      const line = JSON.stringify({
+        at: new Date().toISOString(), game: C.tg(), league, item: item.raw || null, steps,
+        listings: (listings || []).filter(Boolean).map((x) => ({ price: x.price, priceEx: x.priceEx, indexed: x.indexed, text: x.item && x.item.listingText ? x.item.listingText : null, affixes: x.item && x.item.affixCount != null ? x.item.affixCount : undefined })),
+        verdict: summary ? { typicalEx: summary.typicalEx, floorEx: summary.floorEx, range: summary.range, group: summary.group, confidence: summary.confidence, notes: summary.notes } : null,
+      }) + '\n';
+      let size = 0; try { size = fs.statSync(file).size; } catch (_) { /* new */ }
+      if (size > 5 * 1024 * 1024) { try { fs.renameSync(file, file.replace(/\.jsonl$/, '.1.jsonl')); } catch (_) { /* keep going */ } }
+      fs.appendFileSync(file, line);
+    } catch (err) { C.log('price check: could not save the case: ' + err.message); }
+  }
+
   // ---------- where to spend your divines ----------
   ipcMain.handle('trade:price', C.inGame(async (_e, target, picks) => {
     const item = C.resolveItem(target);
@@ -153,6 +181,7 @@ module.exports = function (C) {
     C.log(`price check: ${item.itemClass || '?'} "${item.name || '?'}"${item.baseType && item.baseType !== item.name ? ` (${item.baseType})` : ''}, ${item.rarity || '?'}${item.corrupted ? ', corrupted' : ''} – ${chosen ? 'the stats you chose' : mapish ? 'map/waystone/tablet search' : market ? 'market search' : 'like-for-like search'}, league ${league}`);
     // the item itself, so the same check can be run again from the log
     if (item.raw) C.log(`price item: ${String(item.raw).replace(/\r?\n/g, ' / ').slice(0, 1500)}`);
+    const steps = [];
     for (let level = 0; level < levels; level++) {
       q = mapish ? priceQuery.buildMapPriceQuery(item, { ...opts, level }) : market ? priceQuery.buildPriceQuery(item, { ...opts, level }) : trade.buildSimilarQuery(item, { ...opts, level });
       if (chosen) {
@@ -166,6 +195,7 @@ module.exports = function (C) {
       q.body.sort = { price: 'asc' };
       r = await C.runSearch(league, q.body, chosen ? 'price chosen' : `price L${level}`);
       logQuery(q, level, r && r.ok ? r.total : null, enough);
+      steps.push({ level, total: r && r.ok ? r.total : null, labels: q.labels, query: q.body.query });
       if (!r.ok || r.total == null || r.total >= enough) break;
       if (r.near) break;
       await new Promise((res) => setTimeout(res, 700));
@@ -185,6 +215,7 @@ module.exports = function (C) {
       const cmp = market ? { item, opts } : mapish && !priceQuery.isTablet(item) && !/unique/i.test(item.rarity || '') ? { item, opts: { ...opts, kind: 'map' } } : null;
       const summary = priceSummary(listings, league, q.level || 0, cmp);
       logPrices(listings, summary);
+      saveCase(item, league, steps, listings, summary);
       if (summary && summary.typicalEx != null && item.id) C.lastWorth.set(item.id, summary.typicalEx);
       return { ok: true, mode: 'price', total: r.total, league, item: item.name, url: r.url, summary, levelLabel: q.levelLabel, level: q.level };
     }
@@ -197,6 +228,7 @@ module.exports = function (C) {
       Object.defineProperty(C.resultsState.ctx, 'priceCompare', { value: cmp, enumerable: false, writable: true, configurable: true });
       summary = priceSummary(C.resultsState.listings, league, q.level || 0, cmp);
       logPrices(C.resultsState.listings, summary);
+      saveCase(item, league, steps, C.resultsState.listings, summary);
       C.resultsState.ctx.priceSummary = summary;
       C.resultsState.ctx.priceLeague = league;
       C.resultsState.ctx.priceLevel = q.level || 0;

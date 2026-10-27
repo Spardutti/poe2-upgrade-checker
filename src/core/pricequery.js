@@ -177,15 +177,18 @@ const usesPriceQuery = (item) => !!item && !isUnique(item) && /^(rare|magic)$/i.
 // waystone drop chance...) and how many mods it has. The numbers come from its mods, so searching
 // for its exact mods as well finds nothing (the Grim Course waystone: 0 listings, then a loose search
 // of much weaker waystones priced it at 67 ex instead of ~6 div). So: the tier, the mod count and
-// the numbers close to yours, loosening a little at a time; then only the listings whose numbers
-// are at least close to yours are priced on (comparables.js, mapStats below).
+// the numbers close to yours; then only the listings whose numbers are at least close to yours are
+// priced on (comparables.js, mapStats below), and never listings weaker than yours.
 // A tablet sells on its kind (Abyss, Breach, Ritual...), its uses left and its mods (they are the
 // tablet): every mod is searched, all at close values first, then most, then half by name.
+// Never below your numbers by much: a looser search on them only finds weaker, cheaper waystones
+// (Barren Compass: 3,039 of them, priced at 224 ex instead of ~3 div). The steps widen the time
+// listed and the mod count instead.
 const MAP_LEVELS = [
   { lo: 0.9, hi: 1.5, props: true, count: 0, indexed: '3days', label: 'the same tier and mod count, numbers close to yours, listed in the last 3 days' },
-  { lo: 0.8, hi: null, props: true, count: 0, indexed: '1week', label: 'the same tier and mod count, numbers at least 80% of yours, listed in the last week' },
-  { lo: 0.7, hi: null, props: true, count: 1, indexed: '2weeks', label: 'the same tier, numbers at least 70% of yours, listed in the last 2 weeks' },
-  { lo: 0, hi: null, props: false, count: 1, indexed: '2weeks', label: 'the same tier, listed in the last 2 weeks' },
+  { lo: 0.9, hi: null, props: true, count: 0, indexed: '1week', label: 'the same tier and mod count, numbers at least 90% of yours, listed in the last week' },
+  { lo: 0.9, hi: null, props: true, count: 1, indexed: '2weeks', label: 'the same tier, one mod fewer at most, numbers at least 90% of yours, listed in the last 2 weeks' },
+  { lo: 0.85, hi: null, props: true, count: 1, indexed: '1month', label: 'the same tier, one mod fewer at most, numbers at least 85% of yours, listed in the last month' },
 ];
 const TABLET_LEVELS = [
   { lo: 0.85, hi: 1.3, mods: (n) => n, values: true, indexed: '3days', label: 'the same kind, uses and mods at close values, listed in the last 3 days' },
@@ -255,7 +258,13 @@ function mapNumbers(item, game) {
   }
   return out;
 }
-const modCount = (item) => (item.lines || []).filter((l) => l.tag === 'explicit' && (l.key || l.kw) && !/uses? remaining/i.test(l.key || l.kw || '')).length;
+// how many mods it has, as the trade site counts them: affixes, not lines (a hybrid affix has two
+// lines; the Barren Compass waystone's 8 mods have 9 lines and was searched as "9+ mods")
+function modCount(item) {
+  if (item.affixCount != null) return item.affixCount; // a listing: from the trade site
+  if (item.affixes && item.affixes.known) return item.affixes.prefixes + item.affixes.suffixes; // copied with Ctrl+Alt+C
+  return (item.lines || []).filter((l) => l.tag === 'explicit' && (l.key || l.kw) && !/uses? remaining/i.test(l.key || l.kw || '')).length;
+}
 // for comparables.js: what a waystone or map is priced on, the same way for yours and each listing
 function mapStats(item, opts = {}) {
   const game = opts.game === 'poe1' ? 'poe1' : 'poe2';
