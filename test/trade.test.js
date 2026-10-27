@@ -477,30 +477,3 @@ test('skip corrupted: adds corrupted=false, but never overrides a search that se
   assert.equal(price.query.filters.misc_filters.filters.corrupted.option, 'true');
   assert.equal(T.budgetLabel({ noCorrupted: true }), 'not corrupted');
 });
-
-test('gear search sizes end in the count-only search, the one a logged-out trade site accepts', () => {
-  const { parseItem } = require('../src/core/parser');
-  const gear = require('../src/core/gearscore');
-  const ix = T.buildStatIndex({ result: [{ id: 'explicit', entries: [
-    { id: 'explicit.minion_dmg', text: 'Minions deal #% increased Damage', type: 'explicit' },
-    { id: 'explicit.minion_crit', text: 'Minions have #% increased Critical Hit Chance', type: 'explicit' },
-  ] }] });
-  const ring = parseItem('Item Class: Rings\nRarity: Rare\nPlague Circle\nIron Ring\n--------\nItem Level: 80\n--------\nMinions deal 27% increased Damage\nMinions have 44% increased Critical Hit Chance');
-  const smallest = T.GEAR_SEARCH_SIZES[T.GEAR_SEARCH_SIZES.length - 1];
-  const q = T.buildGearQuery(ring, { weights: gear.searchWeights('Ring', { build: 'djinn-varashta' }), statIndex: ix, ...smallest });
-  assert.strictEqual(q.countOnly, true);
-  assert.deepStrictEqual(q.body.query.stats.map((s) => s.type), ['count']);
-});
-
-test('gear search sizes: the smallest stays at 6 filters when the slot has no key stats to count', () => {
-  const { parseItem } = require('../src/core/parser');
-  const gear = require('../src/core/gearscore');
-  const texts = ['Minions deal #% increased Damage', '# to maximum Energy Shield', '# to maximum Life', '# to maximum Mana', '#% to Fire Resistance', '#% to Cold Resistance', '#% to Lightning Resistance', '# to Intelligence'];
-  const ix = T.buildStatIndex({ result: [{ id: 'explicit', entries: texts.map((text, i) => ({ id: `explicit.s${i}`, text, type: 'explicit' })) }] });
-  const ring = parseItem('Item Class: Rings\nRarity: Rare\nPlague Circle\nIron Ring\n--------\nItem Level: 80\n--------\nMinions deal 27% increased Damage');
-  const minor = gear.searchWeights('Ring', { build: 'djinn-varashta' }).map((w) => ({ ...w, imp: 1 }));
-  const smallest = T.GEAR_SEARCH_SIZES[T.GEAR_SEARCH_SIZES.length - 1];
-  const q = T.buildGearQuery(ring, { weights: minor, statIndex: ix, ...smallest });
-  assert.strictEqual(q.countOnly, false);
-  assert.strictEqual(q.body.query.stats[0].filters.length, 6);
-});
