@@ -33,6 +33,15 @@ module.exports = function (C) {
   // the price verdict, with everything that makes it less certain said out loud
   // cmp: { item, opts } for a market search (rare and magic gear): the price comes from the listings
   // like that item (comparables.js), not from better items that also matched the search
+  // how a price search's listings are compared with your item (comparables.js): gear on its priced
+  // stats, waystones and maps on their numbers and mod count; a tablet's first search already asks
+  // for every mod at close values, so what it finds is like yours (exact)
+  function compareWith(item, opts, market, mapish, level) {
+    if (market) return { item, opts };
+    if (!mapish || /unique/i.test(item.rarity || '')) return null;
+    if (priceQuery.isTablet(item)) return level === 0 ? { exact: true } : null;
+    return { item, opts: { ...opts, kind: 'map' } };
+  }
   function priceSummary(listings, league, level = 0, cmp = null) {
     const pl = (k, one, many) => `${k} ${k === 1 ? one : many}`;
     const notes = [];
@@ -48,7 +57,10 @@ module.exports = function (C) {
       else if (group.group === 'all' && better) notes.push(`most listings have more or bigger mods than yours, so this may be high`);
       listings = group.listings;
     }
-    const s = priceLib.priceStats(listings);
+    // listings known to be like yours (the 'alike' group, or a tablet found on all its mods at close
+    // values): their cheap ones are the market, not baits, and dearer asks don't lift the price
+    const alike = (group && group.group === 'alike') || !!(cmp && cmp.exact);
+    const s = priceLib.priceStats(listings, { alike });
     if (!s) return null;
     // every listing found is weaker than yours: their price is a floor, not your item's price
     if (group && group.group === 'weaker') {
@@ -245,7 +257,7 @@ module.exports = function (C) {
       const rates = { ...(C.store.settings.currencyRates || {}), ...(C.store.settings.divineRate ? { divine: C.store.settings.divineRate } : {}) };
       const raw = r.ids && r.ids.length ? await C.fetchListings(league, r.searchId, r.ids.slice(0, 40), C.tg()) : [];
       let listings = raw.map((x) => listingLib.summarise(x, item.itemClass, rates, C.G().base));
-      const cmp = market ? { item, opts } : mapish && !priceQuery.isTablet(item) && !/unique/i.test(item.rarity || '') ? { item, opts: { ...opts, kind: 'map' } } : null;
+      const cmp = compareWith(item, opts, market, mapish, q.level || 0);
       let summary = priceSummary(listings, league, q.level || 0, cmp);
       // few of the cheapest 40 are like yours: the ones like it are often a little dearer, so 40 more
       // are read (one more round of the trade site's fetches) before judging
@@ -268,7 +280,7 @@ module.exports = function (C) {
     if (shown === 'superseded') {
       // you searched again or changed game while this loaded: nothing to show, no browser either
     } else if (shown) {
-      const cmp = market ? { item, opts } : mapish && !priceQuery.isTablet(item) && !/unique/i.test(item.rarity || '') ? { item, opts: { ...opts, kind: 'map' } } : null;
+      const cmp = compareWith(item, opts, market, mapish, q.level || 0);
       Object.defineProperty(C.resultsState.ctx, 'priceCompare', { value: cmp, enumerable: false, writable: true, configurable: true });
       summary = priceSummary(C.resultsState.listings, league, q.level || 0, cmp);
       logPrices(C.resultsState.listings, summary);

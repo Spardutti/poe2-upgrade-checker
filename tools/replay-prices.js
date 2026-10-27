@@ -43,11 +43,12 @@ for (const c of cases) {
   if (!item || (only && !String(item.name || '').toLowerCase().includes(only))) continue;
   const listings = (c.listings || []).map((x, i) => ({ id: 'l' + i, account: 'l' + i, price: x.price, priceEx: x.priceEx, indexed: x.indexed, item: x.text ? Object.assign(parseItem(x.text) || {}, { listingText: x.text }, x.affixes != null ? { affixCount: x.affixes } : {}) : null }));
   const map = pq.usesMapPriceQuery(item) && !pq.isTablet(item) && !/unique/i.test(item.rarity || '');
-  const market = !map && pq.usesPriceQuery(item);
+  const tablet = pq.isTablet(item);
+  const market = !map && !tablet && pq.usesPriceQuery(item); // as the app does: tablets aren't compared listing by listing
   let group = { group: 'all', listings };
   const preferLocal = ['Weapon', 'Offhand', 'Helmet', 'Body Armour', 'Gloves', 'Boots'].includes(item.slot);
   if (map || market) group = comparables.pick(item, listings, map ? { kind: 'map', game: c.game } : { game: c.game, preferLocal, statIndex: statIndex(c.game) }, pq.MIN);
-  const s = priceStats(group.listings);
+  const s = priceStats(group.listings, { now: Date.parse(c.at) || Date.now(), alike: group.group === 'alike' || (tablet && (c.steps || []).length > 0 && c.steps[c.steps.length - 1].level === 0) }); // listing ages as they were at the check
   const was = c.verdict || {};
   const now = group.group === 'weaker' ? `more than ${fmt(s && s.typicalEx)} (every listing weaker)` : s ? `${fmt(s.typicalEx)} (${fmt(s.lowEx)}–${fmt(s.highEx)})` : 'none';
   const nowEx = group.group === 'weaker' ? null : s && s.typicalEx;

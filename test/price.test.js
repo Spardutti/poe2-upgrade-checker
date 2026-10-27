@@ -110,3 +110,18 @@ test('price: one or two listings far under the rest are still baits', () => {
   assert.strictEqual(s.baits, 2);
   assert.strictEqual(s.cheapestEx, 300);
 });
+
+test('price: listings like yours with scattered asks: the cheap ones are the market, not baits', () => {
+  // a Ritual Tablet found on all its mods at close values: 1 chaos, 2 chaos, 1 div, 1 div, 15 div, 200 chaos
+  const ls = [67, 134, 684, 684, 10253, 13407].map((x) => L(x));
+  const s = priceStats(ls, { now: NOW, alike: true });
+  assert.strictEqual(s.baits, 0);
+  assert.ok(s.typicalEx > 60 && s.typicalEx < 150, `typical ${s.typicalEx}`);
+  // not known to be alike (loose matches): the cheap pair still counts as baits, as before
+  const loose = priceStats(ls, { now: NOW });
+  assert.strictEqual(loose.baits, 2);
+  // alike with a real market above: a lone 1 ex listing is still a bait
+  const m = priceStats([L(1), ...market(300, 6)], { now: NOW, alike: true });
+  assert.strictEqual(m.baits, 1);
+  assert.ok(m.typicalEx >= 300);
+});
